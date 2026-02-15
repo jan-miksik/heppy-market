@@ -1,13 +1,35 @@
 import { DurableObject } from 'cloudflare:workers';
+import { drizzle } from 'drizzle-orm/d1';
+import { eq } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
+import { agents, performanceSnapshots } from '../db/schema.js';
+import { PaperEngine } from '../services/paper-engine.js';
+import { runAgentLoop } from './agent-loop.js';
+import { generateId, nowIso } from '../lib/utils.js';
+
+/** Interval string → milliseconds */
+function intervalToMs(interval: string): number {
+  switch (interval) {
+    case '1m':  return 60_000;
+    case '5m':  return 5 * 60_000;
+    case '15m': return 15 * 60_000;
+    case '1h':  return 60 * 60_000;
+    case '4h':  return 4 * 60 * 60_000;
+    case '1d':  return 24 * 60 * 60_000;
+    default:    return 60 * 60_000;
+  }
+}
 
 /**
- * TradingAgentDO — Durable Object for managing a single trading agent instance.
- * Each agent gets its own DO with persistent state, an alarm-based analysis loop,
- * and access to D1 / KV / LLM services via the Worker env.
+ * TradingAgentDO — Durable Object managing a single trading agent instance.
  *
- * Phase 1: stub implementation (only handles HTTP requests).
- * Phase 3/4: full agent loop will be added.
+ * Persistent state (via ctx.storage):
+ * - agentId: string
+ * - status: 'running' | 'stopped' | 'paused'
+ * - engineState: serialized PaperEngine state
+ * - lastStopOutAt: timestamp of last stop-out (for cooldown)
+ *
+ * The alarm fires on each analysis interval tick and runs the full agent loop.
  */
 export class TradingAgentDO extends DurableObject<Env> {
   constructor(state: DurableObjectState, env: Env) {
@@ -20,16 +42,38 @@ export class TradingAgentDO extends DurableObject<Env> {
     if (url.pathname === '/status') {
       const agentId = (await this.ctx.storage.get<string>('agentId')) ?? null;
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
-      return Response.json({ agentId, status });
+      const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+      const balance = engineState?.balance ?? null;
+      return Response.json({ agentId, status, balance });
     }
 
     if (url.pathname === '/start' && request.method === 'POST') {
-      const body = (await request.json()) as { agentId: string };
+      const body = (await request.json()) as {
+        agentId: string;
+        paperBalance?: number;
+        slippageSimulation?: number;
+        analysisInterval?: string;
+      };
+
+      const currentAgentId = await this.ctx.storage.get<string>('agentId');
+
+      // Initialize engine only on first start (preserve state on restart)
+      if (!currentAgentId || currentAgentId !== body.agentId) {
+        const balance = body.paperBalance ?? 10_000;
+        const slippage = body.slippageSimulation ?? 0.3;
+        const engine = new PaperEngine({ balance, slippage });
+        await this.ctx.storage.put('engineState', engine.serialize());
+      }
+
       await this.ctx.storage.put('agentId', body.agentId);
       await this.ctx.storage.put('status', 'running');
-      // Schedule first alarm
-      const now = Date.now();
-      await this.ctx.storage.setAlarm(now + 5_000); // first tick in 5s
+      await this.ctx.storage.put('analysisInterval', body.analysisInterval ?? '1h');
+
+      // Schedule first tick
+      const intervalMs = intervalToMs(body.analysisInterval ?? '1h');
+      const firstTick = Math.min(5_000, intervalMs); // first tick in 5s (for quick testing)
+      await this.ctx.storage.setAlarm(Date.now() + firstTick);
+
       return Response.json({ ok: true, status: 'running' });
     }
 
@@ -45,6 +89,11 @@ export class TradingAgentDO extends DurableObject<Env> {
       return Response.json({ ok: true, status: 'paused' });
     }
 
+    if (url.pathname === '/engine-state') {
+      const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+      return Response.json(engineState ?? null);
+    }
+
     return new Response('Not Found', { status: 404 });
   }
 
@@ -52,9 +101,88 @@ export class TradingAgentDO extends DurableObject<Env> {
     const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
     if (status !== 'running') return;
 
-    // Phase 4: full agent loop runs here
-    // For now, just reschedule
-    const intervalMs = 60_000; // default 1m, will be read from config in phase 4
-    await this.ctx.storage.setAlarm(Date.now() + intervalMs);
+    const agentId = await this.ctx.storage.get<string>('agentId');
+    if (!agentId) return;
+
+    // Restore or init engine
+    const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+    const engine = engineState
+      ? PaperEngine.deserialize(engineState)
+      : new PaperEngine({ balance: 10_000, slippage: 0.3 });
+
+    // Run the analysis loop
+    try {
+      await runAgentLoop(agentId, engine, this.env, this.ctx);
+    } catch (err) {
+      console.error(`[TradingAgentDO] alarm error for ${agentId}:`, err);
+    }
+
+    // Persist updated engine state
+    await this.ctx.storage.put('engineState', engine.serialize());
+
+    // Save a performance snapshot periodically (every ~6 ticks)
+    const tickCount = ((await this.ctx.storage.get<number>('tickCount')) ?? 0) + 1;
+    await this.ctx.storage.put('tickCount', tickCount);
+
+    if (tickCount % 6 === 0) {
+      await this.savePerformanceSnapshot(agentId, engine);
+    }
+
+    // Reschedule next alarm
+    const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
+    await this.ctx.storage.setAlarm(Date.now() + intervalToMs(interval));
+  }
+
+  private async savePerformanceSnapshot(
+    agentId: string,
+    engine: PaperEngine
+  ): Promise<void> {
+    try {
+      const db = drizzle(this.env.DB);
+      const closed = engine.closedPositions;
+      const totalTrades = closed.length;
+      const winRate = engine.getWinRate();
+      const totalPnlPct = engine.getTotalPnlPct();
+
+      // Simplified Sharpe (assume 0% risk-free, using stddev of pnl pcts)
+      let sharpeRatio: number | null = null;
+      if (closed.length >= 5) {
+        const pnls = closed.map((t) => t.pnlPct ?? 0);
+        const mean = pnls.reduce((a, b) => a + b, 0) / pnls.length;
+        const variance =
+          pnls.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / pnls.length;
+        const stddev = Math.sqrt(variance);
+        sharpeRatio = stddev > 0 ? mean / stddev : 0;
+      }
+
+      // Max drawdown from closed trades
+      let maxDrawdown: number | null = null;
+      if (closed.length >= 2) {
+        let peak = 0;
+        let drawdown = 0;
+        let cumPnl = 0;
+        for (const t of closed) {
+          cumPnl += t.pnlPct ?? 0;
+          if (cumPnl > peak) peak = cumPnl;
+          const dd = peak - cumPnl;
+          if (dd > drawdown) drawdown = dd;
+        }
+        maxDrawdown = drawdown;
+      }
+
+      await db.insert(performanceSnapshots).values({
+        id: generateId('snap'),
+        agentId,
+        balance: engine.balance,
+        totalPnlPct,
+        winRate,
+        totalTrades,
+        sharpeRatio,
+        maxDrawdown,
+        snapshotAt: nowIso(),
+      });
+    } catch (err) {
+      console.warn(`[TradingAgentDO] Failed to save snapshot:`, err);
+    }
   }
 }

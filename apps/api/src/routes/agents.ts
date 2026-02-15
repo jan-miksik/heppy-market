@@ -134,12 +134,22 @@ agentsRoute.post('/:id/start', async (c) => {
   }
 
   // Get or create DO instance for this agent
+  const agentConfig = JSON.parse(agent.config) as {
+    paperBalance: number;
+    slippageSimulation: number;
+    analysisInterval: string;
+  };
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
   await stub.fetch(
     new Request('http://do/start', {
       method: 'POST',
-      body: JSON.stringify({ agentId: id }),
+      body: JSON.stringify({
+        agentId: id,
+        paperBalance: agentConfig.paperBalance,
+        slippageSimulation: agentConfig.slippageSimulation,
+        analysisInterval: agentConfig.analysisInterval,
+      }),
     })
   );
 
