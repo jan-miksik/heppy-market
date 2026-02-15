@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+dist/
+.output/
+.nuxt/
+.env
+.dev.vars
+*.local
+.turbo/
+apps/*/node_modules/
+packages/*/node_modules/

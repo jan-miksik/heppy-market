@@ -1,0 +1,20 @@
+{
+  "name": "dex-trading-agents",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.42",
+    "turbo": "^2.0.0",
+    "wrangler": "^4.65.0"
+  }
+}

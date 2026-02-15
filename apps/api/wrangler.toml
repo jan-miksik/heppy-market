@@ -1,0 +1,32 @@
+name = "dex-trading-agents-api"
+main = "src/index.ts"
+compatibility_date = "2024-06-14"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = [
+  "*/1 * * * *",
+  "*/5 * * * *",
+  "*/15 * * * *",
+  "0 * * * *",
+  "0 */4 * * *",
+  "0 0 * * *"
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trading-agents"
+database_id = "local-trading-agents"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "local-cache"
+
+[durable_objects]
+bindings = [
+  { name = "TRADING_AGENT", class_name = "TradingAgentDO" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TradingAgentDO"]

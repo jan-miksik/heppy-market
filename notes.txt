@@ -1,0 +1,66 @@
+
+
+
+
+### Why These Defaults
+
+- **guided autonomy**: Safer starting point than full auto, more interesting than strict rules
+- **DeepSeek free**: Best reasoning-per-token among free OpenRouter models, supports structured output
+- **1h interval**: Balances between too many LLM calls (cost/rate limits) and missing opportunities
+- **20% max position**: Conservative enough to survive bad trades, large enough to be meaningful
+- **5% stop loss / 10% take profit**: Classic 1:2 risk-reward ratio
+- **3 pairs on Base**: WETH and cbBTC for stability, AERO for exposure to Base ecosystem native token
+- **combined strategy**: LLM weighs all indicators — the whole point of using AI
+
+### Free LLM Models Available on OpenRouter
+
+| Model | Best For | Structured Output |
+|-------|----------|-------------------|
+| `deepseek/deepseek-chat-v3-0324:free` | Best reasoning, default choice | ✅ |
+| `meta-llama/llama-3.3-70b-instruct:free` | Good fallback, fast | ✅ |
+| `mistralai/mistral-small-3.1-24b-instruct:free` | Fast, lower quality | ✅ |
+| `google/gemini-2.0-flash-exp:free` | Multimodal (chart images later?) | ✅ |
+| `qwen/qwen-2.5-72b-instruct:free` | Alternative reasoning | ✅ |
+
+---
+
+## Quick Start Commands for the Building Agent
+
+### Claude Code
+```bash
+# In your empty project directory:
+claude
+
+# Then paste:
+Read CLAUDE.md and build this project following the Build Order exactly.
+After each phase, run the corresponding tests and show me the results.
+Commit after each successful phase. Use conventional commits
+(feat:, fix:, chore:). Start with Phase 1: Foundation.
+Do not ask me questions — use the defaults in CLAUDE.md for all decisions.
+If something fails, debug it yourself and retry up to 3 times before
+asking me.
+```
+
+### Cursor
+```
+Open CLAUDE.md. This is the complete spec for the project.
+Follow the Build Order section exactly, phase by phase.
+After completing each phase, run the tests defined in the
+Validation & Testing Strategy section.
+Do not proceed to the next phase until tests pass.
+Use all defaults specified in the document.
+Start with Phase 1 now.
+```
+
+---
+
+## Future Extensions (Not MVP)
+
+1. **x402 monetization**: Paywall your agent's signals/trade history
+2. **AP2 + ERC-8004**: Give agents on-chain identities, let them transact with other agents
+3. **Real trading**: Move from paper to real via viem + wallet signing (Base only)
+4. **Multi-chain**: Extend beyond Base to Arbitrum, Optimism
+5. **Backtesting**: Replay historical data through agent strategies
+6. **Social signals**: Scrape Farcaster/X for sentiment analysis
+7. **Agent marketplace**: Users share/sell their best-performing agent configs
+8. **Telegram bot**: Real-time trade alerts and agent control

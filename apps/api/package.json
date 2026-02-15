@@ -1,0 +1,34 @@
+{
+  "name": "@dex-agents/api",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migration:create": "wrangler d1 migrations create trading-agents",
+    "migration:apply:local": "wrangler d1 migrations apply trading-agents --local",
+    "migration:apply": "wrangler d1 migrations apply trading-agents"
+  },
+  "dependencies": {
+    "@dex-agents/shared": "*",
+    "hono": "^4.4.0",
+    "drizzle-orm": "^0.30.10",
+    "zod": "^3.22.4",
+    "nanoid": "^5.0.7",
+    "technicalindicators": "^3.1.0",
+    "ai": "^3.3.0",
+    "@openrouter/ai-sdk-provider": "^0.0.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240614.0",
+    "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "drizzle-kit": "^0.21.4",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.65.0"
+  }
+}
