@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Env } from './types/env.js';
 import healthRoute from './routes/health.js';
+import pairsRoute from './routes/pairs.js';
 
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
@@ -26,6 +27,7 @@ app.use('*', logger());
 
 // Routes
 app.route('/api/health', healthRoute);
+app.route('/api/pairs', pairsRoute);
 
 // Root catch-all
 app.get('/', (c) =>
