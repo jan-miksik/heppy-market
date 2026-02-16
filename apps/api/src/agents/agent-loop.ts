@@ -25,6 +25,20 @@ function pairToSearchQuery(pairName: string, includeChain = false): string {
   return includeChain ? `${base} base` : base;
 }
 
+/**
+ * Returns true when a pool/pair name contains ALL token symbols from the
+ * configured pair name (case-insensitive).  Prevents CBBTC/WETH results
+ * from being used as WETH/USDC data just because both contain "WETH".
+ *
+ * "WETH / USDC 0.05%" → matches ["WETH","USDC"] ✓
+ * "CBBTC / WETH 0.3%" → does NOT match ["WETH","USDC"] ✗
+ */
+function poolMatchesPair(poolName: string, pairName: string): boolean {
+  const tokens = pairName.split('/').map((t) => t.trim().toUpperCase());
+  const name = poolName.toUpperCase();
+  return tokens.every((t) => name.includes(t));
+}
+
 /** Execute the full agent analysis loop for one tick */
 export async function runAgentLoop(
   agentId: string,
@@ -94,6 +108,7 @@ export async function runAgentLoop(
     const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair, true));
     const pair = searchResults
       .filter((p) => p.chainId === 'base')
+      .filter((p) => poolMatchesPair(`${p.baseToken.symbol}/${p.quoteToken.symbol}`, position.pair))
       .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
     if (!pair) continue;
 
@@ -154,7 +169,9 @@ export async function runAgentLoop(
     try {
       console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${query}"`);
       const pools = await geckoSvc.searchPools(query);
-      const pool = pools[0]; // already sorted by liquidity desc
+      // Filter to pools whose name actually contains both token symbols —
+      // prevents CBBTC/WETH sneaking in as the top result for "WETH USDC".
+      const pool = pools.find((p) => poolMatchesPair(p.name, pairName));
       if (pool && pool.priceUsd > 0) {
         priceUsd = pool.priceUsd;
         pairAddress = pool.address;
@@ -183,6 +200,7 @@ export async function runAgentLoop(
         const results = await dexSvc.searchPairs(dexQuery);
         const basePair = results
           .filter((p) => p.chainId === 'base')
+          .filter((p) => poolMatchesPair(`${p.baseToken.symbol}/${p.quoteToken.symbol}`, pairName))
           .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as DexPair | undefined;
         if (basePair) {
           priceUsd = getPriceUsd(basePair);

@@ -160,6 +160,28 @@ agentsRoute.post('/:id/start', async (c) => {
   return c.json({ ok: true, status: 'running' });
 });
 
+/** POST /api/agents/:id/reset — reset paper balance and clear position history */
+agentsRoute.post('/:id/reset', async (c) => {
+  const id = c.req.param('id');
+  const db = drizzle(c.env.DB);
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const config = JSON.parse(agent.config) as { paperBalance?: number; slippageSimulation?: number };
+
+  const doId = c.env.TRADING_AGENT.idFromName(id);
+  const stub = c.env.TRADING_AGENT.get(doId);
+  await stub.fetch(new Request('http://do/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paperBalance: config.paperBalance, slippageSimulation: config.slippageSimulation }),
+  }));
+
+  await db.update(agents).set({ status: 'stopped', updatedAt: nowIso() }).where(eq(agents.id, id));
+  return c.json({ ok: true, message: 'Agent reset to initial paper balance' });
+});
+
 /** POST /api/agents/:id/stop — stop agent */
 agentsRoute.post('/:id/stop', async (c) => {
   const id = c.req.param('id');

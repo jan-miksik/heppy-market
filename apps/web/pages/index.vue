@@ -50,7 +50,7 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
       <div class="stat-card">
         <div class="stat-label">Win Rate</div>
         <div class="stat-value" :class="(stats?.winRate ?? 0) >= 50 ? 'positive' : 'negative'">
-          {{ stats ? stats.winRate.toFixed(1) + '%' : '—' }}
+          {{ stats?.winRate !== null && stats?.winRate !== undefined ? stats.winRate.toFixed(1) + '%' : '—' }}
         </div>
         <div class="stat-change">across closed trades</div>
       </div>
@@ -60,7 +60,7 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
           class="stat-value"
           :class="(stats?.totalPnlUsd ?? 0) >= 0 ? 'positive' : 'negative'"
         >
-          {{ stats ? (stats.totalPnlUsd >= 0 ? '+' : '') + '$' + stats.totalPnlUsd.toFixed(0) : '—' }}
+          {{ stats?.totalPnlUsd !== null && stats?.totalPnlUsd !== undefined ? (stats.totalPnlUsd >= 0 ? '+' : '') + '$' + stats.totalPnlUsd.toFixed(0) : '—' }}
         </div>
         <div class="stat-change">paper USDC</div>
       </div>
@@ -131,11 +131,11 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
               <div
                 class="mono"
                 style="font-size: 12px;"
-                :class="trade.pnlPct !== undefined ? (trade.pnlPct >= 0 ? 'positive' : 'negative') : 'neutral'"
+                :class="trade.pnlPct !== null && trade.pnlPct !== undefined ? (trade.pnlPct >= 0 ? 'positive' : 'negative') : 'neutral'"
               >
-                {{ trade.pnlPct !== undefined ? (trade.pnlPct >= 0 ? '+' : '') + trade.pnlPct.toFixed(2) + '%' : trade.status }}
+                {{ trade.pnlPct !== null && trade.pnlPct !== undefined ? (trade.pnlPct >= 0 ? '+' : '') + trade.pnlPct.toFixed(2) + '%' : trade.status }}
               </div>
-              <div style="font-size: 11px; color: var(--text-muted);">${{ trade.amountUsd.toLocaleString() }}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${{ (trade.amountUsd !== null && trade.amountUsd !== undefined ? trade.amountUsd : 0).toLocaleString() }}</div>
             </div>
           </div>
           <NuxtLink to="/trades" style="font-size: 12px; color: var(--accent); display: block; margin-top: 8px;">

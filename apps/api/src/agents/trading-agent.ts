@@ -132,6 +132,21 @@ export class TradingAgentDO extends DurableObject<Env> {
       return Response.json({ ok: true });
     }
 
+    if (url.pathname === '/reset' && request.method === 'POST') {
+      // Clear engine state and position history — resets paper balance to initial value.
+      const body = (await request.json().catch(() => ({}))) as {
+        paperBalance?: number;
+        slippageSimulation?: number;
+      };
+      const balance = body.paperBalance ?? 10_000;
+      const slippage = body.slippageSimulation ?? 0.3;
+      const engine = new PaperEngine({ balance, slippage });
+      await this.ctx.storage.put('engineState', engine.serialize());
+      await this.ctx.storage.put('status', 'stopped');
+      await this.ctx.storage.deleteAlarm();
+      return Response.json({ ok: true, balance });
+    }
+
     if (url.pathname === '/stop' && request.method === 'POST') {
       await this.ctx.storage.put('status', 'stopped');
       await this.ctx.storage.deleteAlarm();

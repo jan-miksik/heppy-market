@@ -145,8 +145,14 @@ export function createGeckoTerminalService(cache: KVNamespace) {
           h6:  pc?.h6  !== undefined ? parseFloat(pc.h6)  : undefined,
           h24: pc?.h24 !== undefined ? parseFloat(pc.h24) : undefined,
         },
-        volume24h: attr.volume_usd?.h24 !== undefined ? parseFloat(attr.volume_usd.h24) : undefined,
-        liquidityUsd: attr.reserve_in_usd !== undefined ? parseFloat(attr.reserve_in_usd) : undefined,
+        volume24h:
+          attr.volume_usd?.h24 !== undefined && attr.volume_usd?.h24 !== null
+            ? parseFloat(attr.volume_usd.h24)
+            : undefined,
+        liquidityUsd:
+          attr.reserve_in_usd !== undefined && attr.reserve_in_usd !== null
+            ? parseFloat(attr.reserve_in_usd)
+            : undefined,
       };
     }).filter((p) => p.priceUsd > 0);
   }
