@@ -68,7 +68,7 @@ const PairsResponseSchema = z.object({
 // ─── DexScreener client ───────────────────────────────────────────────────────
 
 const DEXSCREENER_BASE = 'https://api.dexscreener.com/latest/dex';
-const CACHE_TTL_SECONDS = 30;
+const CACHE_TTL_SECONDS = 60; // KV minimum is 60 seconds
 
 export interface DexDataService {
   searchPairs(query: string): Promise<DexPair[]>;
@@ -93,14 +93,20 @@ export function createDexDataService(cache: KVNamespace): DexDataService {
       if (parsed.success) return parsed.data;
     }
 
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-    });
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 8_000);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(tid);
+    }
 
     if (!response.ok) {
-      throw new Error(
-        `DexScreener API error: ${response.status} ${response.statusText}`
-      );
+      throw new Error(`DexScreener ${response.status} ${response.statusText} — ${url}`);
     }
 
     const json = await response.json();

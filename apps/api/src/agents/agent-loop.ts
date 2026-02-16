@@ -16,9 +16,13 @@ import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
 
-/** Build a DexScreener search query from a pair name like "WETH/USDC" → "WETH USDC" */
-function pairToSearchQuery(pairName: string): string {
-  return pairName.replace('/', ' ');
+/** Build a search query from a pair name.
+ *  "WETH/USDC" → "WETH USDC" for GeckoTerminal (network=base scopes it)
+ *  "WETH/USDC" → "WETH USDC base" for DexScreener (global search, needs chain hint)
+ */
+function pairToSearchQuery(pairName: string, includeChain = false): string {
+  const base = pairName.replace('/', ' ');
+  return includeChain ? `${base} base` : base;
 }
 
 /** Execute the full agent analysis loop for one tick */
@@ -87,7 +91,7 @@ export async function runAgentLoop(
   // 3. Check open positions for stop loss / take profit
   for (const position of engine.openPositions) {
     const dexSvc = createDexDataService(env.CACHE);
-    const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair));
+    const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair, true));
     const pair = searchResults
       .filter((p) => p.chainId === 'base')
       .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
@@ -174,8 +178,9 @@ export async function runAgentLoop(
     // ── Fallback: DexScreener ────────────────────────────────────────────────
     if (priceUsd === 0) {
       try {
-        console.log(`[agent-loop] ${agentId}: DexScreener fallback for "${query}"`);
-        const results = await dexSvc.searchPairs(query);
+        const dexQuery = pairToSearchQuery(pairName, true);
+        console.log(`[agent-loop] ${agentId}: DexScreener fallback for "${dexQuery}"`);
+        const results = await dexSvc.searchPairs(dexQuery);
         const basePair = results
           .filter((p) => p.chainId === 'base')
           .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as DexPair | undefined;

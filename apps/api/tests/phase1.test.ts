@@ -61,7 +61,7 @@ describe('Phase 1: Agent Config Validation', async () => {
     if (result.success) {
       expect(result.data.paperBalance).toBe(10000);
       expect(result.data.pairs).toContain('WETH/USDC');
-      expect(result.data.llmModel).toBe('deepseek/deepseek-chat-v3-0324:free');
+      expect(result.data.llmModel).toBe('openai/gpt-oss-20b:free');
     }
   });
 

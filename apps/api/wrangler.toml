@@ -3,6 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2024-06-14"
 compatibility_flags = ["nodejs_compat"]
 
+# Local dev: uses local D1 and KV. Production: use [env.production] and deploy with --env production
 [triggers]
 crons = [
   "*/1 * * * *",
@@ -17,6 +18,7 @@ crons = [
 binding = "DB"
 database_name = "trading-agents"
 database_id = "local-trading-agents"
+migrations_dir = "src/db/migrations"
 
 [[kv_namespaces]]
 binding = "CACHE"
@@ -28,5 +30,26 @@ bindings = [
 ]
 
 [[migrations]]
+tag = "v1"
+new_classes = ["TradingAgentDO"]
+
+# Production: create D1 + KV in dashboard, then set database_id and id below. Deploy with: wrangler deploy --env production
+[env.production]
+name = "dex-trading-agents-api"
+# Replace with your production D1 database_id (from: wrangler d1 list)
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "trading-agents"
+database_id = "<YOUR_PRODUCTION_D1_DATABASE_ID>"
+migrations_dir = "src/db/migrations"
+# Replace with your production KV namespace id (from: wrangler kv namespace list)
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "<YOUR_PRODUCTION_KV_NAMESPACE_ID>"
+[env.production.durable_objects]
+bindings = [
+  { name = "TRADING_AGENT", class_name = "TradingAgentDO" }
+]
+[[env.production.migrations]]
 tag = "v1"
 new_classes = ["TradingAgentDO"]

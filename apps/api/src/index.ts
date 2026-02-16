@@ -15,16 +15,22 @@ export { TradingAgentDO } from './agents/trading-agent.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Middleware
+// Middleware — allow CORS from local dev and Cloudflare Pages; optional CORS_ORIGINS env for production
+const defaultOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'https://dex-trading-agents.pages.dev',
+];
 app.use(
   '*',
   cors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'https://dex-trading-agents.pages.dev',
-    ],
+    origin: (reqOrigin, c) => {
+      const allowed = [...defaultOrigins];
+      const extra = c.env.CORS_ORIGINS?.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (extra?.length) allowed.push(...extra);
+      return allowed.includes(reqOrigin) ? reqOrigin : undefined;
+    },
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     exposeHeaders: ['Content-Length', 'X-RateLimit-Remaining'],
@@ -47,9 +53,10 @@ app.get('/api/models', async (c) => {
   if (!c.env.OPENROUTER_API_KEY) {
     return c.json({
       models: [
-        { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek Chat V3 (free)', context: 65536 },
-        { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (free)', context: 131072 },
-        { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (free)', context: 32768 },
+        { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528 (free)', context: 65536 },
+        { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nvidia Nemotron Nano 30B (free)', context: 131072 },
+        { id: 'qwen/qwen-2.5-72b-instruct:free', name: 'Qwen 2.5 72B (free)', context: 32768 },
+        { id: 'google/gemma-3-27b-it:free', name: 'Google Gemma 3 27B (free)', context: 131072 },
       ],
     });
   }

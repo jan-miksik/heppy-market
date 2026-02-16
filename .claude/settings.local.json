@@ -6,7 +6,17 @@
       "Bash(find:*)",
       "Bash(npx tsc:*)",
       "WebFetch(domain:api.dexscreener.com)",
-      "WebFetch(domain:api.geckoterminal.com)"
+      "WebFetch(domain:api.geckoterminal.com)",
+      "Bash(npm test)",
+      "Bash(curl:*)",
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "WebFetch(*)",
+      "mcp__*",
+      "Bash(python3:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

@@ -10,7 +10,9 @@
     "dev:web": "npm run dev --workspace=apps/web",
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "deploy:api": "npm run deploy --workspace=@dex-agents/api -- --env production",
+    "deploy:web": "npm run build --workspace=@dex-agents/web && cd apps/web && npx wrangler pages deploy dist --project-name=dex-trading-agents"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.42",

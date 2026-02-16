@@ -6,8 +6,8 @@ export const AgentConfigSchema = z.object({
     // Autonomy
     autonomyLevel: z.enum(['full', 'guided', 'strict']),
     // LLM
-    llmModel: z.string().default('deepseek/deepseek-chat-v3-0324:free'),
-    llmFallback: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
+    llmModel: z.string().default('openai/gpt-oss-20b:free'),
+    llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
     maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
     // Trading
     chain: z.literal('base').default('base'),
@@ -56,8 +56,8 @@ export const CreateAgentRequestSchema = z.object({
     name: z.string().min(1).max(50),
     description: z.string().max(500).optional(),
     autonomyLevel: z.enum(['full', 'guided', 'strict']).default('guided'),
-    llmModel: z.string().default('deepseek/deepseek-chat-v3-0324:free'),
-    llmFallback: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
+    llmModel: z.string().default('openai/gpt-oss-20b:free'),
+    llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
     maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
     chain: z.literal('base').default('base'),
     dexes: z

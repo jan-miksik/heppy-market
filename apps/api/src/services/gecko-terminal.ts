@@ -8,15 +8,15 @@
 import { z } from 'zod';
 
 const GECKO_BASE = 'https://api.geckoterminal.com/api/v2';
-const CACHE_TTL = 30; // seconds
+const CACHE_TTL = 60; // seconds (KV minimum is 60)
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const GeckoPoolAttributesSchema = z.object({
   address: z.string(),
   name: z.string(),
-  base_token_price_usd: z.string().optional(),
-  quote_token_price_usd: z.string().optional(),
+  base_token_price_usd: z.string().nullable().optional(),
+  quote_token_price_usd: z.string().nullable().optional(),
   price_change_percentage: z
     .object({
       m5: z.string().optional(),
@@ -34,10 +34,10 @@ const GeckoPoolAttributesSchema = z.object({
       h24: z.string().optional(),
     })
     .optional(),
-  reserve_in_usd: z.string().optional(),
-  pool_created_at: z.string().optional(),
-  fdv_usd: z.string().optional(),
-  market_cap_usd: z.string().optional(),
+  reserve_in_usd: z.string().nullable().optional(),
+  pool_created_at: z.string().nullable().optional(),
+  fdv_usd: z.string().nullable().optional(),
+  market_cap_usd: z.string().nullable().optional(),
   transactions: z
     .object({
       m5: z.object({ buys: z.number(), sells: z.number() }).optional(),
@@ -100,14 +100,23 @@ export function createGeckoTerminalService(cache: KVNamespace) {
       const parsed = schema.safeParse(JSON.parse(hit));
       if (parsed.success) return parsed.data;
     }
-    const resp = await fetch(url, {
-      headers: { Accept: 'application/json;version=20230302' },
-    });
-    if (!resp.ok) throw new Error(`GeckoTerminal ${resp.status}: ${resp.statusText} (${url})`);
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 8_000);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(tid);
+    }
+    if (!resp.ok) throw new Error(`GeckoTerminal ${resp.status} ${resp.statusText} — ${url}`);
     const json = await resp.json();
+    console.log(`[gecko-terminal] raw response keys:`, Object.keys(json as object));
     const parsed = schema.safeParse(json);
     if (!parsed.success) {
-      throw new Error(`GeckoTerminal schema mismatch: ${parsed.error.message.slice(0, 200)}`);
+      throw new Error(`GeckoTerminal schema mismatch: ${parsed.error.message.slice(0, 300)}`);
     }
     await cache.put(cacheKey, JSON.stringify(json), { expirationTtl: CACHE_TTL });
     return parsed.data;

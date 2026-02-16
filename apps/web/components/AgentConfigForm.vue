@@ -17,7 +17,7 @@ const form = reactive<CreateAgentPayload>({
   stopLossPct: 5,
   takeProfitPct: 10,
   maxOpenPositions: 3,
-  llmModel: 'deepseek/deepseek-chat-v3-0324:free',
+  llmModel: 'openai/gpt-oss-20b:free',
 });
 
 const pairsInput = ref('WETH/USDC, cbBTC/WETH, AERO/USDC');
@@ -89,9 +89,13 @@ async function handleSubmit() {
     <div class="form-group">
       <label class="form-label">LLM Model</label>
       <select v-model="form.llmModel" class="form-select">
-        <option value="deepseek/deepseek-chat-v3-0324:free">DeepSeek Chat V3 (free)</option>
+        <option value="openai/gpt-oss-20b:free">OpenAI GPT OSS 20B (free)</option>
+        <option value="openai/gpt-oss-120b:free">OpenAI GPT OSS 120B (free)</option>
+        <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
+        <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen3 Next 80B (free)</option>
+        <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (free)</option>
         <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
-        <option value="mistralai/mistral-7b-instruct:free">Mistral 7B (free)</option>
+        <option value="google/gemma-3-27b-it:free">Google Gemma 3 27B (free)</option>
         <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (paid)</option>
       </select>
     </div>

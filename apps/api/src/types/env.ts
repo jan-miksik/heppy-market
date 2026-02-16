@@ -7,4 +7,6 @@ export interface Env {
   TRADING_AGENT: DurableObjectNamespace<TradingAgentDO>;
   OPENROUTER_API_KEY: string;
   ANTHROPIC_API_KEY?: string;
+  /** Optional comma-separated origins for CORS (e.g. production Pages URL). Merged with default allowlist. */
+  CORS_ORIGINS?: string;
 }

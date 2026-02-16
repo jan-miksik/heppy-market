@@ -1,9 +1,8 @@
 import { generateObject } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { z } from 'zod';
 import { TradeDecisionSchema } from '@dex-agents/shared';
 import type { TradeDecision } from '@dex-agents/shared';
-import { retry, sleep } from '../lib/utils.js';
+import { sleep } from '../lib/utils.js';
 import {
   FULL_AUTONOMY_PROMPT,
   GUIDED_PROMPT,
@@ -73,42 +72,52 @@ export async function getTradeDecision(
   });
 
   const startTime = Date.now();
+
+  // Free models with tool-calling support, tried in order.
+  // The user-configured model and fallback come first, then emergency backups.
+  // Only models that support tool calling (required for generateObject).
+  // Verified against OpenRouter free-tier list on 2026-02-16.
+  const EMERGENCY_FALLBACKS = [
+    'openai/gpt-oss-20b:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
+    'nvidia/nemotron-3-nano-30b-a3b:free',
+    'mistralai/mistral-small-3.1-24b-instruct:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'google/gemma-3-27b-it:free',
+  ];
   const modelsToTry = [
     config.model,
     ...(config.fallbackModel ? [config.fallbackModel] : []),
+    ...EMERGENCY_FALLBACKS.filter(
+      (m) => m !== config.model && m !== config.fallbackModel
+    ),
   ];
 
   let lastError: unknown;
 
   for (const modelId of modelsToTry) {
     try {
-      const result = await retry(
-        async () => {
-          const { object, usage } = await generateObject({
-            model: openrouter(modelId),
-            schema: TradeDecisionSchema,
-            system: systemPrompt,
-            prompt: userPrompt,
-          });
-          return { object, usage };
-        },
-        config.maxRetries ?? 2,
-        1500
-      );
+      const { object, usage } = await generateObject({
+        model: openrouter(modelId),
+        schema: TradeDecisionSchema,
+        system: systemPrompt,
+        prompt: userPrompt,
+        maxRetries: 0, // SDK must not retry — we fall through to the next model on any error
+      });
 
       const latencyMs = Date.now() - startTime;
 
       return {
-        ...result.object,
+        ...object,
         latencyMs,
-        tokensUsed: result.usage?.totalTokens,
+        tokensUsed: usage?.totalTokens,
         modelUsed: modelId,
       };
     } catch (err) {
       lastError = err;
       console.warn(`[llm-router] Model ${modelId} failed:`, err);
-      // Brief pause before trying fallback
-      await sleep(500);
+      // Short pause before next model
+      await sleep(300);
     }
   }
 

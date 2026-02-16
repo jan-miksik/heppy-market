@@ -5,10 +5,27 @@ import {
   createDexDataService,
   filterBaseChainPairs,
 } from '../services/dex-data.js';
+import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { validateQuery } from '../lib/validation.js';
 import { ValidationError } from '../lib/validation.js';
 
 const pairs = new Hono<{ Bindings: Env }>();
+
+/**
+ * GET /api/pairs/gecko-search?q=WETH+USDC
+ * Diagnostic: test GeckoTerminal directly and show raw results.
+ */
+pairs.get('/gecko-search', async (c) => {
+  const q = c.req.query('q');
+  if (!q) return c.json({ error: 'q param required' }, 400);
+  const svc = createGeckoTerminalService(c.env.CACHE);
+  try {
+    const pools = await svc.searchPools(q);
+    return c.json({ query: q, count: pools.length, pools });
+  } catch (err) {
+    return c.json({ error: String(err) }, 502);
+  }
+});
 
 /** GET /api/pairs/search?q=WETH+USDC */
 pairs.get('/search', async (c) => {
