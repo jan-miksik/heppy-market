@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "*",
-      "Bash(code:*)"
+      "Bash(code:*)",
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:api.dexscreener.com)",
+      "WebFetch(domain:api.geckoterminal.com)"
     ]
   }
 }

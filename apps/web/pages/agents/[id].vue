@@ -59,6 +59,7 @@ const isAnalyzing = ref(false);
 const activeTab = ref<'trades' | 'decisions' | 'performance'>('trades');
 const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
+const analyzeError = ref<string | null>(null);
 
 // Countdown timer
 const now = ref(Date.now());
@@ -184,6 +185,7 @@ async function handleStop() {
 }
 async function handleAnalyze() {
   isAnalyzing.value = true;
+  analyzeError.value = null;
   try {
     await request(`/api/agents/${id.value}/analyze`, { method: 'POST' });
     // Refresh data after a short delay for the loop to write to D1
@@ -195,6 +197,12 @@ async function handleAnalyze() {
     trades.value = t;
     decisions.value = d.decisions;
     await refreshDoStatus();
+  } catch (err: unknown) {
+    const msg =
+      (err as { data?: { error?: string }; message?: string })?.data?.error ??
+      (err as { message?: string })?.message ??
+      'Analysis failed — check that OPENROUTER_API_KEY is configured.';
+    analyzeError.value = msg;
   } finally {
     isAnalyzing.value = false;
   }
@@ -270,10 +278,10 @@ function timeAgo(iso: string): string {
             class="btn btn-ghost btn-sm"
             :disabled="isAnalyzing"
             @click="handleAnalyze"
-            title="Run one analysis cycle immediately"
+            title="Run one analysis cycle immediately — fetches market data, computes indicators, calls LLM for decision"
           >
             <span v-if="isAnalyzing" class="spinner" style="width: 14px; height: 14px; margin-right: 4px;" />
-            {{ isAnalyzing ? 'Analyzing…' : '⚡ Run Analysis' }}
+            {{ isAnalyzing ? 'Fetching data & reasoning…' : '⚡ Run Analysis' }}
           </button>
           <button v-if="agent.status !== 'running'" class="btn btn-success" @click="handleStart">
             ▶ Start
@@ -281,6 +289,15 @@ function timeAgo(iso: string): string {
           <button v-else class="btn btn-ghost" @click="handleStop">■ Stop</button>
           <button class="btn btn-danger btn-sm" @click="handleDelete">Delete</button>
         </div>
+      </div>
+
+      <!-- Analysis error banner -->
+      <div
+        v-if="analyzeError"
+        style="background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #f87171;"
+      >
+        <span>⚠ {{ analyzeError }}</span>
+        <button style="background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; line-height: 1; padding: 0;" @click="analyzeError = null">✕</button>
       </div>
 
       <!-- Stats row -->
@@ -340,21 +357,23 @@ function timeAgo(iso: string): string {
                   · {{ timeAgo(trade.openedAt) }}
                 </div>
               </div>
-              <!-- Unrealized P&L -->
+              <!-- Unrealized P&L (v-for workaround: v-if "as" not recognized by vue-tsc) -->
               <div style="text-align: right;">
-                <template v-if="getUnrealizedPnl(trade) as pnl">
-                  <div
-                    class="mono"
-                    style="font-size: 16px; font-weight: 600;"
-                    :class="(pnl as any).pnlPct >= 0 ? 'positive' : 'negative'"
-                  >
-                    {{ (pnl as any).pnlPct >= 0 ? '+' : '' }}{{ (pnl as any).pnlPct.toFixed(2) }}%
-                  </div>
-                  <div style="font-size: 11px; color: var(--text-muted);">
-                    now ${{ formatPrice((pnl as any).currentPrice) }}
-                  </div>
+                <template v-for="pnl in [getUnrealizedPnl(trade)]" :key="trade.id + '-pnl'">
+                  <template v-if="pnl">
+                    <div
+                      class="mono"
+                      style="font-size: 16px; font-weight: 600;"
+                      :class="pnl.pnlPct >= 0 ? 'positive' : 'negative'"
+                    >
+                      {{ pnl.pnlPct >= 0 ? '+' : '' }}{{ pnl.pnlPct.toFixed(2) }}%
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted);">
+                      now ${{ formatPrice(pnl.currentPrice) }}
+                    </div>
+                  </template>
+                  <div v-else style="font-size: 12px; color: var(--text-muted);">P&L: —</div>
                 </template>
-                <div v-else style="font-size: 12px; color: var(--text-muted);">P&L: —</div>
               </div>
             </div>
 
@@ -493,7 +512,7 @@ function timeAgo(iso: string): string {
             <tbody>
               <tr v-if="decisions.length === 0">
                 <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">
-                  No decisions yet — start the agent or click ⚡ Run Analysis
+                  No decisions yet — click <strong style="color: var(--text-primary);">⚡ Run Analysis</strong> to fetch market data, compute indicators, and get the LLM's reasoning
                 </td>
               </tr>
               <template v-for="dec in decisions" :key="dec.id">

@@ -263,9 +263,32 @@ agentsRoute.post('/:id/analyze', async (c) => {
   const [agent] = await db.select().from(agents).where(eq(agents.id, id));
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
+  if (!c.env.OPENROUTER_API_KEY) {
+    return c.json({ error: 'OPENROUTER_API_KEY is not configured. Add it to .dev.vars (local) or Cloudflare secrets (production).' }, 503);
+  }
+
+  const agentConfig = JSON.parse(agent.config) as {
+    paperBalance: number;
+    slippageSimulation: number;
+    analysisInterval: string;
+  };
+
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
-  const res = await stub.fetch(new Request('http://do/analyze', { method: 'POST' }));
+
+  // Pass agent config so the DO can lazy-init if it hasn't been started yet
+  const res = await stub.fetch(
+    new Request('http://do/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: id,
+        paperBalance: agentConfig.paperBalance,
+        slippageSimulation: agentConfig.slippageSimulation,
+        analysisInterval: agentConfig.analysisInterval,
+      }),
+    })
+  );
 
   if (!res.ok) {
     const body = await res.json<{ error?: string }>();

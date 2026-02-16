@@ -8,31 +8,17 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import { agents, trades, agentDecisions } from '../db/schema.js';
-import { createDexDataService, getPriceUsd, type DexPair } from '../services/dex-data.js';
+import { createDexDataService, getPriceUsd } from '../services/dex-data.js';
+import type { DexPair } from '../services/dex-data.js';
+import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { computeIndicators } from '../services/indicators.js';
 import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
 
-/** Approximate price series from DexScreener priceChange data */
-function approximatePriceSeries(pair: DexPair, points: number = 35): number[] {
-  const currentPrice = getPriceUsd(pair);
-  if (currentPrice === 0) return [];
-
-  const change24h = (pair.priceChange?.h24 ?? 0) / 100;
-
-  // Linearly interpolate a price series from 24h ago to now
-  const prices: number[] = [];
-  const startPrice = currentPrice / (1 + change24h);
-  for (let i = 0; i < points; i++) {
-    const t = i / (points - 1);
-    // Add some sinusoidal variation for realistic-looking series
-    const trend = startPrice + (currentPrice - startPrice) * t;
-    const noise = (Math.sin(i * 1.7) * 0.005 + Math.cos(i * 0.9) * 0.003) * trend;
-    prices.push(trend + noise);
-  }
-  prices[prices.length - 1] = currentPrice;
-  return prices;
+/** Build a DexScreener search query from a pair name like "WETH/USDC" → "WETH USDC" */
+function pairToSearchQuery(pairName: string): string {
+  return pairName.replace('/', ' ');
 }
 
 /** Execute the full agent analysis loop for one tick */
@@ -40,14 +26,20 @@ export async function runAgentLoop(
   agentId: string,
   engine: PaperEngine,
   env: Env,
-  ctx: DurableObjectState
+  ctx: DurableObjectState,
+  options?: { forceRun?: boolean }
 ): Promise<void> {
   const db = drizzle(env.DB);
 
   // 1. Load agent config
   const [agentRow] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agentRow || agentRow.status !== 'running') {
-    console.log(`[agent-loop] Agent ${agentId} not running, skipping tick`);
+  if (!agentRow) {
+    console.log(`[agent-loop] Agent ${agentId} not found`);
+    return;
+  }
+  // forceRun bypasses the status check (used for manual "Run Analysis" on stopped agents)
+  if (!options?.forceRun && agentRow.status !== 'running') {
+    console.log(`[agent-loop] Agent ${agentId} not running (status=${agentRow.status}), skipping tick`);
     return;
   }
 
@@ -95,8 +87,10 @@ export async function runAgentLoop(
   // 3. Check open positions for stop loss / take profit
   for (const position of engine.openPositions) {
     const dexSvc = createDexDataService(env.CACHE);
-    const searchResults = await dexSvc.searchPairs(`${position.pair} base`);
-    const pair = searchResults.find((p) => p.chainId === 'base');
+    const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair));
+    const pair = searchResults
+      .filter((p) => p.chainId === 'base')
+      .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0];
     if (!pair) continue;
 
     const currentPrice = getPriceUsd(pair);
@@ -124,8 +118,13 @@ export async function runAgentLoop(
     }
   }
 
-  // 4. Fetch market data for configured pairs
+  console.log(`[agent-loop] ${agentId}: Starting analysis (${config.pairs.length} pairs, model=${config.llmModel})`);
+
+  // 4. Fetch market data — GeckoTerminal primary (network-scoped + real OHLCV),
+  //    DexScreener fallback (global search, filter to Base).
+  const geckoSvc = createGeckoTerminalService(env.CACHE);
   const dexSvc = createDexDataService(env.CACHE);
+
   const marketData: Array<{
     pair: string;
     pairAddress: string;
@@ -138,24 +137,84 @@ export async function runAgentLoop(
   }> = [];
 
   for (const pairName of config.pairs.slice(0, 5)) {
-    // Limit to 5 pairs max
+    const query = pairToSearchQuery(pairName);
+    let priceUsd = 0;
+    let pairAddress = '';
+
+    let priceChange: Record<string, number | undefined> = {};
+    let volume24h: number | undefined;
+    let liquidity: number | undefined;
+    let prices: number[] = [];
+
+    // ── Try GeckoTerminal first ──────────────────────────────────────────────
     try {
-      const results = await dexSvc.searchPairs(`${pairName} base`);
-      const basePair = results.find((p) => p.chainId === 'base');
-      if (!basePair) continue;
+      console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${query}"`);
+      const pools = await geckoSvc.searchPools(query);
+      const pool = pools[0]; // already sorted by liquidity desc
+      if (pool && pool.priceUsd > 0) {
+        priceUsd = pool.priceUsd;
+        pairAddress = pool.address;
+        priceChange = pool.priceChange;
+        volume24h = pool.volume24h;
+        liquidity = pool.liquidityUsd;
+        console.log(`[agent-loop] ${agentId}: GeckoTerminal found ${pool.name} @ $${priceUsd} liq=$${(liquidity ?? 0).toLocaleString()}`);
 
-      const priceUsd = getPriceUsd(basePair);
-      const prices = approximatePriceSeries(basePair);
-      const indicators = computeIndicators(prices);
+        // Fetch real OHLCV price series (48 hourly candles)
+        try {
+          prices = await geckoSvc.getPoolPriceSeries(pool.address, 48);
+          console.log(`[agent-loop] ${agentId}: Got ${prices.length} real OHLCV candles`);
+        } catch (ohlcvErr) {
+          console.warn(`[agent-loop] ${agentId}: OHLCV unavailable — indicators will be skipped:`, ohlcvErr);
+        }
+      }
+    } catch (geckoErr) {
+      console.warn(`[agent-loop] ${agentId}: GeckoTerminal failed for "${query}":`, geckoErr);
+    }
 
-      // Summarize indicators for LLM prompt
+    // ── Fallback: DexScreener ────────────────────────────────────────────────
+    if (priceUsd === 0) {
+      try {
+        console.log(`[agent-loop] ${agentId}: DexScreener fallback for "${query}"`);
+        const results = await dexSvc.searchPairs(query);
+        const basePair = results
+          .filter((p) => p.chainId === 'base')
+          .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as DexPair | undefined;
+        if (basePair) {
+          priceUsd = getPriceUsd(basePair);
+          pairAddress = basePair.pairAddress;
+          priceChange = {
+            m5: basePair.priceChange?.m5,
+            h1: basePair.priceChange?.h1,
+            h6: basePair.priceChange?.h6,
+            h24: basePair.priceChange?.h24,
+          };
+          volume24h = basePair.volume?.h24;
+          liquidity = basePair.liquidity?.usd;
+          console.log(`[agent-loop] ${agentId}: DexScreener found @ $${priceUsd}`);
+        } else {
+          console.warn(`[agent-loop] ${agentId}: DexScreener also found no Base pair for "${query}"`);
+        }
+      } catch (dexErr) {
+        console.warn(`[agent-loop] ${agentId}: DexScreener failed for "${query}":`, dexErr);
+      }
+    }
+
+    if (priceUsd === 0) continue; // both providers failed for this pair
+
+    // ── Compute indicators (only when we have enough real OHLCV candles) ──────
+    // RSI needs 14 + 1 points, MACD needs 26 + 9 + 1 = 36 points minimum.
+    // If we don't have real data we skip indicators entirely rather than use fabricated prices.
+    const indicators = prices.length >= 14 ? computeIndicators(prices) : null;
+
+    // Summarize indicators for LLM prompt (only if real OHLCV was available)
+    const indicatorSummary: Record<string, unknown> = {};
+    if (indicators) {
       const lastRsi = indicators.rsi?.at(-1);
       const lastEma9 = indicators.ema9?.at(-1);
       const lastEma21 = indicators.ema21?.at(-1);
       const lastMacd = indicators.macd?.at(-1);
       const lastBb = indicators.bollingerBands?.at(-1);
 
-      const indicatorSummary: Record<string, unknown> = {};
       if (lastRsi !== undefined) indicatorSummary.rsi = lastRsi.toFixed(2);
       if (lastEma9 !== undefined && lastEma21 !== undefined) {
         indicatorSummary.ema9 = lastEma9.toFixed(4);
@@ -174,31 +233,39 @@ export async function runAgentLoop(
             ? ((priceUsd - lastBb.lower) / bandWidth).toFixed(3)
             : 'N/A';
       }
-
-      marketData.push({
-        pair: pairName,
-        pairAddress: basePair.pairAddress,
-        dexScreenerUrl: `https://dexscreener.com/base/${basePair.pairAddress}`,
-        priceUsd,
-        priceChange: {
-          m5: basePair.priceChange?.m5,
-          h1: basePair.priceChange?.h1,
-          h6: basePair.priceChange?.h6,
-          h24: basePair.priceChange?.h24,
-        },
-        volume24h: basePair.volume?.h24,
-        liquidity: basePair.liquidity?.usd,
-        indicators: indicatorSummary,
-      });
-    } catch (err) {
-      console.warn(`[agent-loop] ${agentId}: Failed to fetch ${pairName}:`, err);
+    } else {
+      indicatorSummary.note = 'No OHLCV data available — indicators skipped';
     }
+
+    marketData.push({
+      pair: pairName,
+      pairAddress,
+      dexScreenerUrl: `https://dexscreener.com/base/${pairAddress}`,
+      priceUsd,
+      priceChange,
+      volume24h,
+      liquidity,
+      indicators: indicatorSummary,
+    });
   }
 
   if (marketData.length === 0) {
-    console.warn(`[agent-loop] ${agentId}: No market data available, skipping`);
+    console.warn(`[agent-loop] ${agentId}: No market data available — DexScreener returned no Base chain pairs for configured pairs: ${config.pairs.join(', ')}`);
+    await db.insert(agentDecisions).values({
+      id: generateId('dec'),
+      agentId,
+      decision: 'hold',
+      confidence: 0,
+      reasoning: `No market data available from GeckoTerminal or DexScreener for pairs: ${config.pairs.join(', ')}. Check that the pair names are correct (e.g. "WETH/USDC", "AERO/USDC") and that the internet is reachable from the Worker.`,
+      llmModel: config.llmModel,
+      llmLatencyMs: 0,
+      marketDataSnapshot: '[]',
+      createdAt: nowIso(),
+    });
     return;
   }
+
+  console.log(`[agent-loop] ${agentId}: Got market data for ${marketData.map((m) => m.pair).join(', ')}`);
 
   // 5. Get recent decisions for context
   const recentDecisions = await db
@@ -213,6 +280,22 @@ export async function runAgentLoop(
     .limit(10);
 
   // 6. Call LLM for trade decision
+  if (!env.OPENROUTER_API_KEY) {
+    console.error(`[agent-loop] ${agentId}: OPENROUTER_API_KEY is not set. Cannot call LLM. Add it to .dev.vars (local) or Cloudflare secrets (production).`);
+    await db.insert(agentDecisions).values({
+      id: generateId('dec'),
+      agentId,
+      decision: 'hold',
+      confidence: 0,
+      reasoning: 'OPENROUTER_API_KEY is not configured. Please set it in .dev.vars (local) or Cloudflare secrets (production) — get a free key at openrouter.ai',
+      llmModel: config.llmModel,
+      llmLatencyMs: 0,
+      marketDataSnapshot: JSON.stringify(marketData),
+      createdAt: nowIso(),
+    });
+    return;
+  }
+
   let decision: Awaited<ReturnType<typeof getTradeDecision>>;
   try {
     decision = await getTradeDecision(

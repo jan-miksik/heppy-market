@@ -80,9 +80,30 @@ export class TradingAgentDO extends DurableObject<Env> {
     }
 
     if (url.pathname === '/analyze' && request.method === 'POST') {
-      // Run one immediate analysis cycle regardless of status (for manual trigger / testing)
-      const agentId = await this.ctx.storage.get<string>('agentId');
-      if (!agentId) return Response.json({ error: 'Agent not initialized' }, { status: 400 });
+      // Run one immediate analysis cycle (manual trigger / cron fallback).
+      // Accept init params in body so the DO can be lazily initialized without /start.
+      const body = (await request.json().catch(() => ({}))) as {
+        agentId?: string;
+        paperBalance?: number;
+        slippageSimulation?: number;
+        analysisInterval?: string;
+      };
+
+      let agentId = await this.ctx.storage.get<string>('agentId');
+
+      // Lazy-initialize engine on first analyze (no alarm scheduled)
+      if (!agentId && body.agentId) {
+        agentId = body.agentId;
+        const balance = body.paperBalance ?? 10_000;
+        const slippage = body.slippageSimulation ?? 0.3;
+        const engine = new PaperEngine({ balance, slippage });
+        await this.ctx.storage.put('agentId', agentId);
+        await this.ctx.storage.put('engineState', engine.serialize());
+        await this.ctx.storage.put('analysisInterval', body.analysisInterval ?? '1h');
+        // Don't change status or schedule alarm — that only happens via /start
+      }
+
+      if (!agentId) return Response.json({ error: 'Agent not initialized. Start the agent first.' }, { status: 400 });
 
       const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
       const engine = engineState
@@ -90,7 +111,8 @@ export class TradingAgentDO extends DurableObject<Env> {
         : new PaperEngine({ balance: 10_000, slippage: 0.3 });
 
       try {
-        await runAgentLoop(agentId, engine, this.env, this.ctx);
+        // forceRun=true allows analysis even if agent is stopped/paused in DB
+        await runAgentLoop(agentId, engine, this.env, this.ctx, { forceRun: true });
       } catch (err) {
         console.error(`[TradingAgentDO] manual analyze error for ${agentId}:`, err);
         return Response.json({ error: String(err) }, { status: 500 });

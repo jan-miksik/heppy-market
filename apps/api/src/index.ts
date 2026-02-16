@@ -137,15 +137,30 @@ const scheduled: ExportedHandlerScheduledHandler<Env> = async (
   if (!targetInterval) return;
 
   for (const agent of runningAgents) {
-    const config = JSON.parse(agent.config) as { analysisInterval: string };
+    const config = JSON.parse(agent.config) as {
+      analysisInterval: string;
+      paperBalance: number;
+      slippageSimulation: number;
+    };
     if (config.analysisInterval !== targetInterval) continue;
 
-    // Ensure the DO has a live alarm (re-set if needed)
     const doId = env.TRADING_AGENT.idFromName(agent.id);
     const stub = env.TRADING_AGENT.get(doId);
+
+    // Trigger analysis directly via POST /analyze (also re-initializes DO if alarm was lost)
     ctx.waitUntil(
-      stub.fetch(new Request('http://do/status')).catch((e) =>
-        console.warn(`[cron] Failed to ping agent ${agent.id}:`, e)
+      stub.fetch(
+        new Request('http://do/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId: agent.id,
+            paperBalance: config.paperBalance,
+            slippageSimulation: config.slippageSimulation,
+          }),
+        })
+      ).catch((e) =>
+        console.warn(`[cron] Failed to trigger analysis for agent ${agent.id}:`, e)
       )
     );
   }

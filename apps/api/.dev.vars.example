@@ -1,0 +1,8 @@
+# Copy this file to .dev.vars for local development with wrangler dev
+# .dev.vars is gitignored — never commit your real keys
+
+# Required: get a free key at https://openrouter.ai → Dashboard → API Keys
+OPENROUTER_API_KEY=sk-or-v1-xxxxx
+
+# Optional: only needed if you want to use Claude models (paid)
+# ANTHROPIC_API_KEY=sk-ant-xxxxx
