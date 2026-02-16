@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
-import { trades, agents } from '../db/schema.js';
+import { trades } from '../db/schema.js';
 import { validateQuery } from '../lib/validation.js';
 
 const tradesRoute = new Hono<{ Bindings: Env }>();

@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
@@ -254,6 +253,42 @@ agentsRoute.get('/:id/performance', async (c) => {
     .orderBy(desc(performanceSnapshots.snapshotAt));
 
   return c.json({ snapshots });
+});
+
+/** POST /api/agents/:id/analyze — trigger one immediate analysis cycle */
+agentsRoute.post('/:id/analyze', async (c) => {
+  const id = c.req.param('id');
+  const db = drizzle(c.env.DB);
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const doId = c.env.TRADING_AGENT.idFromName(id);
+  const stub = c.env.TRADING_AGENT.get(doId);
+  const res = await stub.fetch(new Request('http://do/analyze', { method: 'POST' }));
+
+  if (!res.ok) {
+    const body = await res.json<{ error?: string }>();
+    return c.json({ error: body.error ?? 'Analysis failed' }, 500);
+  }
+
+  return c.json({ ok: true });
+});
+
+/** GET /api/agents/:id/status — get live DO status (nextAlarmAt, balance) */
+agentsRoute.get('/:id/status', async (c) => {
+  const id = c.req.param('id');
+  const db = drizzle(c.env.DB);
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const doId = c.env.TRADING_AGENT.idFromName(id);
+  const stub = c.env.TRADING_AGENT.get(doId);
+  const res = await stub.fetch(new Request('http://do/status'));
+  const doStatus = await res.json<{ agentId: string | null; status: string; balance: number | null; nextAlarmAt: number | null }>();
+
+  return c.json(doStatus);
 });
 
 // Error handler

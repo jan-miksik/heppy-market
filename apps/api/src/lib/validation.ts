@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import type { Context } from 'hono';
 
+/** Convert Zod flattened field errors to Record<string, string[]> (filter undefined) */
+function toFieldErrors(
+  raw: Record<string, string[] | undefined>
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (Array.isArray(v) && v.length > 0) result[k] = v;
+  }
+  return result;
+}
+
 /** Validate request body with a Zod schema, returning parsed data or throwing HTTP 400 */
 export async function validateBody<T extends z.ZodTypeAny>(
   c: Context,
@@ -16,7 +27,7 @@ export async function validateBody<T extends z.ZodTypeAny>(
   if (!result.success) {
     throw new ValidationError(
       'Validation failed',
-      result.error.flatten().fieldErrors
+      toFieldErrors(result.error.flatten().fieldErrors)
     );
   }
   return result.data;
@@ -34,7 +45,7 @@ export function validateQuery<T extends z.ZodTypeAny>(
   if (!result.success) {
     throw new ValidationError(
       'Invalid query parameters',
-      result.error.flatten().fieldErrors
+      toFieldErrors(result.error.flatten().fieldErrors)
     );
   }
   return result.data;

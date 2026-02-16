@@ -9,30 +9,16 @@ import { eq, desc } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import { agents, trades, agentDecisions } from '../db/schema.js';
 import { createDexDataService, getPriceUsd, type DexPair } from '../services/dex-data.js';
-import { computeIndicators, evaluateSignals, combineSignals } from '../services/indicators.js';
+import { computeIndicators } from '../services/indicators.js';
 import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
-
-/** Interval string → milliseconds */
-function intervalToMs(interval: string): number {
-  switch (interval) {
-    case '1m':  return 60_000;
-    case '5m':  return 5 * 60_000;
-    case '15m': return 15 * 60_000;
-    case '1h':  return 60 * 60_000;
-    case '4h':  return 4 * 60 * 60_000;
-    case '1d':  return 24 * 60 * 60_000;
-    default:    return 60 * 60_000; // default 1h
-  }
-}
 
 /** Approximate price series from DexScreener priceChange data */
 function approximatePriceSeries(pair: DexPair, points: number = 35): number[] {
   const currentPrice = getPriceUsd(pair);
   if (currentPrice === 0) return [];
 
-  const change1h = (pair.priceChange?.h1 ?? 0) / 100;
   const change24h = (pair.priceChange?.h24 ?? 0) / 100;
 
   // Linearly interpolate a price series from 24h ago to now
@@ -142,6 +128,8 @@ export async function runAgentLoop(
   const dexSvc = createDexDataService(env.CACHE);
   const marketData: Array<{
     pair: string;
+    pairAddress: string;
+    dexScreenerUrl: string;
     priceUsd: number;
     priceChange: Record<string, number | undefined>;
     volume24h?: number;
@@ -189,6 +177,8 @@ export async function runAgentLoop(
 
       marketData.push({
         pair: pairName,
+        pairAddress: basePair.pairAddress,
+        dexScreenerUrl: `https://dexscreener.com/base/${basePair.pairAddress}`,
         priceUsd,
         priceChange: {
           m5: basePair.priceChange?.m5,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs';
+import type { TooltipItem } from 'chart.js';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -76,8 +77,9 @@ const chartOptions = {
       titleColor: '#94a3b8',
       bodyColor: '#e2e8f0',
       callbacks: {
-        label: (ctx: { parsed: { y: number } }) => {
+        label: (ctx: TooltipItem<'line'>) => {
           const v = ctx.parsed.y;
+          if (v == null) return '';
           return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
         },
       },

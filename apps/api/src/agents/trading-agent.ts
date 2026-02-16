@@ -1,8 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
-import { agents, performanceSnapshots } from '../db/schema.js';
+import { performanceSnapshots } from '../db/schema.js';
 import { PaperEngine } from '../services/paper-engine.js';
 import { runAgentLoop } from './agent-loop.js';
 import { generateId, nowIso } from '../lib/utils.js';
@@ -44,7 +43,8 @@ export class TradingAgentDO extends DurableObject<Env> {
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
       const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
       const balance = engineState?.balance ?? null;
-      return Response.json({ agentId, status, balance });
+      const nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
+      return Response.json({ agentId, status, balance, nextAlarmAt });
     }
 
     if (url.pathname === '/start' && request.method === 'POST') {
@@ -72,9 +72,42 @@ export class TradingAgentDO extends DurableObject<Env> {
       // Schedule first tick
       const intervalMs = intervalToMs(body.analysisInterval ?? '1h');
       const firstTick = Math.min(5_000, intervalMs); // first tick in 5s (for quick testing)
-      await this.ctx.storage.setAlarm(Date.now() + firstTick);
+      const nextAlarmAt = Date.now() + firstTick;
+      await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+      await this.ctx.storage.setAlarm(nextAlarmAt);
 
       return Response.json({ ok: true, status: 'running' });
+    }
+
+    if (url.pathname === '/analyze' && request.method === 'POST') {
+      // Run one immediate analysis cycle regardless of status (for manual trigger / testing)
+      const agentId = await this.ctx.storage.get<string>('agentId');
+      if (!agentId) return Response.json({ error: 'Agent not initialized' }, { status: 400 });
+
+      const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+      const engine = engineState
+        ? PaperEngine.deserialize(engineState)
+        : new PaperEngine({ balance: 10_000, slippage: 0.3 });
+
+      try {
+        await runAgentLoop(agentId, engine, this.env, this.ctx);
+      } catch (err) {
+        console.error(`[TradingAgentDO] manual analyze error for ${agentId}:`, err);
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+
+      await this.ctx.storage.put('engineState', engine.serialize());
+
+      // If agent is running, reschedule the alarm from now (reset the timer)
+      const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+      if (status === 'running') {
+        const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
+        const nextAlarmAt = Date.now() + intervalToMs(interval);
+        await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+        await this.ctx.storage.setAlarm(nextAlarmAt);
+      }
+
+      return Response.json({ ok: true });
     }
 
     if (url.pathname === '/stop' && request.method === 'POST') {
@@ -130,7 +163,9 @@ export class TradingAgentDO extends DurableObject<Env> {
 
     // Reschedule next alarm
     const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
-    await this.ctx.storage.setAlarm(Date.now() + intervalToMs(interval));
+    const nextAlarmAt = Date.now() + intervalToMs(interval);
+    await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+    await this.ctx.storage.setAlarm(nextAlarmAt);
   }
 
   private async savePerformanceSnapshot(
