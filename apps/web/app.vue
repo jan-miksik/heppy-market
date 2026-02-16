@@ -9,7 +9,7 @@ useHead({
     <nav class="navbar">
       <NuxtLink to="/" class="navbar-brand">
         <span class="dot" />
-        DEX Trading Agents
+        Heppy Market
       </NuxtLink>
       <div class="navbar-nav">
         <NuxtLink to="/">Dashboard</NuxtLink>

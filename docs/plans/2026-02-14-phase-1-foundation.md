@@ -13,6 +13,7 @@
 ### Task 1: Install Wrangler globally + initialize git
 
 **Files:**
+
 - N/A (shell operations)
 
 **Step 1: Install wrangler globally**
@@ -21,6 +22,7 @@
 npm install -g wrangler
 wrangler --version
 ```
+
 Expected: version printed (3.x)
 
 **Step 2: Initialize git repo**
@@ -37,6 +39,7 @@ git commit -m "chore: initial commit with spec and plan"
 ### Task 2: Create root Turborepo structure
 
 **Files:**
+
 - Create: `package.json`
 - Create: `turbo.json`
 - Create: `.gitignore`
@@ -133,6 +136,7 @@ git commit -m "chore: initialize turborepo monorepo root"
 ### Task 3: Create apps/api structure and install dependencies
 
 **Files:**
+
 - Create: `apps/api/package.json`
 - Create: `apps/api/tsconfig.json`
 - Create: `apps/api/drizzle.config.ts`
@@ -194,12 +198,12 @@ mkdir -p apps/web
 **Step 4: Write apps/api/drizzle.config.ts**
 
 ```typescript
-import type { Config } from 'drizzle-kit';
+import type { Config } from "drizzle-kit";
 
 export default {
-  schema: './src/db/schema.ts',
-  out: './src/db/migrations',
-  dialect: 'sqlite',
+  schema: "./src/db/schema.ts",
+  out: "./src/db/migrations",
+  dialect: "sqlite",
 } satisfies Config;
 ```
 
@@ -217,6 +221,7 @@ Expected: hono, drizzle-orm, zod, nanoid, wrangler installed in apps/api.
 ### Task 4: Write wrangler.toml
 
 **Files:**
+
 - Create: `apps/api/wrangler.toml`
 
 **Step 1: Create wrangler.toml — NOTE: database_id is set to empty string for local dev; wrangler will prompt to create or use local**
@@ -265,6 +270,7 @@ ENVIRONMENT = "development"
 **Step 2: Create .dev.vars template**
 
 Create `apps/api/.dev.vars`:
+
 ```
 OPENROUTER_API_KEY=sk-or-v1-replace-me
 ```
@@ -274,68 +280,77 @@ OPENROUTER_API_KEY=sk-or-v1-replace-me
 ### Task 5: Write Drizzle schema
 
 **Files:**
+
 - Create: `apps/api/src/db/schema.ts`
 
 **Step 1: Write schema.ts**
 
 ```typescript
-import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
 
-export const agents = sqliteTable('agents', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  status: text('status', { enum: ['running', 'stopped', 'paused'] }).notNull().default('stopped'),
-  autonomyLevel: text('autonomy_level', { enum: ['full', 'guided', 'strict'] }).notNull(),
-  config: text('config').notNull(), // JSON blob
-  llmModel: text('llm_model').notNull(),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+export const agents = sqliteTable("agents", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status", { enum: ["running", "stopped", "paused"] })
+    .notNull()
+    .default("stopped"),
+  autonomyLevel: text("autonomy_level", {
+    enum: ["full", "guided", "strict"],
+  }).notNull(),
+  config: text("config").notNull(), // JSON blob
+  llmModel: text("llm_model").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
-export const trades = sqliteTable('trades', {
-  id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull().references(() => agents.id),
-  pair: text('pair').notNull(),
-  dex: text('dex', { enum: ['aerodrome', 'uniswap-v3'] }).notNull(),
-  side: text('side', { enum: ['buy', 'sell'] }).notNull(),
-  entryPrice: real('entry_price').notNull(),
-  exitPrice: real('exit_price'),
-  amountUsd: real('amount_usd').notNull(),
-  pnlPct: real('pnl_pct'),
-  pnlUsd: real('pnl_usd'),
-  confidenceBefore: real('confidence_before').notNull(),
-  confidenceAfter: real('confidence_after'),
-  reasoning: text('reasoning').notNull(),
-  strategyUsed: text('strategy_used').notNull(),
-  slippageSimulated: real('slippage_simulated').notNull().default(0.003),
-  status: text('status', { enum: ['open', 'closed', 'stopped_out'] }).notNull(),
-  openedAt: text('opened_at').notNull(),
-  closedAt: text('closed_at'),
+export const trades = sqliteTable("trades", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id),
+  pair: text("pair").notNull(),
+  dex: text("dex", { enum: ["aerodrome", "uniswap-v3"] }).notNull(),
+  side: text("side", { enum: ["buy", "sell"] }).notNull(),
+  entryPrice: real("entry_price").notNull(),
+  exitPrice: real("exit_price"),
+  amountUsd: real("amount_usd").notNull(),
+  pnlPct: real("pnl_pct"),
+  pnlUsd: real("pnl_usd"),
+  confidenceBefore: real("confidence_before").notNull(),
+  confidenceAfter: real("confidence_after"),
+  reasoning: text("reasoning").notNull(),
+  strategyUsed: text("strategy_used").notNull(),
+  slippageSimulated: real("slippage_simulated").notNull().default(0.003),
+  status: text("status", { enum: ["open", "closed", "stopped_out"] }).notNull(),
+  openedAt: text("opened_at").notNull(),
+  closedAt: text("closed_at"),
 });
 
-export const agentDecisions = sqliteTable('agent_decisions', {
-  id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull(),
-  decision: text('decision', { enum: ['buy', 'sell', 'hold', 'close'] }).notNull(),
-  confidence: real('confidence').notNull(),
-  reasoning: text('reasoning').notNull(),
-  llmModel: text('llm_model').notNull(),
-  llmLatencyMs: integer('llm_latency_ms').notNull(),
-  llmTokensUsed: integer('llm_tokens_used'),
-  marketDataSnapshot: text('market_data_snapshot').notNull(), // JSON
-  createdAt: text('created_at').notNull(),
+export const agentDecisions = sqliteTable("agent_decisions", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  decision: text("decision", {
+    enum: ["buy", "sell", "hold", "close"],
+  }).notNull(),
+  confidence: real("confidence").notNull(),
+  reasoning: text("reasoning").notNull(),
+  llmModel: text("llm_model").notNull(),
+  llmLatencyMs: integer("llm_latency_ms").notNull(),
+  llmTokensUsed: integer("llm_tokens_used"),
+  marketDataSnapshot: text("market_data_snapshot").notNull(), // JSON
+  createdAt: text("created_at").notNull(),
 });
 
-export const performanceSnapshots = sqliteTable('performance_snapshots', {
-  id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull(),
-  balance: real('balance').notNull(),
-  totalPnlPct: real('total_pnl_pct').notNull(),
-  winRate: real('win_rate').notNull(),
-  totalTrades: integer('total_trades').notNull(),
-  sharpeRatio: real('sharpe_ratio'),
-  maxDrawdown: real('max_drawdown'),
-  snapshotAt: text('snapshot_at').notNull(),
+export const performanceSnapshots = sqliteTable("performance_snapshots", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  balance: real("balance").notNull(),
+  totalPnlPct: real("total_pnl_pct").notNull(),
+  winRate: real("win_rate").notNull(),
+  totalTrades: integer("total_trades").notNull(),
+  sharpeRatio: real("sharpe_ratio"),
+  maxDrawdown: real("max_drawdown"),
+  snapshotAt: text("snapshot_at").notNull(),
 });
 ```
 
@@ -344,6 +359,7 @@ export const performanceSnapshots = sqliteTable('performance_snapshots', {
 ### Task 6: Generate D1 migration and apply locally
 
 **Files:**
+
 - Create: `apps/api/src/db/migrations/0000_initial.sql` (auto-generated by drizzle-kit)
 
 **Step 1: Generate migration**
@@ -378,6 +394,7 @@ Expected: tables listed: agents, trades, agent_decisions, performance_snapshots.
 ### Task 7: Write types, health route, stub Durable Object, and main app
 
 **Files:**
+
 - Create: `apps/api/src/types/bindings.ts`
 - Create: `apps/api/src/agents/trading-agent.ts`
 - Create: `apps/api/src/routes/health.ts`
@@ -398,8 +415,8 @@ export interface Bindings {
 **Step 2: Write trading-agent.ts stub**
 
 ```typescript
-import { DurableObject } from 'cloudflare:workers';
-import type { Bindings } from '../types/bindings';
+import { DurableObject } from "cloudflare:workers";
+import type { Bindings } from "../types/bindings";
 
 /**
  * TradingAgentDO — Durable Object for per-agent state management.
@@ -407,8 +424,8 @@ import type { Bindings } from '../types/bindings';
  */
 export class TradingAgentDO extends DurableObject<Bindings> {
   async fetch(_request: Request): Promise<Response> {
-    return new Response(JSON.stringify({ status: 'not_implemented' }), {
-      headers: { 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ status: "not_implemented" }), {
+      headers: { "Content-Type": "application/json" },
     });
   }
 }
@@ -417,26 +434,26 @@ export class TradingAgentDO extends DurableObject<Bindings> {
 **Step 3: Write health.ts**
 
 ```typescript
-import { Hono } from 'hono';
-import type { Bindings } from '../types/bindings';
+import { Hono } from "hono";
+import type { Bindings } from "../types/bindings";
 
 const health = new Hono<{ Bindings: Bindings }>();
 
 /**
  * GET /api/health — Returns API status and D1 connectivity.
  */
-health.get('/', async (c) => {
-  let dbStatus: 'connected' | 'error' = 'connected';
+health.get("/", async (c) => {
+  let dbStatus: "connected" | "error" = "connected";
   try {
-    await c.env.DB.prepare('SELECT 1').first();
+    await c.env.DB.prepare("SELECT 1").first();
   } catch {
-    dbStatus = 'error';
+    dbStatus = "error";
   }
 
   return c.json({
-    status: 'ok',
+    status: "ok",
     db: dbStatus,
-    environment: c.env.ENVIRONMENT ?? 'unknown',
+    environment: c.env.ENVIRONMENT ?? "unknown",
     timestamp: new Date().toISOString(),
   });
 });
@@ -447,28 +464,28 @@ export default health;
 **Step 4: Write index.ts**
 
 ```typescript
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import health from './routes/health';
-import type { Bindings } from './types/bindings';
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import health from "./routes/health";
+import type { Bindings } from "./types/bindings";
 
-export { TradingAgentDO } from './agents/trading-agent';
+export { TradingAgentDO } from "./agents/trading-agent";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.use(
-  '*',
+  "*",
   cors({
-    origin: ['http://localhost:3000', 'https://*.pages.dev'],
-    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
-  })
+    origin: ["http://localhost:3000", "https://*.pages.dev"],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+  }),
 );
 
-app.route('/api/health', health);
+app.route("/api/health", health);
 
 // 404 fallback
-app.notFound((c) => c.json({ error: 'Not found' }, 404));
+app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 export default app;
 ```
@@ -478,6 +495,7 @@ export default app;
 ### Task 8: Initialize apps/web (Nuxt 4 stub)
 
 **Files:**
+
 - Create: `apps/web/package.json`
 - Create: `apps/web/nuxt.config.ts`
 - Create: `apps/web/app.vue`
@@ -507,7 +525,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:8787',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE ?? "http://localhost:8787",
     },
   },
 });
@@ -518,7 +536,7 @@ export default defineNuxtConfig({
 ```vue
 <template>
   <div>
-    <h1>DEX Trading Agents</h1>
+    <h1>Heppy Market</h1>
     <p>Platform loading...</p>
   </div>
 </template>
@@ -545,6 +563,7 @@ curl -s http://localhost:8787/api/health | python3 -m json.tool
 ```
 
 Expected:
+
 ```json
 {
   "status": "ok",

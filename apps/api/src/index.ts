@@ -65,7 +65,7 @@ app.get('/api/models', async (c) => {
 // Root catch-all
 app.get('/', (c) =>
   c.json({
-    name: 'DEX Trading Agents API',
+    name: 'Heppy Market API',
     version: '0.1.0',
     docs: '/api/health',
     routes: [

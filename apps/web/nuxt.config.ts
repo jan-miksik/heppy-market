@@ -27,7 +27,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'DEX Trading Agents',
+      title: 'Heppy Market',
       meta: [
         { name: 'description', content: 'AI-powered paper trading agents on Base chain DEXes' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

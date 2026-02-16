@@ -17,7 +17,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Nuxt 4 Frontend                          │
-│  Dashboard · Agent Creator · Trade History · Performance Charts  │
+│  Dashboard · Agent Creator · Trade History · Performance Charts │
 │  Deploy: Cloudflare Pages (SSR)                                 │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ API calls
@@ -52,15 +52,15 @@
 
 ### Why This Stack
 
-| Choice | Reasoning |
-|--------|-----------|
+| Choice                 | Reasoning                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
 | **Hono on CF Workers** | Edge-native, fast cold starts, Durable Objects for agent state, Cron Triggers for scheduled analysis |
-| **Nuxt 4 on CF Pages** | SSR, your existing expertise, great DX |
-| **Cloudflare D1** | SQLite at edge, zero config, free tier generous for paper trading |
-| **Cloudflare KV** | Price cache, LLM response cache |
-| **Durable Objects** | Each agent gets its own stateful instance — perfect for running trading loops |
-| **Vercel AI SDK** | Provider-agnostic LLM calls, works on CF Workers, has `@openrouter/ai-sdk-provider` |
-| **DexScreener API** | Free, no API key, supports Base chain, real-time pair data |
+| **Nuxt 4 on CF Pages** | SSR, your existing expertise, great DX                                                               |
+| **Cloudflare D1**      | SQLite at edge, zero config, free tier generous for paper trading                                    |
+| **Cloudflare KV**      | Price cache, LLM response cache                                                                      |
+| **Durable Objects**    | Each agent gets its own stateful instance — perfect for running trading loops                        |
+| **Vercel AI SDK**      | Provider-agnostic LLM calls, works on CF Workers, has `@openrouter/ai-sdk-provider`                  |
+| **DexScreener API**    | Free, no API key, supports Base chain, real-time pair data                                           |
 
 ---
 
@@ -68,21 +68,21 @@
 
 ### Before Starting (Must Have)
 
-| Item | How to Get | Used For |
-|------|-----------|----------|
-| **OpenRouter API key** | [openrouter.ai](https://openrouter.ai) → Dashboard → API Keys | Free LLM models (DeepSeek, Llama, Mistral, etc.) |
-| **Cloudflare account** | [dash.cloudflare.com](https://dash.cloudflare.com) | Workers, D1, KV, Pages |
-| **Wrangler CLI installed** | `npm install -g wrangler` then `wrangler login` | Deploy & dev |
-| **Node.js 20+** | `node --version` to check | Runtime |
-| **Git repo** (empty, initialized) | Create on GitHub | Version control |
+| Item                              | How to Get                                                    | Used For                                         |
+| --------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| **OpenRouter API key**            | [openrouter.ai](https://openrouter.ai) → Dashboard → API Keys | Free LLM models (DeepSeek, Llama, Mistral, etc.) |
+| **Cloudflare account**            | [dash.cloudflare.com](https://dash.cloudflare.com)            | Workers, D1, KV, Pages                           |
+| **Wrangler CLI installed**        | `npm install -g wrangler` then `wrangler login`               | Deploy & dev                                     |
+| **Node.js 20+**                   | `node --version` to check                                     | Runtime                                          |
+| **Git repo** (empty, initialized) | Create on GitHub                                              | Version control                                  |
 
 ### Optional (Needed Later)
 
-| Item | When Needed |
-|------|-------------|
-| **Anthropic API key** | When you want to use Claude as a paid agent brain |
+| Item                                           | When Needed                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| **Anthropic API key**                          | When you want to use Claude as a paid agent brain            |
 | **Base RPC URL** (Alchemy/QuickNode free tier) | If DexScreener rate limits hit — direct on-chain price reads |
-| **Telegram bot token** | If you want trade alert notifications |
+| **Telegram bot token**                         | If you want trade alert notifications                        |
 
 ### Decision Points (Answer These Upfront)
 
@@ -111,6 +111,7 @@ The prompt below includes sensible defaults for all of these, but you can overri
 **Recommendation for MVP**: Skip x402 integration. Build the trading agents first. Add x402 as a monetization layer once agents are producing valuable signals. The prompt includes a placeholder architecture for it.
 
 **When you're ready to add it**:
+
 ```
 npm install x402-hono  # Hono middleware for x402
 # Wraps any route with pay-per-request using USDC on Base
@@ -123,6 +124,7 @@ npm install x402-hono  # Hono middleware for x402
 **Relevance**: AP2 is the **governance/compliance layer** for agent payments. It uses "Mandates" (cryptographically signed contracts) to define what an agent is authorized to spend. x402 can be used as a settlement rail within AP2.
 
 **For this project**: AP2 becomes relevant when:
+
 - Your agents need to autonomously pay for external data/APIs
 - You want to expose your agents as services that other agents can pay for
 - You need compliance-grade payment authorization
@@ -142,6 +144,7 @@ npm install x402-hono  # Hono middleware for x402
 ### ElizaOS — Verdict: Don't Use
 
 From our previous analysis, the core issues remain:
+
 - **No paper trading mode** — designed for real on-chain transactions
 - **v2 stability issues** — broken package dependencies, installation failures
 - **Too opinionated** — character file system adds complexity without value for your use case
@@ -149,25 +152,25 @@ From our previous analysis, the core issues remain:
 
 ### What to Use Instead
 
-| Need | Package | Why |
-|------|---------|-----|
-| **LLM calls** | `ai` (Vercel AI SDK) + `@openrouter/ai-sdk-provider` | Provider-agnostic, works on CF Workers, structured output support, streaming |
-| **DEX price data** | DexScreener API (no package needed, just `fetch`) | Free, no key, Base chain support, pair data + OHLCV |
-| **Technical analysis** | `technicalindicators` (npm) | Pure JS, no native deps, works on CF Workers — RSI, MACD, EMA, Bollinger, etc. |
-| **On-chain reads** (optional) | `viem` | Lightweight, TypeScript-first, Base chain support — for reading pool reserves, token balances |
-| **Scheduling** | Cloudflare Cron Triggers + Durable Objects | Native to platform, no external scheduler needed |
-| **Database** | Cloudflare D1 + Drizzle ORM | SQLite at edge, Drizzle for type-safe queries |
-| **Validation** | `zod` | Schema validation for agent configs, trade records, API responses |
-| **Charts (frontend)** | Lightweight charting lib (e.g., `unovis` or `chart.js`) | Trade history visualization, PnL curves |
+| Need                          | Package                                                 | Why                                                                                           |
+| ----------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **LLM calls**                 | `ai` (Vercel AI SDK) + `@openrouter/ai-sdk-provider`    | Provider-agnostic, works on CF Workers, structured output support, streaming                  |
+| **DEX price data**            | DexScreener API (no package needed, just `fetch`)       | Free, no key, Base chain support, pair data + OHLCV                                           |
+| **Technical analysis**        | `technicalindicators` (npm)                             | Pure JS, no native deps, works on CF Workers — RSI, MACD, EMA, Bollinger, etc.                |
+| **On-chain reads** (optional) | `viem`                                                  | Lightweight, TypeScript-first, Base chain support — for reading pool reserves, token balances |
+| **Scheduling**                | Cloudflare Cron Triggers + Durable Objects              | Native to platform, no external scheduler needed                                              |
+| **Database**                  | Cloudflare D1 + Drizzle ORM                             | SQLite at edge, Drizzle for type-safe queries                                                 |
+| **Validation**                | `zod`                                                   | Schema validation for agent configs, trade records, API responses                             |
+| **Charts (frontend)**         | Lightweight charting lib (e.g., `unovis` or `chart.js`) | Trade history visualization, PnL curves                                                       |
 
 ### Other Frameworks Considered
 
-| Framework | Verdict | Why Not |
-|-----------|---------|---------|
-| **LangChain.js** | Skip | Too heavy for CF Workers, OpenTelemetry doesn't work on edge |
-| **AutoGPT / CrewAI** | Skip | Python, not TS — wrong ecosystem |
-| **MAHORAGA** | Interesting reference | CF Workers based, but Alpaca-focused (CEX, not DEX) — borrow architecture ideas, don't fork |
-| **TradingAgents (TauricResearch)** | Reference only | Python/LangGraph — great multi-agent patterns to port to TS |
+| Framework                          | Verdict               | Why Not                                                                                     |
+| ---------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- |
+| **LangChain.js**                   | Skip                  | Too heavy for CF Workers, OpenTelemetry doesn't work on edge                                |
+| **AutoGPT / CrewAI**               | Skip                  | Python, not TS — wrong ecosystem                                                            |
+| **MAHORAGA**                       | Interesting reference | CF Workers based, but Alpaca-focused (CEX, not DEX) — borrow architecture ideas, don't fork |
+| **TradingAgents (TauricResearch)** | Reference only        | Python/LangGraph — great multi-agent patterns to port to TS                                 |
 
 ---
 
@@ -181,12 +184,14 @@ Save this as `CLAUDE.md` in your project root:
 # CLAUDE.md — DEX Paper Trading Agents Platform
 
 ## Project Overview
+
 Build a DEX paper trading platform where users create AI-powered trading agents
 that simulate trades on Base chain DEXes. Agents use LLMs (via OpenRouter free
 tier) to analyze markets and make paper trading decisions with configurable
 autonomy levels.
 
 ## Critical Context
+
 - This is PAPER TRADING only — no real transactions, no wallets, no signing
 - All "trades" are simulated using real price data from DexScreener API
 - Agents run as Cloudflare Durable Objects with Cron Trigger scheduling
@@ -194,6 +199,7 @@ autonomy levels.
 - Default chain is Base, default DEXes are Aerodrome and Uniswap V3
 
 ## Tech Stack (Non-Negotiable)
+
 - **Backend**: Cloudflare Workers + Hono framework
 - **Frontend**: Nuxt 4 (deployed to Cloudflare Pages)
 - **Database**: Cloudflare D1 with Drizzle ORM
@@ -207,67 +213,69 @@ autonomy levels.
 
 ## Project Structure
 ```
+
 dex-trading-agents/
 ├── apps/
-│   ├── api/                          # Cloudflare Workers + Hono
-│   │   ├── src/
-│   │   │   ├── index.ts              # Hono app entry, route registration
-│   │   │   ├── routes/
-│   │   │   │   ├── agents.ts         # CRUD for trading agents
-│   │   │   │   ├── trades.ts         # Trade history, stats
-│   │   │   │   ├── pairs.ts          # DEX pair data proxy/cache
-│   │   │   │   └── health.ts         # Health check
-│   │   │   ├── services/
-│   │   │   │   ├── llm-router.ts     # Vercel AI SDK + OpenRouter setup
-│   │   │   │   ├── dex-data.ts       # DexScreener API client
-│   │   │   │   ├── paper-engine.ts   # Paper trade execution & PnL
-│   │   │   │   ├── strategy.ts       # Strategy engine (TA + LLM analysis)
-│   │   │   │   └── indicators.ts     # Technical analysis wrapper
-│   │   │   ├── agents/
-│   │   │   │   ├── trading-agent.ts  # Durable Object class
-│   │   │   │   ├── agent-loop.ts     # Analysis → Decision → Execute loop
-│   │   │   │   └── prompts.ts        # System prompts per autonomy level
-│   │   │   ├── db/
-│   │   │   │   ├── schema.ts         # Drizzle schema
-│   │   │   │   └── migrations/       # D1 migrations
-│   │   │   ├── types/
-│   │   │   │   ├── agent.ts          # Agent config types
-│   │   │   │   ├── trade.ts          # Trade record types
-│   │   │   │   └── dex.ts            # DEX data types
-│   │   │   └── lib/
-│   │   │       ├── validation.ts     # Zod schemas
-│   │   │       └── utils.ts          # Helpers
-│   │   ├── wrangler.toml
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   └── web/                          # Nuxt 4 app
-│       ├── pages/
-│       │   ├── index.vue             # Dashboard overview
-│       │   ├── agents/
-│       │   │   ├── index.vue         # Agent list
-│       │   │   ├── create.vue        # Agent creation wizard
-│       │   │   └── [id].vue          # Agent detail + live status
-│       │   └── trades/
-│       │       └── index.vue         # Trade history + filters
-│       ├── components/
-│       │   ├── AgentCard.vue
-│       │   ├── TradeTable.vue
-│       │   ├── PnLChart.vue
-│       │   ├── ConfidenceGauge.vue
-│       │   └── AgentConfigForm.vue
-│       ├── composables/
-│       │   ├── useAgents.ts
-│       │   ├── useTrades.ts
-│       │   └── useApi.ts
-│       └── nuxt.config.ts
+│ ├── api/ # Cloudflare Workers + Hono
+│ │ ├── src/
+│ │ │ ├── index.ts # Hono app entry, route registration
+│ │ │ ├── routes/
+│ │ │ │ ├── agents.ts # CRUD for trading agents
+│ │ │ │ ├── trades.ts # Trade history, stats
+│ │ │ │ ├── pairs.ts # DEX pair data proxy/cache
+│ │ │ │ └── health.ts # Health check
+│ │ │ ├── services/
+│ │ │ │ ├── llm-router.ts # Vercel AI SDK + OpenRouter setup
+│ │ │ │ ├── dex-data.ts # DexScreener API client
+│ │ │ │ ├── paper-engine.ts # Paper trade execution & PnL
+│ │ │ │ ├── strategy.ts # Strategy engine (TA + LLM analysis)
+│ │ │ │ └── indicators.ts # Technical analysis wrapper
+│ │ │ ├── agents/
+│ │ │ │ ├── trading-agent.ts # Durable Object class
+│ │ │ │ ├── agent-loop.ts # Analysis → Decision → Execute loop
+│ │ │ │ └── prompts.ts # System prompts per autonomy level
+│ │ │ ├── db/
+│ │ │ │ ├── schema.ts # Drizzle schema
+│ │ │ │ └── migrations/ # D1 migrations
+│ │ │ ├── types/
+│ │ │ │ ├── agent.ts # Agent config types
+│ │ │ │ ├── trade.ts # Trade record types
+│ │ │ │ └── dex.ts # DEX data types
+│ │ │ └── lib/
+│ │ │ ├── validation.ts # Zod schemas
+│ │ │ └── utils.ts # Helpers
+│ │ ├── wrangler.toml
+│ │ ├── package.json
+│ │ └── tsconfig.json
+│ └── web/ # Nuxt 4 app
+│ ├── pages/
+│ │ ├── index.vue # Dashboard overview
+│ │ ├── agents/
+│ │ │ ├── index.vue # Agent list
+│ │ │ ├── create.vue # Agent creation wizard
+│ │ │ └── [id].vue # Agent detail + live status
+│ │ └── trades/
+│ │ └── index.vue # Trade history + filters
+│ ├── components/
+│ │ ├── AgentCard.vue
+│ │ ├── TradeTable.vue
+│ │ ├── PnLChart.vue
+│ │ ├── ConfidenceGauge.vue
+│ │ └── AgentConfigForm.vue
+│ ├── composables/
+│ │ ├── useAgents.ts
+│ │ ├── useTrades.ts
+│ │ └── useApi.ts
+│ └── nuxt.config.ts
 ├── packages/
-│   └── shared/                       # Shared types & validation
-│       ├── types.ts
-│       └── validation.ts
+│ └── shared/ # Shared types & validation
+│ ├── types.ts
+│ └── validation.ts
 ├── turbo.json
 ├── package.json
 └── CLAUDE.md
-```
+
+````
 
 ## Database Schema (D1 + Drizzle)
 
@@ -332,7 +340,7 @@ dex-trading-agents/
   max_drawdown: real,
   snapshot_at: text not null,
 }
-```
+````
 
 ## Agent Configuration Schema (Zod)
 
@@ -343,20 +351,26 @@ const AgentConfigSchema = z.object({
   description: z.string().max(500).optional(),
 
   // Autonomy
-  autonomyLevel: z.enum(['full', 'guided', 'strict']),
+  autonomyLevel: z.enum(["full", "guided", "strict"]),
   // full: agent makes all decisions, adjusts own strategies
   // guided: agent proposes, but within defined bounds
   // strict: agent follows exact rules, LLM only for analysis/reporting
 
   // LLM
-  llmModel: z.string().default('deepseek/deepseek-chat-v3-0324:free'),
-  llmFallback: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
+  llmModel: z.string().default("deepseek/deepseek-chat-v3-0324:free"),
+  llmFallback: z.string().default("meta-llama/llama-3.3-70b-instruct:free"),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
 
   // Trading
-  chain: z.literal('base').default('base'), // only Base for now
-  dexes: z.array(z.enum(['aerodrome', 'uniswap-v3'])).default(['aerodrome', 'uniswap-v3']),
-  pairs: z.array(z.string()).min(1).max(10).default(['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']),
+  chain: z.literal("base").default("base"), // only Base for now
+  dexes: z
+    .array(z.enum(["aerodrome", "uniswap-v3"]))
+    .default(["aerodrome", "uniswap-v3"]),
+  pairs: z
+    .array(z.string())
+    .min(1)
+    .max(10)
+    .default(["WETH/USDC", "cbBTC/WETH", "AERO/USDC"]),
   paperBalance: z.number().min(100).max(1_000_000).default(10_000),
   maxPositionSizePct: z.number().min(1).max(100).default(20), // max 20% of balance per trade
   maxOpenPositions: z.number().min(1).max(10).default(3),
@@ -365,19 +379,23 @@ const AgentConfigSchema = z.object({
   slippageSimulation: z.number().min(0).max(5).default(0.3), // 0.3%
 
   // Timeframe
-  analysisInterval: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']).default('1h'),
+  analysisInterval: z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]).default("1h"),
   // How often the agent wakes up to analyze. Maps to Cron Trigger.
 
   // Strategies (Level 3 strict mode)
-  strategies: z.array(z.enum([
-    'ema_crossover',      // EMA 9/21 crossover
-    'rsi_oversold',       // RSI < 30 buy, > 70 sell
-    'macd_signal',        // MACD line crosses signal
-    'bollinger_bounce',   // Price touches lower band
-    'volume_breakout',    // Volume spike + price breakout
-    'llm_sentiment',      // LLM analyzes recent trades/volume patterns
-    'combined',           // LLM weighs multiple indicators
-  ])).default(['combined']),
+  strategies: z
+    .array(
+      z.enum([
+        "ema_crossover", // EMA 9/21 crossover
+        "rsi_oversold", // RSI < 30 buy, > 70 sell
+        "macd_signal", // MACD line crosses signal
+        "bollinger_bounce", // Price touches lower band
+        "volume_breakout", // Volume spike + price breakout
+        "llm_sentiment", // LLM analyzes recent trades/volume patterns
+        "combined", // LLM weighs multiple indicators
+      ]),
+    )
+    .default(["combined"]),
 
   // Risk
   maxDailyLossPct: z.number().min(1).max(50).default(10), // stop trading if daily loss > 10%
@@ -391,15 +409,15 @@ Use Vercel AI SDK with OpenRouter provider. MUST work on Cloudflare Workers.
 
 ```typescript
 // Key pattern — provider setup
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { generateObject } from 'ai';
-import { z } from 'zod';
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { generateObject } from "ai";
+import { z } from "zod";
 
 const openrouter = createOpenRouter({ apiKey: env.OPENROUTER_API_KEY });
 
 // Structured output for trade decisions
 const TradeDecisionSchema = z.object({
-  action: z.enum(['buy', 'sell', 'hold', 'close']),
+  action: z.enum(["buy", "sell", "hold", "close"]),
   confidence: z.number().min(0).max(1),
   reasoning: z.string(),
   targetPair: z.string().optional(),
@@ -407,7 +425,7 @@ const TradeDecisionSchema = z.object({
 });
 
 const { object: decision } = await generateObject({
-  model: openrouter('deepseek/deepseek-chat-v3-0324:free'),
+  model: openrouter("deepseek/deepseek-chat-v3-0324:free"),
   schema: TradeDecisionSchema,
   system: AGENT_SYSTEM_PROMPT, // varies by autonomy level
   prompt: buildAnalysisPrompt(marketData, openPositions, agentConfig),
@@ -461,6 +479,7 @@ Each trading agent runs as a Durable Object with this loop:
 ## System Prompts (Per Autonomy Level)
 
 ### Level 1 — Full Autonomy
+
 ```
 You are an autonomous crypto trading agent operating on Base chain DEXes.
 You have full authority to:
@@ -479,6 +498,7 @@ config doesn't cover, include a "config_suggestion" in your reasoning.
 ```
 
 ### Level 2 — Guided
+
 ```
 You are a guided crypto trading agent on Base chain.
 You analyze markets and make recommendations within defined bounds.
@@ -495,6 +515,7 @@ If the best action is to hold, say so with confidence.
 ```
 
 ### Level 3 — Strict Rules
+
 ```
 You are a rule-following trading analysis agent.
 Your ONLY job is to evaluate technical indicators and report signals.
@@ -556,6 +577,7 @@ GET    /api/models                    # Available LLM models from OpenRouter
 ## Build Order (Follow This Sequence)
 
 ### Phase 1: Foundation (do this first)
+
 1. Initialize Turborepo monorepo with `apps/api` and `apps/web`
 2. Set up Hono app in `apps/api` with wrangler.toml (D1, KV, Durable Objects bindings)
 3. Create Drizzle schema + run first D1 migration
@@ -563,12 +585,14 @@ GET    /api/models                    # Available LLM models from OpenRouter
 5. **Test**: `wrangler dev` serves health endpoint, D1 is accessible
 
 ### Phase 2: Data Layer
+
 6. Build DexScreener API client with KV caching (30s TTL)
 7. Build technical indicators wrapper (RSI, EMA, MACD, Bollinger)
 8. Build pair search/data proxy endpoints
 9. **Test**: Can fetch WETH/USDC price on Base, indicators compute correctly
 
 ### Phase 3: Agent Core
+
 10. Build LLM router (Vercel AI SDK + OpenRouter)
 11. Build agent CRUD endpoints with Zod validation
 12. Build paper trading engine (open/close positions, PnL calculation, slippage simulation)
@@ -576,6 +600,7 @@ GET    /api/models                    # Available LLM models from OpenRouter
 14. **Test**: Can create agent via API, LLM returns structured trade decision, paper engine calculates PnL
 
 ### Phase 4: Agent Loop
+
 15. Implement the full agent analysis loop in Durable Object
 16. Wire up Cron Triggers to wake agents
 17. Implement risk management (stop loss, take profit, daily loss limit, cooldown)
@@ -583,6 +608,7 @@ GET    /api/models                    # Available LLM models from OpenRouter
 19. **Test**: Agent wakes on schedule, analyzes, logs decision, executes paper trade if signal found
 
 ### Phase 5: Frontend
+
 20. Nuxt 4 app with API composables
 21. Dashboard page (aggregate stats, active agents, recent trades)
 22. Agent creation wizard (form with all config options + defaults)
@@ -591,6 +617,7 @@ GET    /api/models                    # Available LLM models from OpenRouter
 25. **Test**: Full flow — create agent in UI, start it, see trades appear
 
 ### Phase 6: Polish
+
 26. Performance snapshots (hourly cron calculates win rate, sharpe, drawdown)
 27. Agent comparison view
 28. Error handling, retry logic for LLM calls
@@ -629,6 +656,7 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx         # optional, for paid models
 8. **Durable Object alarms are NOT cron** — they're one-shot timers. Set the next alarm at the end of each loop iteration.
 
 ## Code Quality Requirements
+
 - TypeScript strict mode everywhere
 - Zod validation on ALL external inputs (API requests, LLM responses, DexScreener data)
 - Every function that can fail returns a Result type or throws typed errors
@@ -636,7 +664,8 @@ ANTHROPIC_API_KEY=sk-ant-xxxxx         # optional, for paid models
 - Drizzle for all DB queries (no raw SQL)
 - All LLM prompts in separate `prompts.ts` file
 - Comprehensive JSDoc on public functions
-```
+
+````
 
 ### For Cursor
 
@@ -667,7 +696,7 @@ Read CLAUDE.md for complete architecture and requirements.
 - Use `const` over `let`
 - Prefer named exports
 - Error handling: Result pattern or typed errors, never swallow errors
-```
+````
 
 ---
 
@@ -686,24 +715,25 @@ curl http://localhost:8787/api/health                     # API responds
 
 ```typescript
 // tests/dex-data.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 
-describe('DexScreener Client', () => {
-  it('fetches WETH/USDC pair on Base', async () => {
+describe("DexScreener Client", () => {
+  it("fetches WETH/USDC pair on Base", async () => {
     const response = await fetch(
-      'https://api.dexscreener.com/latest/dex/search?q=WETH%20USDC%20base'
+      "https://api.dexscreener.com/latest/dex/search?q=WETH%20USDC%20base",
     );
     const data = await response.json();
     expect(data.pairs.length).toBeGreaterThan(0);
-    expect(data.pairs[0].chainId).toBe('base');
+    expect(data.pairs[0].chainId).toBe("base");
     expect(parseFloat(data.pairs[0].priceUsd)).toBeGreaterThan(0);
   });
 
-  it('computes RSI from price data', () => {
-    const { RSI } = require('technicalindicators');
-    const prices = [44, 44.34, 44.09, 43.61, 44.33, 44.83, 45.10, 45.42,
-                    45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.00,
-                    46.03, 46.41, 46.22, 45.64];
+  it("computes RSI from price data", () => {
+    const { RSI } = require("technicalindicators");
+    const prices = [
+      44, 44.34, 44.09, 43.61, 44.33, 44.83, 45.1, 45.42, 45.84, 46.08, 45.89,
+      46.03, 45.61, 46.28, 46.28, 46.0, 46.03, 46.41, 46.22, 45.64,
+    ];
     const result = RSI.calculate({ period: 14, values: prices });
     expect(result.length).toBeGreaterThan(0);
     expect(result[0]).toBeGreaterThan(0);
@@ -714,30 +744,30 @@ describe('DexScreener Client', () => {
 
 ```typescript
 // tests/paper-engine.test.ts
-describe('Paper Trading Engine', () => {
-  it('opens and closes a position with correct PnL', () => {
+describe("Paper Trading Engine", () => {
+  it("opens and closes a position with correct PnL", () => {
     const engine = new PaperEngine({ balance: 10000, slippage: 0.003 });
     const trade = engine.openPosition({
-      pair: 'WETH/USDC',
-      side: 'buy',
+      pair: "WETH/USDC",
+      side: "buy",
       price: 2500,
       amountUsd: 1000,
     });
-    expect(trade.status).toBe('open');
+    expect(trade.status).toBe("open");
     // Slippage: bought at 2500 * 1.003 = 2507.50 effective
 
     const closed = engine.closePosition(trade.id, { price: 2750 });
     // Sold at 2750 * 0.997 = 2741.75 effective
     expect(closed.pnlPct).toBeCloseTo(9.34, 1); // ~9.34% gain
-    expect(closed.status).toBe('closed');
+    expect(closed.status).toBe("closed");
     expect(engine.balance).toBeGreaterThan(10000);
   });
 
-  it('respects stop loss', () => {
+  it("respects stop loss", () => {
     const engine = new PaperEngine({ balance: 10000, slippage: 0.003 });
     const trade = engine.openPosition({
-      pair: 'WETH/USDC',
-      side: 'buy',
+      pair: "WETH/USDC",
+      side: "buy",
       price: 2500,
       amountUsd: 1000,
     });
@@ -746,39 +776,41 @@ describe('Paper Trading Engine', () => {
     expect(shouldStop).toBe(true);
   });
 
-  it('enforces max position size', () => {
+  it("enforces max position size", () => {
     const engine = new PaperEngine({ balance: 10000, slippage: 0.003 });
-    expect(() => engine.openPosition({
-      pair: 'WETH/USDC',
-      side: 'buy',
-      price: 2500,
-      amountUsd: 5000, // 50% of balance, exceeds 20% default
-      maxPositionSizePct: 20,
-    })).toThrow();
+    expect(() =>
+      engine.openPosition({
+        pair: "WETH/USDC",
+        side: "buy",
+        price: 2500,
+        amountUsd: 5000, // 50% of balance, exceeds 20% default
+        maxPositionSizePct: 20,
+      }),
+    ).toThrow();
   });
 });
 ```
 
 ```typescript
 // tests/llm-router.test.ts
-describe('LLM Router', () => {
-  it('returns structured trade decision from OpenRouter', async () => {
+describe("LLM Router", () => {
+  it("returns structured trade decision from OpenRouter", async () => {
     const decision = await getTradeDecision({
-      model: 'deepseek/deepseek-chat-v3-0324:free',
+      model: "deepseek/deepseek-chat-v3-0324:free",
       marketData: mockMarketData,
       portfolio: mockPortfolio,
       config: mockAgentConfig,
     });
-    expect(['buy', 'sell', 'hold', 'close']).toContain(decision.action);
+    expect(["buy", "sell", "hold", "close"]).toContain(decision.action);
     expect(decision.confidence).toBeGreaterThanOrEqual(0);
     expect(decision.confidence).toBeLessThanOrEqual(1);
     expect(decision.reasoning.length).toBeGreaterThan(10);
   });
 
-  it('falls back to secondary model on failure', async () => {
+  it("falls back to secondary model on failure", async () => {
     const decision = await getTradeDecision({
-      model: 'nonexistent/model',
-      fallback: 'meta-llama/llama-3.3-70b-instruct:free',
+      model: "nonexistent/model",
+      fallback: "meta-llama/llama-3.3-70b-instruct:free",
       marketData: mockMarketData,
       portfolio: mockPortfolio,
       config: mockAgentConfig,
@@ -790,31 +822,31 @@ describe('LLM Router', () => {
 
 ```typescript
 // tests/agent-config.test.ts
-describe('Agent Configuration', () => {
-  it('validates default config', () => {
+describe("Agent Configuration", () => {
+  it("validates default config", () => {
     const result = AgentConfigSchema.safeParse({
-      name: 'Test Agent',
-      autonomyLevel: 'guided',
+      name: "Test Agent",
+      autonomyLevel: "guided",
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.paperBalance).toBe(10000);
-      expect(result.data.pairs).toContain('WETH/USDC');
+      expect(result.data.pairs).toContain("WETH/USDC");
     }
   });
 
-  it('rejects invalid autonomy level', () => {
+  it("rejects invalid autonomy level", () => {
     const result = AgentConfigSchema.safeParse({
-      name: 'Test',
-      autonomyLevel: 'yolo',
+      name: "Test",
+      autonomyLevel: "yolo",
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects position size over 100%', () => {
+  it("rejects position size over 100%", () => {
     const result = AgentConfigSchema.safeParse({
-      name: 'Test',
-      autonomyLevel: 'strict',
+      name: "Test",
+      autonomyLevel: "strict",
       maxPositionSizePct: 150,
     });
     expect(result.success).toBe(false);
@@ -826,18 +858,18 @@ describe('Agent Configuration', () => {
 
 ```typescript
 // tests/e2e/agent-lifecycle.test.ts
-describe('Agent Lifecycle E2E', () => {
-  it('creates agent, starts it, produces trades', async () => {
+describe("Agent Lifecycle E2E", () => {
+  it("creates agent, starts it, produces trades", async () => {
     // 1. Create agent
-    const createRes = await fetch('http://localhost:8787/api/agents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const createRes = await fetch("http://localhost:8787/api/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: 'E2E Test Agent',
-        autonomyLevel: 'strict',
-        strategies: ['rsi_oversold'],
-        pairs: ['WETH/USDC'],
-        analysisInterval: '1m',
+        name: "E2E Test Agent",
+        autonomyLevel: "strict",
+        strategies: ["rsi_oversold"],
+        pairs: ["WETH/USDC"],
+        analysisInterval: "1m",
       }),
     });
     expect(createRes.status).toBe(201);
@@ -846,16 +878,16 @@ describe('Agent Lifecycle E2E', () => {
     // 2. Start agent
     const startRes = await fetch(
       `http://localhost:8787/api/agents/${agent.id}/start`,
-      { method: 'POST' }
+      { method: "POST" },
     );
     expect(startRes.status).toBe(200);
 
     // 3. Wait for one analysis cycle
-    await new Promise(r => setTimeout(r, 70_000)); // 70s for 1m interval
+    await new Promise((r) => setTimeout(r, 70_000)); // 70s for 1m interval
 
     // 4. Check decisions were logged
     const decisionsRes = await fetch(
-      `http://localhost:8787/api/agents/${agent.id}/decisions`
+      `http://localhost:8787/api/agents/${agent.id}/decisions`,
     );
     const decisions = await decisionsRes.json();
     expect(decisions.length).toBeGreaterThan(0);
@@ -864,7 +896,7 @@ describe('Agent Lifecycle E2E', () => {
     // 5. Stop agent
     const stopRes = await fetch(
       `http://localhost:8787/api/agents/${agent.id}/stop`,
-      { method: 'POST' }
+      { method: "POST" },
     );
     expect(stopRes.status).toBe(200);
   }, 120_000); // 2 minute timeout
@@ -886,24 +918,29 @@ npm install -D vitest @cloudflare/vitest-pool-workers
 After each phase, the agent should print a checklist. You verify:
 
 **Phase 1 ✓**
+
 - [ ] `wrangler dev` starts without errors
 - [ ] `curl localhost:8787/api/health` returns 200
 - [ ] D1 migration ran (check Cloudflare dashboard)
 
 **Phase 2 ✓**
+
 - [ ] `curl localhost:8787/api/pairs/search?q=WETH` returns Base pairs
 - [ ] Price is a reasonable number (>0, not NaN)
 
 **Phase 3 ✓**
+
 - [ ] Can POST to `/api/agents` and get back created agent
 - [ ] Invalid config (e.g., `autonomyLevel: "yolo"`) returns 400
 
 **Phase 4 ✓**
+
 - [ ] Start an agent, wait 2 minutes, check `/api/agents/:id/decisions`
 - [ ] Decisions have confidence scores and reasoning
 - [ ] If a trade was taken, it appears in `/api/agents/:id/trades`
 
 **Phase 5 ✓**
+
 - [ ] Nuxt app loads at localhost:3000
 - [ ] Can create agent through UI
 - [ ] Agent detail page shows live data
