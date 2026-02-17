@@ -5,6 +5,20 @@ This guide covers deploying both parts of the app:
 - **API** (Hono on Cloudflare Workers) — D1, KV, Durable Objects
 - **Web** (Nuxt on Cloudflare Pages) — frontend
 
+## Architecture: Internal-only API (recommended)
+
+The API Worker is **not exposed publicly**. Pages talks to it via a **Service Binding** (internal-only):
+
+```
+User → Cloudflare Pages (public) → Pages Functions → [Service Binding] → Worker (private) → D1 / KV
+```
+
+- **No public API endpoint** — no custom domain or `workers.dev` route for the API.
+- **No Zero Trust / tokens** — traffic stays inside Cloudflare.
+- **No CORS** — the browser only talks to your Pages origin; the server proxies to the Worker.
+
+To get this, deploy the Worker **without adding any routes**, then add a Service Binding in your Pages project (see below).
+
 ---
 
 ## One-time setup (do this first)
@@ -110,19 +124,29 @@ npm run deploy -- --env production
 # or: wrangler deploy --env production
 ```
 
-Note the deployed URL, e.g. `https://dex-trading-agents-api.<your-subdomain>.workers.dev`.
+**Do not add a route** for this Worker (no custom domain, no `workers.dev` in frontends). It runs as a **service** and is only reachable via the Pages Service Binding.
 
-### 1.6 Allow your frontend in CORS (if needed)
+### 1.6 Add Service Binding in Pages (so the web app can call the API)
 
-If your Pages URL is not `https://dex-trading-agents.pages.dev`, set the Worker secret **CORS_ORIGINS** (comma-separated list of origins):
+The frontend calls `/api/*` on your Pages domain; a server route proxies to the Worker via the binding.
 
-```bash
-cd apps/api
-wrangler secret put CORS_ORIGINS --env production
-# Enter e.g.: https://your-project.pages.dev,https://yourdomain.com
+**Option 1 — Wrangler (recommended if you deploy from CLI)**  
+The repo already has `apps/web/wrangler.toml` with:
+
+```toml
+[[services]]
+binding = "API"
+service = "dex-trading-agents-api"
 ```
 
-Then redeploy the API. The app already allows localhost and `dex-trading-agents.pages.dev` by default.
+If you deploy with `wrangler pages deploy dist` from `apps/web`, this binding is used. Ensure the Worker name `dex-trading-agents-api` matches `apps/api/wrangler.toml`.
+
+**Option 2 — Cloudflare Dashboard (Git-based Pages)**  
+1. Workers & Pages → your Pages project → **Settings** → **Functions**.
+2. **Service bindings** → **Add**.
+3. **Variable name:** `API`  
+4. **Service:** choose `dex-trading-agents-api`.  
+5. Save and redeploy the Pages project.
 
 ---
 
@@ -139,10 +163,10 @@ Two options: **Git integration** (recommended) or **Direct upload**.
    - **Production branch:** `main`
    - **Build command:** `npm run build`
    - **Build output directory:** `dist`
-4. **Environment variables** (Settings → Environment variables):
-   - `API_BASE_URL` = your Worker URL, e.g. `https://dex-trading-agents-api.<subdomain>.workers.dev`
-   - Add for **Production** (and Preview if you want).
-5. Save and deploy. Your app will be at `https://<project-name>.pages.dev` (or your custom domain).
+4. **Environment variables** (Settings → Environment variables):  
+   When using the Service Binding (internal API), you do **not** need `API_BASE_URL` in production.  
+   For **local dev** only, you can set `API_BASE_URL=http://localhost:8787` so the dev server proxy knows where the API runs.
+5. Add the **Service Binding** (step 1.6) if you use the dashboard; then save and deploy. Your app will be at `https://<project-name>.pages.dev` (or your custom domain).
 
 ### Option B: Direct upload (CLI)
 
@@ -162,16 +186,16 @@ npx wrangler pages deploy dist --project-name=dex-trading-agents
 
 (Replace `dex-trading-agents` with your Pages project name if different.)
 
-After the first deploy, set **Environment variables** in the Pages project (e.g. `API_BASE_URL`) in the dashboard.
+After the first deploy, add the **Service Binding** in the dashboard (step 1.6) if not using `apps/web/wrangler.toml`. You do not need `API_BASE_URL` in production when using the internal API.
 
 ---
 
-## 3. Point the frontend at the API
+## 3. How the frontend talks to the API
 
-The Nuxt app uses `runtimeConfig.public.apiBase` (default from `API_BASE_URL`).
-
-- **Git integration:** set `API_BASE_URL` in the Pages project’s Environment variables to your Worker URL.
-- **Local build:** you can set `API_BASE_URL` at build time, e.g. in the build command or in a `.env` used by the build.
+- The browser always calls **same-origin** `/api/*` (e.g. `https://your-project.pages.dev/api/agents`). No public Worker URL is used.
+- A Nuxt server route (`server/api/[...path].ts`) handles these requests: on Pages it uses the **API** Service Binding to call the Worker internally; in local dev it proxies to `API_BASE_URL` (default `http://localhost:8787`).
+- **Production:** no `API_BASE_URL` needed.  
+- **Local dev:** run the API with `npm run dev:api` and optionally set `API_BASE_URL=http://localhost:8787` so the Nuxt dev server knows the upstream.
 
 ---
 

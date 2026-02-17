@@ -14,8 +14,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: process.env.API_BASE_URL ?? 'http://localhost:8787',
+      // Client always uses same-origin /api (proxy). No public API URL.
+      apiBase: '',
     },
+    // Server-only: upstream for API proxy when Service Binding is not present (e.g. local dev)
+    apiUpstream: process.env.API_BASE_URL || 'http://localhost:8787',
   },
 
   css: ['~/assets/css/main.css'],

@@ -116,7 +116,8 @@ agentsRoute.delete('/:id', async (c) => {
     return c.json({ error: 'Stop the agent before deleting' }, 409);
   }
 
-  // Delete related records first to satisfy foreign key constraints
+  // Delete related records first to satisfy foreign key constraints.
+  // D1 does not support SQL transactions (db.transaction() throws); deletes are sequential.
   await db.delete(trades).where(eq(trades.agentId, id));
   await db.delete(agentDecisions).where(eq(agentDecisions.agentId, id));
   await db.delete(performanceSnapshots).where(eq(performanceSnapshots.agentId, id));

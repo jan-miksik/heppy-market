@@ -229,7 +229,7 @@ Expected: hono, drizzle-orm, zod, nanoid, wrangler installed in apps/api.
 ```toml
 name = "dex-trading-agents-api"
 main = "src/index.ts"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-02-17"
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
