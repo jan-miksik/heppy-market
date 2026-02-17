@@ -132,8 +132,8 @@ const scheduled: ExportedHandlerScheduledHandler<Env> = async (
     .from(agents)
     .where(eq(agents.status, 'running'));
 
+  // Cloudflare free plan allows max 5 crons; 1m is not in wrangler.toml, so 1m agents run on 5m cron
   const cronToInterval: Record<string, string> = {
-    '*/1 * * * *': '1m',
     '*/5 * * * *': '5m',
     '*/15 * * * *': '15m',
     '0 * * * *': '1h',
@@ -149,7 +149,10 @@ const scheduled: ExportedHandlerScheduledHandler<Env> = async (
       paperBalance: number;
       slippageSimulation: number;
     };
-    if (config.analysisInterval !== targetInterval) continue;
+    const intervalMatches =
+      config.analysisInterval === targetInterval ||
+      (targetInterval === '5m' && config.analysisInterval === '1m');
+    if (!intervalMatches) continue;
 
     const doId = env.TRADING_AGENT.idFromName(agent.id);
     const stub = env.TRADING_AGENT.get(doId);

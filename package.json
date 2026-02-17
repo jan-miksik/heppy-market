@@ -9,6 +9,7 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
     "build": "turbo run build",
+    "build:worker": "npm run build --workspace=@dex-agents/shared && npx esbuild apps/api/src/index.ts --bundle --minify --outfile=apps/api/dist/worker.js --platform=browser --format=esm --external:cloudflare:workers",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "deploy:api": "npm run deploy --workspace=@dex-agents/api -- --env production",

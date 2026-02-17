@@ -7,11 +7,46 @@ This guide covers deploying both parts of the app:
 
 ---
 
-## Prerequisites
+## One-time setup (do this first)
 
-- [Cloudflare account](https://dash.cloudflare.com)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) installed and logged in: `npm install -g wrangler && wrangler login`
-- OpenRouter API key (for LLM) — set as a Worker secret
+Complete these steps once before deploying.
+
+### 1. Cloudflare account
+
+- Sign up or log in at [dash.cloudflare.com](https://dash.cloudflare.com).
+
+### 2. Node.js
+
+- Install **Node.js 20+** (required for the project). Check with: `node --version`.
+
+### 3. Install and log in with Wrangler
+
+Wrangler is the CLI for Cloudflare Workers, D1, KV, and Pages. You must be logged in before any `wrangler` commands will work.
+
+```bash
+# Install Wrangler globally (or use npx)
+npm install -g wrangler
+
+# Log in to Cloudflare (opens browser; complete the auth flow)
+wrangler login
+```
+
+After `wrangler login`, you should see a success message. If a command fails with an auth error, run `wrangler login` again.
+
+### 4. OpenRouter API key (for the API Worker)
+
+- Get an API key from [openrouter.ai](https://openrouter.ai) → Dashboard → API Keys.
+- You will set it as a Worker secret when deploying the API (step 1.4).
+
+### 5. Build the shared package (monorepo)
+
+From the repo root, build the shared package so the API can be built and deployed:
+
+```bash
+npm run build --workspace=@dex-agents/shared
+```
+
+(Turbo also runs this automatically when you run `npm run build` from the root.)
 
 ---
 
@@ -100,10 +135,10 @@ Two options: **Git integration** (recommended) or **Direct upload**.
 1. Push your repo to **GitHub** or **GitLab**.
 2. In [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
 3. Select the repo and configure:
+   - **Root directory:** `apps/web` (so the build runs in the web app).
    - **Production branch:** `main`
    - **Build command:** `npm run build`
-   - **Build output directory:** `dist` (Nuxt with `nitro.preset: cloudflare-pages` outputs to `dist` in the app directory).
-- **Root directory (if using Git):** `apps/web` so the build runs from the web app; build command `npm run build`, output `dist`.
+   - **Build output directory:** `dist`
 4. **Environment variables** (Settings → Environment variables):
    - `API_BASE_URL` = your Worker URL, e.g. `https://dex-trading-agents-api.<subdomain>.workers.dev`
    - Add for **Production** (and Preview if you want).
@@ -144,6 +179,8 @@ The Nuxt app uses `runtimeConfig.public.apiBase` (default from `API_BASE_URL`).
 
 | Step              | Command / action |
 |-------------------|-------------------|
+| **Wrangler login**| `wrangler login` (once; opens browser) |
+| Build shared      | `npm run build --workspace=@dex-agents/shared` (from repo root) |
 | Create D1         | `wrangler d1 create trading-agents` (in `apps/api`) |
 | Create KV         | `wrangler kv namespace create "CACHE"` (in `apps/api`) |
 | Edit wrangler.toml| Set production `database_id` and KV `id` under `[env.production]` |
@@ -160,3 +197,16 @@ Convenience scripts are in the root `package.json`:
 
 - **`npm run deploy:api`** — deploys the Worker (run from repo root after configuring production and applying migrations).
 - **`npm run deploy:web`** — builds the web app and deploys to Pages (set `CF_PAGES_PROJECT_NAME` or edit the script to match your project name).
+
+---
+
+## Troubleshooting
+
+- **"Authentication error" or "Unauthorized" when running wrangler**  
+  Run `wrangler login` again and complete the browser flow. Session can expire.
+
+- **API deploy fails with "rootDir" or missing shared types**  
+  Build the shared package first: `npm run build --workspace=@dex-agents/shared`, then deploy the API.
+
+- **D1 migrations prompt about creating remote DB**  
+  Use the same `database_name` as in your wrangler.toml and the `database_id` you copied from `wrangler d1 create`.
