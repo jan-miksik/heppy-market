@@ -115,19 +115,19 @@ export class TradingAgentDO extends DurableObject<Env> {
         await runAgentLoop(agentId, engine, this.env, this.ctx, { forceRun: true });
       } catch (err) {
         console.error(`[TradingAgentDO] manual analyze error for ${agentId}:`, err);
+        // Still persist engine state and reschedule alarm before returning error
+        try { await this.ctx.storage.put('engineState', engine.serialize()); } catch { /* ignore */ }
+        await this.rescheduleAlarmIfRunning();
         return Response.json({ error: String(err) }, { status: 500 });
       }
 
-      await this.ctx.storage.put('engineState', engine.serialize());
-
-      // If agent is running, reschedule the alarm from now (reset the timer)
-      const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
-      if (status === 'running') {
-        const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
-        const nextAlarmAt = Date.now() + intervalToMs(interval);
-        await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
-        await this.ctx.storage.setAlarm(nextAlarmAt);
+      try {
+        await this.ctx.storage.put('engineState', engine.serialize());
+      } catch (err) {
+        console.error(`[TradingAgentDO] failed to persist engine state for ${agentId}:`, err);
       }
+
+      await this.rescheduleAlarmIfRunning();
 
       return Response.json({ ok: true });
     }
@@ -174,35 +174,67 @@ export class TradingAgentDO extends DurableObject<Env> {
     const agentId = await this.ctx.storage.get<string>('agentId');
     if (!agentId) return;
 
-    // Restore or init engine
-    const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
-    const engine = engineState
-      ? PaperEngine.deserialize(engineState)
-      : new PaperEngine({ balance: 10_000, slippage: 0.3 });
-
-    // Run the analysis loop
     try {
-      await runAgentLoop(agentId, engine, this.env, this.ctx);
+      // Restore or init engine
+      const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+      const engine = engineState
+        ? PaperEngine.deserialize(engineState)
+        : new PaperEngine({ balance: 10_000, slippage: 0.3 });
+
+      // Run the analysis loop
+      try {
+        await runAgentLoop(agentId, engine, this.env, this.ctx);
+      } catch (err) {
+        console.error(`[TradingAgentDO] alarm error for ${agentId}:`, err);
+      }
+
+      // Persist updated engine state
+      try {
+        await this.ctx.storage.put('engineState', engine.serialize());
+      } catch (err) {
+        console.error(`[TradingAgentDO] failed to persist engine state for ${agentId}:`, err);
+      }
+
+      // Save a performance snapshot periodically (every ~6 ticks)
+      const tickCount = ((await this.ctx.storage.get<number>('tickCount')) ?? 0) + 1;
+      await this.ctx.storage.put('tickCount', tickCount);
+
+      if (tickCount % 6 === 0) {
+        await this.savePerformanceSnapshot(agentId, engine);
+      }
     } catch (err) {
-      console.error(`[TradingAgentDO] alarm error for ${agentId}:`, err);
+      console.error(`[TradingAgentDO] unexpected alarm error for ${agentId}:`, err);
+    } finally {
+      // ALWAYS reschedule the alarm if the agent is still running.
+      // This must be in a finally block so timeouts / serialization errors
+      // cannot leave the agent stuck in "running" with no future alarm.
+      try {
+        const currentStatus = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+        if (currentStatus === 'running') {
+          const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
+          const nextAlarmAt = Date.now() + intervalToMs(interval);
+          await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+          await this.ctx.storage.setAlarm(nextAlarmAt);
+        }
+      } catch (rescheduleErr) {
+        console.error(`[TradingAgentDO] CRITICAL: failed to reschedule alarm for ${agentId}:`, rescheduleErr);
+      }
     }
+  }
 
-    // Persist updated engine state
-    await this.ctx.storage.put('engineState', engine.serialize());
-
-    // Save a performance snapshot periodically (every ~6 ticks)
-    const tickCount = ((await this.ctx.storage.get<number>('tickCount')) ?? 0) + 1;
-    await this.ctx.storage.put('tickCount', tickCount);
-
-    if (tickCount % 6 === 0) {
-      await this.savePerformanceSnapshot(agentId, engine);
+  /** Reschedule the next alarm if the agent is still in 'running' status. */
+  private async rescheduleAlarmIfRunning(): Promise<void> {
+    try {
+      const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+      if (status === 'running') {
+        const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
+        const nextAlarmAt = Date.now() + intervalToMs(interval);
+        await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+        await this.ctx.storage.setAlarm(nextAlarmAt);
+      }
+    } catch (err) {
+      console.error(`[TradingAgentDO] CRITICAL: failed to reschedule alarm:`, err);
     }
-
-    // Reschedule next alarm
-    const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
-    const nextAlarmAt = Date.now() + intervalToMs(interval);
-    await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
-    await this.ctx.storage.setAlarm(nextAlarmAt);
   }
 
   private async savePerformanceSnapshot(
