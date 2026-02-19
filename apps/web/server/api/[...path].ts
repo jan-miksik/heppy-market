@@ -11,7 +11,10 @@ interface CloudflareEnv {
 }
 
 export default defineEventHandler(async (event) => {
-  const path = event.path.startsWith('/api') ? event.path : `/api${event.path}`;
+  // event.path may or may not include /api prefix and may include query string.
+  // Strip query from path (we extract it separately) and ensure /api prefix.
+  const rawPath = event.path.split('?')[0];
+  const pathname = rawPath.startsWith('/api') ? rawPath : `/api${rawPath}`;
   const url = getRequestURL(event);
   const query = url.search || '';
 
@@ -20,7 +23,7 @@ export default defineEventHandler(async (event) => {
   const api = cfEnv?.API;
 
   if (api) {
-    const workerUrl = `https://internal${path}${query}`;
+    const workerUrl = `https://internal${pathname}${query}`;
     const method = event.method;
     const headers = getRequestHeaders(event);
     const body = method !== 'GET' && method !== 'HEAD' ? await readRawBody(event) : undefined;
@@ -41,7 +44,7 @@ export default defineEventHandler(async (event) => {
   // Local dev: no binding — proxy to the configured upstream (e.g. http://localhost:8787)
   const config = useRuntimeConfig();
   const base = (config.apiUpstream as string)?.replace(/\/$/, '') || 'http://localhost:8787';
-  const target = `${base}${path}${query}`;
+  const target = `${base}${pathname}${query}`;
   const method = event.method;
   const headers = new Headers(getRequestHeaders(event) as Record<string, string>);
   headers.delete('host');
