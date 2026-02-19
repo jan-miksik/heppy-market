@@ -17,7 +17,7 @@ const form = reactive<CreateAgentPayload>({
   stopLossPct: 5,
   takeProfitPct: 10,
   maxOpenPositions: 3,
-  llmModel: 'openai/gpt-oss-20b:free',
+  llmModel: 'nvidia/nemotron-3-nano-30b-a3b:free',
 });
 
 const pairsInput = ref('WETH/USDC, cbBTC/WETH, AERO/USDC');
@@ -89,14 +89,12 @@ async function handleSubmit() {
     <div class="form-group">
       <label class="form-label">LLM Model</label>
       <select v-model="form.llmModel" class="form-select">
-        <option value="openai/gpt-oss-20b:free">OpenAI GPT OSS 20B (free)</option>
-        <option value="openai/gpt-oss-120b:free">OpenAI GPT OSS 120B (free)</option>
         <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
-        <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen3 Next 80B (free)</option>
-        <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (free)</option>
-        <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
-        <option value="google/gemma-3-27b-it:free">Google Gemma 3 27B (free)</option>
-        <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (paid)</option>
+        <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
+        <option value="arcee-ai/trinity-large-preview:free">Trinity Large Preview (free)</option>
+        <option value="liquid/lfm-2.5-1.2b-thinking:free">LFM 2.5 1.2B Thinking (free)</option>
+        <option value="liquid/lfm-2.5-1.2b-instruct:free">LFM 2.5 1.2B Instruct (free)</option>
+        <option value="arcee-ai/trinity-mini:free">Trinity Mini (free)</option>
       </select>
     </div>
 

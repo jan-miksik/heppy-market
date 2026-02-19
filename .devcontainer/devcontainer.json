@@ -13,7 +13,7 @@
     "3000": { "label": "Nuxt Frontend" },
     "5173": { "label": "Vite Dev Server" }
   },
-  "postCreateCommand": "npm install -g wrangler turbo && echo 'heppy-market dev container ready'",
+  "postCreateCommand": "npm install -g wrangler turbo && npm rebuild esbuild workerd && echo 'heppy-market dev container ready'",
   "customizations": {
     "vscode": {
       "extensions": [

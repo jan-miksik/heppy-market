@@ -123,7 +123,7 @@ const secondsUntilNextAction = computed(() => {
 
 function formatCountdown(seconds: number | null): string {
   if (seconds === null) return '—';
-  if (seconds === 0) return 'running…';
+  if (seconds <= 0) return 'any moment…';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
@@ -131,6 +131,17 @@ function formatCountdown(seconds: number | null): string {
   if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
   return `${s}s`;
 }
+
+/** Group open trades by pair for merged display */
+const openTradesByPair = computed(() => {
+  const map = new Map<string, Trade[]>();
+  for (const t of openTrades.value) {
+    const existing = map.get(t.pair) ?? [];
+    existing.push(t);
+    map.set(t.pair, existing);
+  }
+  return map;
+});
 
 /** Parse marketDataSnapshot string → MarketDataEntry[] */
 function parseSnapshot(snapshot?: string): MarketDataEntry[] {
@@ -150,6 +161,22 @@ function getPairAddress(pairName: string): string {
     if (entry?.pairAddress) return entry.pairAddress;
   }
   return '';
+}
+
+/** Calculate exit bounds (Target & Stop) from agent config */
+function getExitBounds(trade: Trade): { target: number; stop: number } {
+  const tp = agent.value?.config.takeProfitPct ?? 10;
+  const sl = agent.value?.config.stopLossPct ?? 5;
+  if (trade.side === 'buy') {
+    return {
+      target: trade.entryPrice * (1 + tp / 100),
+      stop: trade.entryPrice * (1 - sl / 100),
+    };
+  }
+  return {
+    target: trade.entryPrice * (1 - tp / 100),
+    stop: trade.entryPrice * (1 + sl / 100),
+  };
 }
 
 /** Estimate unrealized P&L for an open position using latest known price */
@@ -332,82 +359,114 @@ function timeAgo(iso: string): string {
         </div>
       </div>
 
-      <!-- Open Positions section -->
+      <!-- Open Positions section — full width, grouped by pair -->
       <div v-if="openTrades.length > 0" style="margin-bottom: 24px;">
         <h2 style="font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">
           Open Positions
         </h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
           <div
-            v-for="trade in openTrades"
-            :key="trade.id"
+            v-for="[pair, pairTrades] in openTradesByPair"
+            :key="pair"
             class="card"
-            style="padding: 0; overflow: hidden;"
+            style="padding: 0; overflow: hidden; width: 100%;"
           >
-            <!-- Card header -->
-            <div style="padding: 14px 16px 10px; display: flex; justify-content: space-between; align-items: flex-start;">
-              <div>
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                  <span class="mono" style="font-size: 15px; font-weight: 600;">{{ trade.pair }}</span>
-                  <span class="badge" :class="`badge-${trade.side}`">{{ trade.side === 'buy' ? 'LONG' : 'SHORT' }}</span>
+            <!-- Pair header with chart -->
+            <div style="display: flex; flex-direction: column;">
+              <!-- Top bar: pair name + next analysis countdown -->
+              <div style="padding: 14px 16px 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span class="mono" style="font-size: 17px; font-weight: 700;">{{ pair }}</span>
+                  <span style="font-size: 12px; color: var(--text-muted);">{{ pairTrades.length }} position{{ pairTrades.length > 1 ? 's' : '' }}</span>
                 </div>
-                <div style="font-size: 12px; color: var(--text-muted);">
-                  Entry: <span class="mono">${{ formatPrice(trade.entryPrice) }}</span>
-                  · Size: <span class="mono">${{ trade.amountUsd.toLocaleString() }}</span>
-                  · {{ timeAgo(trade.openedAt) }}
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11px; color: var(--text-muted);">Next analysis:</span>
+                  <span
+                    class="mono"
+                    style="font-size: 12px; font-weight: 600;"
+                    :class="agent.status === 'running' ? 'positive' : 'neutral'"
+                  >
+                    {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : 'stopped' }}
+                  </span>
                 </div>
               </div>
-              <!-- Unrealized P&L (v-for workaround: v-if "as" not recognized by vue-tsc) -->
-              <div style="text-align: right;">
-                <template v-for="pnl in [getUnrealizedPnl(trade)]" :key="trade.id + '-pnl'">
-                  <template v-if="pnl">
-                    <div
-                      class="mono"
-                      style="font-size: 16px; font-weight: 600;"
-                      :class="pnl.pnlPct >= 0 ? 'positive' : 'negative'"
-                    >
-                      {{ pnl.pnlPct >= 0 ? '+' : '' }}{{ pnl.pnlPct.toFixed(2) }}%
-                    </div>
-                    <div style="font-size: 11px; color: var(--text-muted);">
-                      now ${{ formatPrice(pnl.currentPrice) }}
-                    </div>
-                  </template>
-                  <div v-else style="font-size: 12px; color: var(--text-muted);">P&L: —</div>
-                </template>
-              </div>
+
+              <!-- DexScreener chart — full width -->
+              <DexChart chain="base" :pair-address="getPairAddress(pair)" :height="350" />
             </div>
 
-            <!-- Countdown bar -->
-            <div style="padding: 6px 16px 10px; display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 11px; color: var(--text-muted);">Next action in:</span>
-              <span
-                class="mono"
-                style="font-size: 12px; font-weight: 600;"
-                :class="agent.status === 'running' ? 'positive' : 'neutral'"
-              >
-                {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : 'agent stopped' }}
-              </span>
-              <span style="font-size: 11px; color: var(--text-muted);">· {{ trade.strategyUsed }}</span>
-              <span style="margin-left: auto;">
-                <span class="mono" style="font-size: 11px; color: var(--text-muted);">conf: {{ (trade.confidenceBefore * 100).toFixed(0) }}%</span>
-              </span>
-            </div>
-
-            <!-- DexScreener chart -->
-            <div style="padding: 0 0 0 0;">
-              <DexChart chain="base" :pair-address="getPairAddress(trade.pair)" :height="300" />
-            </div>
-
-            <!-- Reasoning (collapsed) -->
+            <!-- Position rows -->
             <div
-              style="padding: 10px 16px; border-top: 1px solid var(--border-color, #2a2a3e); cursor: pointer; font-size: 12px; color: var(--text-muted);"
-              @click="toggleTrade(trade.id)"
+              v-for="trade in pairTrades"
+              :key="trade.id"
+              style="border-top: 1px solid var(--border-color, #2a2a3e);"
             >
-              <span style="margin-right: 6px;">{{ expandedTrades.has(trade.id) ? '▼' : '▶' }}</span>
-              <span v-if="!expandedTrades.has(trade.id)" style="overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;">
-                {{ trade.reasoning }}
-              </span>
-              <span v-else style="white-space: pre-wrap; display: block; margin-top: 4px; line-height: 1.5;">{{ trade.reasoning }}</span>
+              <!-- Position details row -->
+              <div style="padding: 12px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                <span class="badge" :class="`badge-${trade.side}`">{{ trade.side === 'buy' ? 'LONG' : 'SHORT' }}</span>
+
+                <div style="display: flex; gap: 20px; flex: 1; min-width: 0; flex-wrap: wrap;">
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Entry</div>
+                    <div class="mono" style="font-size: 13px;">${{ formatPrice(trade.entryPrice) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Size</div>
+                    <div class="mono" style="font-size: 13px;">${{ trade.amountUsd.toLocaleString() }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Opened</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">{{ timeAgo(trade.openedAt) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Strategy</div>
+                    <div style="font-size: 13px; color: var(--text-muted);">{{ trade.strategyUsed }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Target</div>
+                    <div class="mono positive" style="font-size: 13px;">${{ formatPrice(getExitBounds(trade).target) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Stop</div>
+                    <div class="mono negative" style="font-size: 13px;">${{ formatPrice(getExitBounds(trade).stop) }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Confidence</div>
+                    <div class="mono" style="font-size: 13px;">{{ (trade.confidenceBefore * 100).toFixed(0) }}%</div>
+                  </div>
+                </div>
+
+                <!-- Unrealized P&L -->
+                <div style="text-align: right; min-width: 90px;">
+                  <template v-for="pnl in [getUnrealizedPnl(trade)]" :key="trade.id + '-pnl'">
+                    <template v-if="pnl">
+                      <div
+                        class="mono"
+                        style="font-size: 18px; font-weight: 700;"
+                        :class="pnl.pnlPct >= 0 ? 'positive' : 'negative'"
+                      >
+                        {{ pnl.pnlPct >= 0 ? '+' : '' }}{{ pnl.pnlPct.toFixed(2) }}%
+                      </div>
+                      <div style="font-size: 11px; color: var(--text-muted);">
+                        now ${{ formatPrice(pnl.currentPrice) }}
+                      </div>
+                    </template>
+                    <div v-else style="font-size: 12px; color: var(--text-muted);">P&L: —</div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Reasoning (collapsed) -->
+              <div
+                style="padding: 8px 16px 10px; cursor: pointer; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border-color, #2a2a3e);"
+                @click="toggleTrade(trade.id)"
+              >
+                <span style="margin-right: 6px;">{{ expandedTrades.has(trade.id) ? '▼' : '▶' }}</span>
+                <span v-if="!expandedTrades.has(trade.id)" style="overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;">
+                  {{ trade.reasoning }}
+                </span>
+                <span v-else style="white-space: pre-wrap; display: block; margin-top: 4px; line-height: 1.5;">{{ trade.reasoning }}</span>
+              </div>
             </div>
           </div>
         </div>

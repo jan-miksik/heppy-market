@@ -3,11 +3,29 @@
  * When the API binding is present (production on Pages), requests stay internal.
  * When absent (local dev), falls back to the configured apiBase URL.
  */
-import { getRequestURL, getRequestHeaders, readRawBody } from 'h3';
+import { getRequestURL, getRequestHeaders, readRawBody, setResponseStatus, setResponseHeaders } from 'h3';
 
 /** Service binding: fetch(request) → response (Worker is not exposed publicly). */
 interface CloudflareEnv {
   API?: { fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> };
+}
+
+/** Forward a fetch Response back through h3 properly. */
+async function proxyResponse(event: Parameters<typeof defineEventHandler>[0] extends (e: infer E) => unknown ? E : never, res: Response) {
+  setResponseStatus(event, res.status, res.statusText);
+
+  // Forward response headers
+  const headers: Record<string, string> = {};
+  res.headers.forEach((value, key) => {
+    // Skip headers that h3/nitro manages itself
+    if (!['content-encoding', 'transfer-encoding', 'content-length'].includes(key.toLowerCase())) {
+      headers[key] = value;
+    }
+  });
+  setResponseHeaders(event, headers);
+
+  // Return the body as text so h3 can handle encoding
+  return res.text();
 }
 
 export default defineEventHandler(async (event) => {
@@ -22,41 +40,30 @@ export default defineEventHandler(async (event) => {
   const cfEnv = (event.context as { cloudflare?: { env?: CloudflareEnv } })?.cloudflare?.env;
   const api = cfEnv?.API;
 
+  const method = event.method;
+  const headers = getRequestHeaders(event);
+  const body = method !== 'GET' && method !== 'HEAD' ? await readRawBody(event) : undefined;
+
   if (api) {
     const workerUrl = `https://internal${pathname}${query}`;
-    const method = event.method;
-    const headers = getRequestHeaders(event);
-    const body = method !== 'GET' && method !== 'HEAD' ? await readRawBody(event) : undefined;
-
     const response = await api.fetch(workerUrl, {
       method,
       headers: new Headers(headers as Record<string, string>),
       body: body ?? undefined,
     });
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    return proxyResponse(event, response);
   }
 
   // Local dev: no binding — proxy to the configured upstream (e.g. http://localhost:8787)
   const config = useRuntimeConfig();
   const base = (config.apiUpstream as string)?.replace(/\/$/, '') || 'http://localhost:8787';
   const target = `${base}${pathname}${query}`;
-  const method = event.method;
-  const headers = new Headers(getRequestHeaders(event) as Record<string, string>);
-  headers.delete('host');
-  const body = method !== 'GET' && method !== 'HEAD' ? await readRawBody(event) : undefined;
+  const reqHeaders = new Headers(headers as Record<string, string>);
+  reqHeaders.delete('host');
 
   try {
-    const res = await fetch(target, { method, headers, body: body ?? undefined });
-    return new Response(res.body, {
-      status: res.status,
-      statusText: res.statusText,
-      headers: res.headers,
-    });
+    const res = await fetch(target, { method, headers: reqHeaders, body: body ?? undefined });
+    return proxyResponse(event, res);
   } catch (err: unknown) {
     const e = err as { statusCode?: number; statusMessage?: string; message?: string };
     throw createError({

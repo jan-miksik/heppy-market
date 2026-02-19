@@ -78,12 +78,12 @@ export async function getTradeDecision(
   // Only models that support tool calling (required for generateObject).
   // Verified against OpenRouter free-tier list on 2026-02-16.
   const EMERGENCY_FALLBACKS = [
-    'openai/gpt-oss-20b:free',
-    'qwen/qwen3-next-80b-a3b-instruct:free',
     'nvidia/nemotron-3-nano-30b-a3b:free',
-    'mistralai/mistral-small-3.1-24b-instruct:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'google/gemma-3-27b-it:free',
+    'stepfun/step-3.5-flash:free',
+    'arcee-ai/trinity-large-preview:free',
+    'liquid/lfm-2.5-1.2b-thinking:free',
+    'liquid/lfm-2.5-1.2b-instruct:free',
+    'arcee-ai/trinity-mini:free',
   ];
   const modelsToTry = [
     config.model,
