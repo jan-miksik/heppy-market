@@ -1,5 +1,5 @@
 # Task Progress
-- [ ] Phase A — Quick Fixes
+- [x] Phase A — Quick Fixes
 - [ ] Phase B — Agent Config
 - [ ] Phase C — Authentication
 - [ ] Phase D — Public Square
