@@ -11,68 +11,63 @@ const GECKO_BASE = 'https://api.geckoterminal.com/api/v2';
 const CACHE_TTL = 60; // seconds (KV minimum is 60)
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
+// Use .nullable().optional() everywhere — GeckoTerminal returns null for missing
+// values (not absent keys), and .passthrough() on objects to tolerate new fields.
+
+const optStr = z.string().nullable().optional();
+
+/** Parse a nullable/optional string to number, or return undefined */
+function pf(v: string | null | undefined): number | undefined {
+  return v != null ? parseFloat(v) : undefined;
+}
+
+const TxnBucket = z.object({ buys: z.number(), sells: z.number() }).passthrough().nullable().optional();
 
 const GeckoPoolAttributesSchema = z.object({
   address: z.string(),
   name: z.string(),
-  base_token_price_usd: z.string().nullable().optional(),
-  quote_token_price_usd: z.string().nullable().optional(),
+  base_token_price_usd: optStr,
+  quote_token_price_usd: optStr,
   price_change_percentage: z
-    .object({
-      m5: z.string().optional(),
-      m15: z.string().optional(),
-      h1: z.string().optional(),
-      h6: z.string().optional(),
-      h24: z.string().optional(),
-    })
+    .object({ m5: optStr, m15: optStr, m30: optStr, h1: optStr, h6: optStr, h24: optStr })
+    .passthrough()
+    .nullable()
     .optional(),
   volume_usd: z
-    .object({
-      m5: z.string().optional(),
-      h1: z.string().optional(),
-      h6: z.string().optional(),
-      h24: z.string().optional(),
-    })
+    .object({ m5: optStr, m15: optStr, m30: optStr, h1: optStr, h6: optStr, h24: optStr })
+    .passthrough()
+    .nullable()
     .optional(),
-  reserve_in_usd: z.string().nullable().optional(),
-  pool_created_at: z.string().nullable().optional(),
-  fdv_usd: z.string().nullable().optional(),
-  market_cap_usd: z.string().nullable().optional(),
+  reserve_in_usd: optStr,
+  pool_created_at: optStr,
+  fdv_usd: optStr,
+  market_cap_usd: optStr,
   transactions: z
-    .object({
-      m5: z.object({ buys: z.number(), sells: z.number() }).optional(),
-      h1: z.object({ buys: z.number(), sells: z.number() }).optional(),
-      h6: z.object({ buys: z.number(), sells: z.number() }).optional(),
-      h24: z.object({ buys: z.number(), sells: z.number() }).optional(),
-    })
+    .object({ m5: TxnBucket, m15: TxnBucket, m30: TxnBucket, h1: TxnBucket, h6: TxnBucket, h24: TxnBucket })
+    .passthrough()
+    .nullable()
     .optional(),
-});
+}).passthrough();
 
 const GeckoPoolSchema = z.object({
   id: z.string(),
-  type: z.literal('pool'),
+  type: z.string(), // was z.literal('pool') — some results may differ
   attributes: GeckoPoolAttributesSchema,
-  relationships: z
-    .object({
-      base_token: z.object({ data: z.object({ id: z.string() }) }).optional(),
-      quote_token: z.object({ data: z.object({ id: z.string() }) }).optional(),
-      dex: z.object({ data: z.object({ id: z.string() }) }).optional(),
-    })
-    .optional(),
-});
+  relationships: z.record(z.unknown()).nullable().optional(),
+}).passthrough();
 
 const GeckoSearchResponseSchema = z.object({
   data: z.array(GeckoPoolSchema),
-});
+}).passthrough();
 
 // OHLCV: each entry is [timestamp_ms, open, high, low, close, volume]
 const GeckoOHLCVSchema = z.object({
   data: z.object({
     attributes: z.object({
       ohlcv_list: z.array(z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()])),
-    }),
-  }),
-});
+    }).passthrough(),
+  }).passthrough(),
+}).passthrough();
 
 // ─── Normalised type (mirrors what agent-loop expects) ────────────────────────
 
@@ -134,25 +129,21 @@ export function createGeckoTerminalService(cache: KVNamespace) {
     return data.data.map((p) => {
       const attr = p.attributes;
       const pc = attr.price_change_percentage;
+      // relationships is now z.record — drill into it safely
+      const rels = p.relationships as Record<string, { data?: { id?: string } }> | null | undefined;
       return {
         address: attr.address,
         name: attr.name,
-        dexId: p.relationships?.dex?.data?.id ?? 'unknown',
-        priceUsd: parseFloat(attr.base_token_price_usd ?? '0'),
+        dexId: rels?.dex?.data?.id ?? 'unknown',
+        priceUsd: pf(attr.base_token_price_usd) ?? 0,
         priceChange: {
-          m5:  pc?.m5  !== undefined ? parseFloat(pc.m5)  : undefined,
-          h1:  pc?.h1  !== undefined ? parseFloat(pc.h1)  : undefined,
-          h6:  pc?.h6  !== undefined ? parseFloat(pc.h6)  : undefined,
-          h24: pc?.h24 !== undefined ? parseFloat(pc.h24) : undefined,
+          m5:  pf(pc?.m5),
+          h1:  pf(pc?.h1),
+          h6:  pf(pc?.h6),
+          h24: pf(pc?.h24),
         },
-        volume24h:
-          attr.volume_usd?.h24 !== undefined && attr.volume_usd?.h24 !== null
-            ? parseFloat(attr.volume_usd.h24)
-            : undefined,
-        liquidityUsd:
-          attr.reserve_in_usd !== undefined && attr.reserve_in_usd !== null
-            ? parseFloat(attr.reserve_in_usd)
-            : undefined,
+        volume24h: pf(attr.volume_usd?.h24),
+        liquidityUsd: pf(attr.reserve_in_usd),
       };
     }).filter((p) => p.priceUsd > 0);
   }

@@ -17,13 +17,28 @@ import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
 
 /** Build a search query from a pair name.
- *  "WETH/USDC" → "WETH USDC" for GeckoTerminal (network=base scopes it)
- *  "WETH/USDC" → "WETH USDC base" for DexScreener (global search, needs chain hint)
+ *  "WETH/USDC" → "WETH USDC"
+ *  Note: Do NOT append "base" — DexScreener returns worse results with it.
+ *  Chain filtering is done on the response by checking chainId.
  */
-function pairToSearchQuery(pairName: string, includeChain = false): string {
-  const base = pairName.replace('/', ' ');
-  return includeChain ? `${base} base` : base;
+function pairToSearchQuery(pairName: string): string {
+  return pairName.replace('/', ' ');
 }
+
+/**
+ * Well-known Base chain token addresses for reliable pair lookups.
+ * Used as a fallback when text search fails.
+ */
+const BASE_TOKEN_ADDRESSES: Record<string, string> = {
+  WETH:  '0x4200000000000000000000000000000000000006',
+  USDC:  '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  USDbC: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+  cbBTC: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf',
+  AERO:  '0x940181a94A35A4569E4529A3CDfB74e38FD98631',
+  DEGEN: '0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed',
+  BRETT: '0x532f27101965dd16442E59d40670FaF5eBB142E4',
+  TOSHI: '0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4',
+};
 
 /**
  * Returns true when a pool/pair name contains ALL token symbols from the
@@ -105,7 +120,7 @@ export async function runAgentLoop(
   // 3. Check open positions for stop loss / take profit
   for (const position of engine.openPositions) {
     const dexSvc = createDexDataService(env.CACHE);
-    const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair, true));
+    const searchResults = await dexSvc.searchPairs(pairToSearchQuery(position.pair));
     const pair = searchResults
       .filter((p) => p.chainId === 'base')
       .filter((p) => poolMatchesPair(`${p.baseToken.symbol}/${p.quoteToken.symbol}`, position.pair))
@@ -195,7 +210,7 @@ export async function runAgentLoop(
     // ── Fallback: DexScreener ────────────────────────────────────────────────
     if (priceUsd === 0) {
       try {
-        const dexQuery = pairToSearchQuery(pairName, true);
+        const dexQuery = pairToSearchQuery(pairName);
         console.log(`[agent-loop] ${agentId}: DexScreener fallback for "${dexQuery}"`);
         const results = await dexSvc.searchPairs(dexQuery);
         const basePair = results
@@ -222,7 +237,38 @@ export async function runAgentLoop(
       }
     }
 
-    if (priceUsd === 0) continue; // both providers failed for this pair
+    // ── Last resort: look up by well-known token address ──────────────────
+    if (priceUsd === 0) {
+      const tokens = pairName.split('/').map((t) => t.trim().toUpperCase());
+      const baseAddr = BASE_TOKEN_ADDRESSES[tokens[0]];
+      if (baseAddr) {
+        try {
+          console.log(`[agent-loop] ${agentId}: Token address fallback for ${tokens[0]} (${baseAddr})`);
+          const results = await dexSvc.getTokenPairs(baseAddr);
+          const basePair = results
+            .filter((p) => p.chainId === 'base')
+            .filter((p) => poolMatchesPair(`${p.baseToken.symbol}/${p.quoteToken.symbol}`, pairName))
+            .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as DexPair | undefined;
+          if (basePair) {
+            priceUsd = getPriceUsd(basePair);
+            pairAddress = basePair.pairAddress;
+            priceChange = {
+              m5: basePair.priceChange?.m5,
+              h1: basePair.priceChange?.h1,
+              h6: basePair.priceChange?.h6,
+              h24: basePair.priceChange?.h24,
+            };
+            volume24h = basePair.volume?.h24;
+            liquidity = basePair.liquidity?.usd;
+            console.log(`[agent-loop] ${agentId}: Token address fallback found @ $${priceUsd}`);
+          }
+        } catch (tokenErr) {
+          console.warn(`[agent-loop] ${agentId}: Token address fallback failed:`, tokenErr);
+        }
+      }
+    }
+
+    if (priceUsd === 0) continue; // all providers failed for this pair
 
     // ── Compute indicators (only when we have enough real OHLCV candles) ──────
     // RSI needs 14 + 1 points, MACD needs 26 + 9 + 1 = 36 points minimum.

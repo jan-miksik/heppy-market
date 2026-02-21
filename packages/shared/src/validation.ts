@@ -24,16 +24,16 @@ export const AgentConfigSchema = z.object({
     .max(10)
     .default(['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']),
   paperBalance: z.number().min(100).max(1_000_000).default(10_000),
-  maxPositionSizePct: z.number().min(1).max(100).default(20),
+  maxPositionSizePct: z.number().min(1).max(100).default(5),
   maxOpenPositions: z.number().min(1).max(10).default(3),
   stopLossPct: z.number().min(0.5).max(50).default(5),
-  takeProfitPct: z.number().min(0.5).max(100).default(10),
+  takeProfitPct: z.number().min(0.5).max(100).default(7),
   slippageSimulation: z.number().min(0).max(5).default(0.3),
 
   // Timeframe
   analysisInterval: z
     .enum(['1m', '5m', '15m', '1h', '4h', '1d'])
-    .default('1h'),
+    .default('15m'),
 
   // Strategies
   strategies: z
@@ -83,14 +83,14 @@ export const CreateAgentRequestSchema = z.object({
     .max(10)
     .default(['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']),
   paperBalance: z.number().min(100).max(1_000_000).default(10_000),
-  maxPositionSizePct: z.number().min(1).max(100).default(20),
+  maxPositionSizePct: z.number().min(1).max(100).default(5),
   maxOpenPositions: z.number().min(1).max(10).default(3),
   stopLossPct: z.number().min(0.5).max(50).default(5),
-  takeProfitPct: z.number().min(0.5).max(100).default(10),
+  takeProfitPct: z.number().min(0.5).max(100).default(7),
   slippageSimulation: z.number().min(0).max(5).default(0.3),
   analysisInterval: z
     .enum(['1m', '5m', '15m', '1h', '4h', '1d'])
-    .default('1h'),
+    .default('15m'),
   strategies: z
     .array(
       z.enum([

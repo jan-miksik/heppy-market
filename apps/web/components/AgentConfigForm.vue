@@ -6,45 +6,69 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const form = reactive<CreateAgentPayload>({
+const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   name: '',
   autonomyLevel: 'guided',
   pairs: ['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC'],
   paperBalance: 10000,
   strategies: ['combined'],
-  analysisInterval: '1h',
-  maxPositionSizePct: 20,
+  analysisInterval: '15m',
+  maxPositionSizePct: 5,
   stopLossPct: 5,
-  takeProfitPct: 10,
+  takeProfitPct: 7,
   maxOpenPositions: 3,
   llmModel: 'nvidia/nemotron-3-nano-30b-a3b:free',
 });
 
-const pairsInput = ref('WETH/USDC, cbBTC/WETH, AERO/USDC');
 const submitting = ref(false);
 const validationError = ref('');
 
-function parsePairs(str: string): string[] {
-  return str
-    .split(',')
-    .map((s) => s.trim().toUpperCase())
-    .filter((s) => s.length > 0);
+/** Extract a short model name from the OpenRouter model ID */
+function shortModelName(modelId: string): string {
+  // "nvidia/nemotron-3-nano-30b-a3b:free" → "Nemotron"
+  const names: Record<string, string> = {
+    'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron',
+    'stepfun/step-3.5-flash:free': 'Step',
+    'arcee-ai/trinity-large-preview:free': 'Trinity',
+    'liquid/lfm-2.5-1.2b-thinking:free': 'LFM-Think',
+    'liquid/lfm-2.5-1.2b-instruct:free': 'LFM',
+    'arcee-ai/trinity-mini:free': 'Trinity-Mini',
+  };
+  return names[modelId] ?? modelId.split('/').pop()?.split(':')[0] ?? 'Agent';
 }
+
+/** Generate a name from model + first pair, e.g. "Nemotron · WETH/USDC" */
+function generateName(): string {
+  const model = shortModelName(form.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free');
+  const pairs = form.pairs;
+  if (pairs.length === 1 && pairs[0] === '*') return `${model} · All Pairs`;
+  const pairLabel = pairs.length === 1 ? pairs[0] : pairs.length > 1 ? `${pairs[0]} +${pairs.length - 1}` : 'Base';
+  return `${model} · ${pairLabel}`;
+}
+
+// Auto-generate name when model or pairs change (only if user hasn't manually edited)
+const nameManuallyEdited = ref(false);
+watch([() => form.llmModel, () => [...form.pairs]], () => {
+  if (!nameManuallyEdited.value) {
+    form.name = generateName();
+  }
+});
+// Set initial generated name
+onMounted(() => { form.name = generateName(); });
 
 async function handleSubmit() {
   if (!form.name.trim()) {
     validationError.value = 'Agent name is required';
     return;
   }
+  if (!form.pairs.length) {
+    validationError.value = 'Select at least one trading pair';
+    return;
+  }
   validationError.value = '';
   submitting.value = true;
 
-  const payload = {
-    ...form,
-    pairs: parsePairs(pairsInput.value),
-  };
-
-  emit('submit', payload);
+  emit('submit', { ...form });
   submitting.value = false;
 }
 </script>
@@ -55,7 +79,7 @@ async function handleSubmit() {
 
     <div class="form-group">
       <label class="form-label">Agent Name *</label>
-      <input v-model="form.name" class="form-input" placeholder="My Alpha Hunter" maxlength="50" required />
+      <input v-model="form.name" class="form-input" placeholder="My Alpha Hunter" maxlength="50" required @input="nameManuallyEdited = true" />
     </div>
 
     <div class="grid-2">
@@ -72,8 +96,8 @@ async function handleSubmit() {
         <select v-model="form.analysisInterval" class="form-select">
           <option value="1m">Every 1 minute</option>
           <option value="5m">Every 5 minutes</option>
-          <option value="15m">Every 15 minutes</option>
-          <option value="1h">Every hour (default)</option>
+          <option value="15m">Every 15 minutes (default)</option>
+          <option value="1h">Every hour</option>
           <option value="4h">Every 4 hours</option>
           <option value="1d">Daily</option>
         </select>
@@ -82,8 +106,7 @@ async function handleSubmit() {
 
     <div class="form-group">
       <label class="form-label">Trading Pairs</label>
-      <input v-model="pairsInput" class="form-input" placeholder="WETH/USDC, cbBTC/WETH, AERO/USDC" />
-      <div class="form-hint">Comma-separated pair names on Base chain</div>
+      <PairPicker v-model="form.pairs" />
     </div>
 
     <div class="form-group">

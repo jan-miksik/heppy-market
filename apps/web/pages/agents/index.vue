@@ -14,6 +14,13 @@ async function handleCreate(payload: Parameters<typeof createAgent>[0]) {
   createError.value = '';
   try {
     const agent = await createAgent(payload);
+    // Auto-start the agent after creation
+    try {
+      await startAgent(agent.id);
+    } catch {
+      // Non-fatal — agent created but failed to start
+      console.warn('Agent created but failed to auto-start');
+    }
     showCreateModal.value = false;
     router.push(`/agents/${agent.id}`);
   } catch (e) {

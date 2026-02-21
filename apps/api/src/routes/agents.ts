@@ -104,7 +104,7 @@ agentsRoute.patch('/:id', async (c) => {
   });
 });
 
-/** DELETE /api/agents/:id — delete agent */
+/** DELETE /api/agents/:id — delete agent (stops first if running) */
 agentsRoute.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const db = drizzle(c.env.DB);
@@ -112,8 +112,15 @@ agentsRoute.delete('/:id', async (c) => {
   const [existing] = await db.select().from(agents).where(eq(agents.id, id));
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
-  if (existing.status === 'running') {
-    return c.json({ error: 'Stop the agent before deleting' }, 409);
+  // If running or paused, stop the Durable Object and update DB so we can safely delete
+  if (existing.status === 'running' || existing.status === 'paused') {
+    const doId = c.env.TRADING_AGENT.idFromName(id);
+    const stub = c.env.TRADING_AGENT.get(doId);
+    await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
+    await db
+      .update(agents)
+      .set({ status: 'stopped', updatedAt: nowIso() })
+      .where(eq(agents.id, id));
   }
 
   // Delete related records first to satisfy foreign key constraints.

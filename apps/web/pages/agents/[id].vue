@@ -589,7 +589,7 @@ function timeAgo(iso: string): string {
                     {{ (dec.confidence * 100).toFixed(0) }}%
                   </td>
                   <td style="font-size: 11px; color: var(--text-muted);">{{ dec.llmModel.split('/').pop() }}</td>
-                  <td class="mono" style="color: var(--text-muted);">{{ dec.llmLatencyMs }}ms</td>
+                  <td class="mono" style="color: var(--text-muted);">{{ (dec.llmLatencyMs / 1000).toFixed(1) }}s</td>
                   <td style="font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">
                     {{ dec.reasoning }}
                   </td>
