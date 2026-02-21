@@ -1,11 +1,16 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false });
-const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent } = useAgents();
+const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent, updateAgent } = useAgents();
 const router = useRouter();
 
 const showCreateModal = ref(false);
 const creating = ref(false);
 const createError = ref('');
+
+const editingAgent = ref<(typeof agents.value)[0] | null>(null);
+const showEditModal = ref(false);
+const saving = ref(false);
+const saveError = ref('');
 
 onMounted(fetchAgents);
 
@@ -36,6 +41,28 @@ async function handleDelete(id: string) {
     await deleteAgent(id);
   } catch (e) {
     alert(`Failed to delete: ${e}`);
+  }
+}
+
+function handleEditClick(id: string) {
+  const found = agents.value.find((a) => a.id === id) ?? null;
+  editingAgent.value = found;
+  saveError.value = '';
+  showEditModal.value = true;
+}
+
+async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
+  if (!editingAgent.value) return;
+  saving.value = true;
+  saveError.value = '';
+  try {
+    await updateAgent(editingAgent.value.id, payload);
+    showEditModal.value = false;
+    editingAgent.value = null;
+  } catch (e) {
+    saveError.value = String(e);
+  } finally {
+    saving.value = false;
   }
 }
 </script>
@@ -76,6 +103,7 @@ async function handleDelete(id: string) {
         @start="startAgent"
         @stop="stopAgent"
         @delete="handleDelete"
+        @edit="handleEditClick"
       />
     </div>
 
@@ -92,6 +120,42 @@ async function handleDelete(id: string) {
             <AgentConfigForm
               @submit="handleCreate"
               @cancel="showCreateModal = false"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Edit Modal -->
+    <Teleport to="body">
+      <div v-if="showEditModal && editingAgent" class="modal-overlay" @click.self="showEditModal = false">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title">Edit Agent</span>
+            <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="editingAgent.status === 'running'" class="alert" style="background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow-dim); margin-bottom: 12px; font-size: 12px;">
+              Agent is running — changes take effect on the next analysis cycle.
+            </div>
+            <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
+            <AgentConfigForm
+              :initialValues="{
+                name: editingAgent.name,
+                autonomyLevel: editingAgent.autonomyLevel,
+                llmModel: editingAgent.llmModel,
+                pairs: editingAgent.config.pairs,
+                paperBalance: editingAgent.config.paperBalance,
+                strategies: editingAgent.config.strategies,
+                analysisInterval: editingAgent.config.analysisInterval,
+                maxPositionSizePct: editingAgent.config.maxPositionSizePct,
+                stopLossPct: editingAgent.config.stopLossPct,
+                takeProfitPct: editingAgent.config.takeProfitPct,
+                maxOpenPositions: editingAgent.config.maxOpenPositions,
+                temperature: editingAgent.config.temperature ?? 0.7,
+              }"
+              @submit="handleEditSubmit"
+              @cancel="showEditModal = false"
             />
           </div>
         </div>

@@ -10,6 +10,7 @@ defineEmits<{
   start: [id: string];
   stop: [id: string];
   delete: [id: string];
+  edit: [id: string];
 }>();
 
 function statusDot(status: string) {
@@ -70,6 +71,12 @@ function statusDot(status: string) {
         @click="$emit('stop', agent.id)"
       >
         ■ Stop
+      </button>
+      <button
+        class="btn btn-ghost btn-sm"
+        @click="$emit('edit', agent.id)"
+      >
+        ✎ Edit
       </button>
       <button
         class="btn btn-danger btn-sm"

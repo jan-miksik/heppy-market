@@ -79,10 +79,6 @@ agentsRoute.patch('/:id', async (c) => {
   const [existing] = await db.select().from(agents).where(eq(agents.id, id));
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
-  if (existing.status === 'running') {
-    return c.json({ error: 'Stop the agent before updating config' }, 409);
-  }
-
   const existingConfig = JSON.parse(existing.config);
   const mergedConfig = { ...existingConfig, ...body };
 
@@ -101,6 +97,8 @@ agentsRoute.patch('/:id', async (c) => {
     ...updated,
     autonomyLevel: intToAutonomyLevel(updated.autonomyLevel),
     config: JSON.parse(updated.config),
+    // If agent was running, changes take effect on the next analysis cycle
+    pendingRestart: existing.status === 'running',
   });
 });
 
