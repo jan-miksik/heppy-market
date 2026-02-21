@@ -17,6 +17,7 @@ export interface Agent {
     takeProfitPct: number;
     maxOpenPositions: number;
     slippageSimulation: number;
+    temperature: number;
   };
   createdAt: string;
   updatedAt: string;
@@ -34,6 +35,7 @@ export interface CreateAgentPayload {
   takeProfitPct?: number;
   maxOpenPositions?: number;
   llmModel?: string;
+  temperature?: number;
 }
 
 export function useAgents() {
@@ -92,6 +94,16 @@ export function useAgents() {
     agents.value = agents.value.filter((a) => a.id !== id);
   }
 
+  async function updateAgent(id: string, payload: Partial<CreateAgentPayload>): Promise<Agent> {
+    const agent = await request<Agent>(`/api/agents/${id}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+    const idx = agents.value.findIndex((a) => a.id === id);
+    if (idx >= 0) agents.value[idx] = agent;
+    return agent;
+  }
+
   return {
     agents,
     loading,
@@ -103,5 +115,6 @@ export function useAgents() {
     stopAgent,
     pauseAgent,
     deleteAgent,
+    updateAgent,
   };
 }

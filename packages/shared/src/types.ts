@@ -40,6 +40,7 @@ export interface AgentConfig {
   llmModel: string;
   llmFallback: string;
   maxLlmCallsPerHour: number;
+  temperature: number;
   chain: Chain;
   dexes: Dex[];
   pairs: string[];

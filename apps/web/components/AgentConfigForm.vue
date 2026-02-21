@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import type { CreateAgentPayload } from '~/composables/useAgents';
 
+const props = defineProps<{
+  /** Pre-populate the form when editing an existing agent */
+  initialValues?: Partial<CreateAgentPayload & { pairs: string[] }>;
+}>();
+
 const emit = defineEmits<{
   submit: [payload: CreateAgentPayload];
   cancel: [];
 }>();
+
+const isEditing = computed(() => !!props.initialValues);
 
 const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   name: '',
@@ -18,6 +25,7 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   takeProfitPct: 7,
   maxOpenPositions: 3,
   llmModel: 'nvidia/nemotron-3-nano-30b-a3b:free',
+  temperature: 0.7,
 });
 
 const submitting = ref(false);
@@ -53,8 +61,16 @@ watch([() => form.llmModel, () => [...form.pairs]], () => {
     form.name = generateName();
   }
 });
-// Set initial generated name
-onMounted(() => { form.name = generateName(); });
+
+onMounted(() => {
+  if (props.initialValues) {
+    Object.assign(form, props.initialValues);
+    // When editing, treat the name as manually set
+    nameManuallyEdited.value = true;
+  } else {
+    form.name = generateName();
+  }
+});
 
 async function handleSubmit() {
   if (!form.name.trim()) {
@@ -109,16 +125,33 @@ async function handleSubmit() {
       <PairPicker v-model="form.pairs" />
     </div>
 
-    <div class="form-group">
-      <label class="form-label">LLM Model</label>
-      <select v-model="form.llmModel" class="form-select">
-        <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
-        <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
-        <option value="arcee-ai/trinity-large-preview:free">Trinity Large Preview (free)</option>
-        <option value="liquid/lfm-2.5-1.2b-thinking:free">LFM 2.5 1.2B Thinking (free)</option>
-        <option value="liquid/lfm-2.5-1.2b-instruct:free">LFM 2.5 1.2B Instruct (free)</option>
-        <option value="arcee-ai/trinity-mini:free">Trinity Mini (free)</option>
-      </select>
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">LLM Model</label>
+        <select v-model="form.llmModel" class="form-select">
+          <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
+          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
+          <option value="arcee-ai/trinity-large-preview:free">Trinity Large Preview (free)</option>
+          <option value="liquid/lfm-2.5-1.2b-thinking:free">LFM 2.5 1.2B Thinking (free)</option>
+          <option value="liquid/lfm-2.5-1.2b-instruct:free">LFM 2.5 1.2B Instruct (free)</option>
+          <option value="arcee-ai/trinity-mini:free">Trinity Mini (free)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">
+          Temperature
+          <span style="color: var(--text-muted); font-weight: 400;">{{ (form.temperature ?? 0.7).toFixed(1) }}</span>
+        </label>
+        <input
+          v-model.number="form.temperature"
+          type="range"
+          class="form-range"
+          min="0"
+          max="2"
+          step="0.1"
+        />
+        <div class="form-hint">Lower = more deterministic · Higher = more creative</div>
+      </div>
     </div>
 
     <div class="grid-2">
@@ -164,8 +197,17 @@ async function handleSubmit() {
       <button type="button" class="btn btn-ghost" @click="$emit('cancel')">Cancel</button>
       <button type="submit" class="btn btn-primary" :disabled="submitting">
         <span v-if="submitting" class="spinner" style="width:14px;height:14px;"></span>
-        Create Agent
+        {{ isEditing ? 'Save Changes' : 'Create Agent' }}
       </button>
     </div>
   </form>
 </template>
+
+<style scoped>
+.form-range {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin-top: 4px;
+}
+</style>

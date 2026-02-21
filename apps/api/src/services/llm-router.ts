@@ -15,6 +15,7 @@ export interface LLMRouterConfig {
   model: string;
   fallbackModel?: string;
   maxRetries?: number;
+  temperature?: number;
 }
 
 export interface TradeDecisionRequest {
@@ -102,6 +103,7 @@ export async function getTradeDecision(
         schema: TradeDecisionSchema,
         system: systemPrompt,
         prompt: userPrompt,
+        ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
         maxRetries: 0, // SDK must not retry — we fall through to the next model on any error
       });
 

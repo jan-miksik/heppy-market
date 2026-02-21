@@ -12,6 +12,7 @@ export const AgentConfigSchema = z.object({
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
+  temperature: z.number().min(0).max(2).default(0.7),
 
   // Trading
   chain: z.literal('base').default('base'),
@@ -73,6 +74,7 @@ export const CreateAgentRequestSchema = z.object({
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
+  temperature: z.number().min(0).max(2).default(0.7),
   chain: z.literal('base').default('base'),
   dexes: z
     .array(z.enum(['aerodrome', 'uniswap-v3']))

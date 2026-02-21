@@ -4,7 +4,7 @@ import type { Trade } from '~/composables/useTrades';
 
 const route = useRoute();
 const id = computed(() => route.params.id as string);
-const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent } = useAgents();
+const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent, updateAgent } = useAgents();
 const { fetchAgentTrades, formatPnl, pnlClass } = useTrades();
 const { request } = useApi();
 const router = useRouter();
@@ -56,6 +56,9 @@ const snapshots = ref<PerformanceSnapshot[]>([]);
 const doStatus = ref<DoStatus | null>(null);
 const loading = ref(true);
 const isAnalyzing = ref(false);
+const showEditModal = ref(false);
+const saving = ref(false);
+const saveError = ref<string | null>(null);
 const activeTab = ref<'trades' | 'decisions' | 'performance'>('trades');
 const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
@@ -240,6 +243,40 @@ async function handleDelete() {
   router.push('/agents');
 }
 
+async function handleEdit(payload: Parameters<typeof updateAgent>[1]) {
+  if (!agent.value) return;
+  saving.value = true;
+  saveError.value = null;
+  try {
+    const updated = await updateAgent(id.value, payload);
+    agent.value = updated;
+    showEditModal.value = false;
+  } catch (e) {
+    saveError.value = String(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+/** Build initialValues for the edit form from the current agent config */
+const editInitialValues = computed(() => {
+  if (!agent.value) return undefined;
+  return {
+    name: agent.value.name,
+    autonomyLevel: agent.value.autonomyLevel,
+    llmModel: agent.value.llmModel,
+    pairs: agent.value.config.pairs,
+    paperBalance: agent.value.config.paperBalance,
+    strategies: agent.value.config.strategies,
+    analysisInterval: agent.value.config.analysisInterval,
+    maxPositionSizePct: agent.value.config.maxPositionSizePct,
+    stopLossPct: agent.value.config.stopLossPct,
+    takeProfitPct: agent.value.config.takeProfitPct,
+    maxOpenPositions: agent.value.config.maxOpenPositions,
+    temperature: agent.value.config.temperature ?? 0.7,
+  };
+});
+
 function toggleDecision(decId: string) {
   if (expandedDecisions.value.has(decId)) {
     expandedDecisions.value.delete(decId);
@@ -302,7 +339,7 @@ function formatLatency(ms: number): string {
             <span class="badge" :class="`badge-${agent.status}`">{{ agent.status }}</span>
           </div>
           <p class="page-subtitle">
-            {{ agent.autonomyLevel }} · {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ agent.config.analysisInterval }} interval
+            {{ agent.autonomyLevel }} · {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ agent.config.analysisInterval }} interval · temp {{ (agent.config.temperature ?? 0.7).toFixed(1) }}
           </p>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -315,6 +352,7 @@ function formatLatency(ms: number): string {
             <span v-if="isAnalyzing" class="spinner" style="width: 14px; height: 14px; margin-right: 4px;" />
             {{ isAnalyzing ? 'Fetching data & reasoning…' : '⚡ Run Analysis' }}
           </button>
+          <button class="btn btn-ghost btn-sm" @click="showEditModal = true">✎ Edit</button>
           <button v-if="agent.status !== 'running'" class="btn btn-success" @click="handleStart">
             ▶ Start
           </button>
@@ -676,5 +714,29 @@ function formatLatency(ms: number): string {
         </div>
       </div>
     </template>
+
+    <!-- Edit Modal -->
+    <Teleport to="body">
+      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title">Edit Agent</span>
+            <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="agent?.status === 'running'" class="alert" style="background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow-dim); margin-bottom: 12px; font-size: 12px;">
+              Agent is running — changes take effect on the next analysis cycle.
+            </div>
+            <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
+            <AgentConfigForm
+              v-if="editInitialValues"
+              :initialValues="editInitialValues"
+              @submit="handleEdit"
+              @cancel="showEditModal = false"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </main>
 </template>

@@ -92,6 +92,7 @@ export async function runAgentLoop(
     strategies: string[];
     paperBalance: number;
     slippageSimulation: number;
+    temperature?: number;
   };
 
   const autonomyLevel = intToAutonomyLevel(agentRow.autonomyLevel) as 'full' | 'guided' | 'strict';
@@ -373,6 +374,7 @@ export async function runAgentLoop(
         model: config.llmModel,
         fallbackModel: config.llmFallback,
         maxRetries: 2,
+        temperature: config.temperature,
       },
       {
         autonomyLevel,
