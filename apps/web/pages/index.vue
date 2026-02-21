@@ -4,11 +4,13 @@ const { agents, fetchAgents, startAgent, stopAgent } = useAgents();
 const { stats, trades, fetchStats, fetchTrades } = useTrades();
 
 const refreshing = ref(false);
+const initialLoading = ref(true);
 
 async function refresh() {
   refreshing.value = true;
   await Promise.all([fetchAgents(), fetchStats(), fetchTrades({ limit: 10 })]);
   refreshing.value = false;
+  initialLoading.value = false;
 }
 
 onMounted(refresh);
@@ -35,8 +37,17 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
       </button>
     </div>
 
+    <!-- Skeleton: Stats -->
+    <div v-if="initialLoading" class="stats-grid">
+      <div v-for="i in 4" :key="i" class="stat-card">
+        <div class="skeleton" style="width: 60%; height: 11px; margin-bottom: 10px;" />
+        <div class="skeleton" style="width: 45%; height: 28px; margin-bottom: 8px;" />
+        <div class="skeleton" style="width: 70%; height: 11px;" />
+      </div>
+    </div>
+
     <!-- Stats -->
-    <div class="stats-grid">
+    <div v-else class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Agents</div>
         <div class="stat-value">{{ agents.length }}</div>
@@ -70,12 +81,24 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
       <!-- Active Agents -->
       <div class="card">
         <div class="card-header">Active Agents</div>
-        <div v-if="agents.length === 0" class="empty-state" style="padding: 24px;">
+        <!-- Skeleton -->
+        <div v-if="initialLoading" style="display: flex; flex-direction: column; gap: 12px;">
+          <div v-for="i in 3" :key="i" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);">
+            <div>
+              <div class="skeleton" style="width: 120px; height: 14px; margin-bottom: 6px;" />
+              <div class="skeleton" style="width: 80px; height: 11px;" />
+            </div>
+            <div class="skeleton" style="width: 48px; height: 22px; border-radius: 20px;" />
+          </div>
+        </div>
+        <!-- Empty state (only after load) -->
+        <div v-else-if="agents.length === 0" class="empty-state" style="padding: 24px;">
           <div class="empty-title">No agents yet</div>
           <NuxtLink to="/agents" class="btn btn-primary btn-sm" style="margin-top: 12px;">
             Create Agent
           </NuxtLink>
         </div>
+        <!-- Data -->
         <div v-else style="display: flex; flex-direction: column; gap: 8px;">
           <div
             v-for="agent in agents.slice(0, 5)"
@@ -113,10 +136,25 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
       <!-- Recent Trades -->
       <div class="card">
         <div class="card-header">Recent Trades</div>
-        <div v-if="trades.length === 0" class="empty-state" style="padding: 24px;">
+        <!-- Skeleton -->
+        <div v-if="initialLoading" style="display: flex; flex-direction: column; gap: 4px;">
+          <div v-for="i in 4" :key="i" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="skeleton" style="width: 32px; height: 20px; border-radius: 20px;" />
+              <div class="skeleton" style="width: 90px; height: 13px;" />
+            </div>
+            <div style="text-align: right;">
+              <div class="skeleton" style="width: 50px; height: 13px; margin-bottom: 4px;" />
+              <div class="skeleton" style="width: 40px; height: 11px;" />
+            </div>
+          </div>
+        </div>
+        <!-- Empty state (only after load) -->
+        <div v-else-if="trades.length === 0" class="empty-state" style="padding: 24px;">
           <div class="empty-title">No trades yet</div>
           <p style="font-size: 12px;">Start an agent to begin trading</p>
         </div>
+        <!-- Data -->
         <div v-else>
           <div
             v-for="trade in trades.slice(0, 8)"
