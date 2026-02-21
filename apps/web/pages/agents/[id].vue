@@ -279,6 +279,11 @@ function timeAgo(iso: string): string {
   const h = Math.floor(m / 60);
   return `${h}h ago`;
 }
+function formatLatency(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 1) return `${seconds.toFixed(2)}s`;
+  return `${seconds.toFixed(1)}s`;
+}
 </script>
 
 <template>
@@ -589,7 +594,7 @@ function timeAgo(iso: string): string {
                     {{ (dec.confidence * 100).toFixed(0) }}%
                   </td>
                   <td style="font-size: 11px; color: var(--text-muted);">{{ dec.llmModel.split('/').pop() }}</td>
-                  <td class="mono" style="color: var(--text-muted);">{{ (dec.llmLatencyMs / 1000).toFixed(1) }}s</td>
+                  <td class="mono" style="color: var(--text-muted);">{{ formatLatency(dec.llmLatencyMs) }}</td>
                   <td style="font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">
                     {{ dec.reasoning }}
                   </td>
