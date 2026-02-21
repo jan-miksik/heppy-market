@@ -1,6 +1,6 @@
 # Task Progress
 - [x] Phase A — Quick Fixes
-- [ ] Phase B — Agent Config
+- [x] Phase B — Agent Config
 - [ ] Phase C — Authentication
 - [ ] Phase D — Public Square
 - [ ] Phase E — Trading Pairs
