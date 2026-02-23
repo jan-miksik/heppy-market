@@ -1,6 +1,21 @@
 import { sql } from 'drizzle-orm';
 import { text, real, integer, sqliteTable } from 'drizzle-orm/sqlite-core';
 
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  walletAddress: text('wallet_address').notNull().unique(),
+  email: text('email'),
+  displayName: text('display_name'),
+  authProvider: text('auth_provider').notNull().default('wallet'),
+  avatarUrl: text('avatar_url'),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -8,6 +23,7 @@ export const agents = sqliteTable('agents', {
   autonomyLevel: integer('autonomy_level').notNull(),
   config: text('config').notNull(),
   llmModel: text('llm_model').notNull(),
+  ownerAddress: text('owner_address'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),

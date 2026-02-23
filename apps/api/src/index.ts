@@ -2,10 +2,13 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Env } from './types/env.js';
+import type { AuthVariables } from './lib/auth.js';
+import { createAuthMiddleware } from './lib/auth.js';
 import healthRoute from './routes/health.js';
 import pairsRoute from './routes/pairs.js';
 import agentsRoute from './routes/agents.js';
 import tradesRoute from './routes/trades.js';
+import authRoute from './routes/auth.js';
 import { snapshotAllAgents } from './services/snapshot.js';
 import { listFreeModels } from './services/llm-router.js';
 import comparisonRoute from './routes/comparison.js';
@@ -13,7 +16,7 @@ import comparisonRoute from './routes/comparison.js';
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 // Middleware — allow CORS from local dev and Cloudflare Pages; optional CORS_ORIGINS env for production
 const defaultOrigins = [
@@ -41,9 +44,18 @@ app.use(
 
 app.use('*', logger());
 
-// Routes
+// Public routes (no auth required)
 app.route('/api/health', healthRoute);
 app.route('/api/pairs', pairsRoute);
+app.route('/api/auth', authRoute);
+
+// Auth middleware for protected routes
+const authMiddleware = createAuthMiddleware();
+app.use('/api/agents/*', authMiddleware as any);
+app.use('/api/trades/*', authMiddleware as any);
+app.use('/api/compare/*', authMiddleware as any);
+
+// Protected routes
 app.route('/api/agents', agentsRoute);
 app.route('/api/trades', tradesRoute);
 app.route('/api/compare', comparisonRoute);
@@ -78,23 +90,27 @@ app.get('/', (c) =>
     version: '0.1.0',
     docs: '/api/health',
     routes: [
-      'GET /api/health',
-      'GET /api/models',
-      'GET /api/agents',
+      'GET  /api/health',
+      'GET  /api/models',
+      'GET  /api/auth/nonce',
+      'POST /api/auth/verify',
+      'GET  /api/auth/me',
+      'POST /api/auth/logout',
+      'GET  /api/agents',
       'POST /api/agents',
-      'GET /api/agents/:id',
+      'GET  /api/agents/:id',
       'PATCH /api/agents/:id',
       'DELETE /api/agents/:id',
       'POST /api/agents/:id/start',
       'POST /api/agents/:id/stop',
       'POST /api/agents/:id/pause',
-      'GET /api/agents/:id/trades',
-      'GET /api/agents/:id/decisions',
-      'GET /api/agents/:id/performance',
-      'GET /api/trades',
-      'GET /api/trades/stats',
-      'GET /api/pairs/search?q=',
-      'GET /api/pairs/:chain/:address',
+      'GET  /api/agents/:id/trades',
+      'GET  /api/agents/:id/decisions',
+      'GET  /api/agents/:id/performance',
+      'GET  /api/trades',
+      'GET  /api/trades/stats',
+      'GET  /api/pairs/search?q=',
+      'GET  /api/pairs/:chain/:address',
     ],
   })
 );
@@ -107,34 +123,21 @@ app.onError((err, c) => {
 });
 
 // Cron trigger handler
-// Cron schedule: */1, */5, */15, 0 *, 0 */4, 0 0 daily
-const scheduled: ExportedHandlerScheduledHandler<Env> = async (
-  event,
-  env,
-  ctx
-) => {
+const scheduled: ExportedHandlerScheduledHandler<Env> = async (event, env, ctx) => {
   const cron = event.cron;
   console.log(`[cron] Triggered: ${cron}`);
 
-  // Hourly (0 * * * *): take performance snapshots for all agents
   if (cron === '0 * * * *') {
     ctx.waitUntil(snapshotAllAgents(env));
     return;
   }
 
-  // All crons: wake running agents that match this interval
-  // Each DO manages its own alarm, so cron triggers here are a fallback
-  // to re-wake any DOs that may have lost their alarm
   const db = (await import('drizzle-orm/d1')).drizzle(env.DB);
   const { agents } = await import('./db/schema.js');
   const { eq } = await import('drizzle-orm');
 
-  const runningAgents = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.status, 'running'));
+  const runningAgents = await db.select().from(agents).where(eq(agents.status, 'running'));
 
-  // Cloudflare free plan allows max 5 crons; 1m is not in wrangler.toml, so 1m agents run on 5m cron
   const cronToInterval: Record<string, string> = {
     '*/5 * * * *': '5m',
     '*/15 * * * *': '15m',
@@ -159,21 +162,20 @@ const scheduled: ExportedHandlerScheduledHandler<Env> = async (
     const doId = env.TRADING_AGENT.idFromName(agent.id);
     const stub = env.TRADING_AGENT.get(doId);
 
-    // Trigger analysis directly via POST /analyze (also re-initializes DO if alarm was lost)
     ctx.waitUntil(
-      stub.fetch(
-        new Request('http://do/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId: agent.id,
-            paperBalance: config.paperBalance,
-            slippageSimulation: config.slippageSimulation,
-          }),
-        })
-      ).catch((e) =>
-        console.warn(`[cron] Failed to trigger analysis for agent ${agent.id}:`, e)
-      )
+      stub
+        .fetch(
+          new Request('http://do/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agentId: agent.id,
+              paperBalance: config.paperBalance,
+              slippageSimulation: config.slippageSimulation,
+            }),
+          })
+        )
+        .catch((e) => console.warn(`[cron] Failed to trigger analysis for agent ${agent.id}:`, e))
     );
   }
 };

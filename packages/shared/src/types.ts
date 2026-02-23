@@ -1,3 +1,15 @@
+/** Authenticated user profile */
+export interface User {
+  id: string;
+  walletAddress: string;
+  email: string | null;
+  displayName: string | null;
+  /** Auth provider used: 'wallet' | 'email' | 'google' | 'github' | 'x' | 'discord' | 'apple' */
+  authProvider: string;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
 /** Agent autonomy levels */
 export type AutonomyLevel = 'full' | 'guided' | 'strict';
 

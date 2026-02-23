@@ -1,36 +1,44 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, or, isNull } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
+import type { AuthVariables } from '../lib/auth.js';
 import { agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
 import { CreateAgentRequestSchema, UpdateAgentRequestSchema } from '@dex-agents/shared';
 import { validateBody, ValidationError } from '../lib/validation.js';
 import { generateId, nowIso, autonomyLevelToInt, intToAutonomyLevel } from '../lib/utils.js';
 
-const agentsRoute = new Hono<{ Bindings: Env }>();
+const agentsRoute = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
-/** GET /api/agents — list all agents */
+function formatAgent(r: typeof agents.$inferSelect) {
+  return {
+    ...r,
+    autonomyLevel: intToAutonomyLevel(r.autonomyLevel),
+    config: JSON.parse(r.config),
+  };
+}
+
+/** GET /api/agents — list agents owned by the authenticated user (+ legacy unowned) */
 agentsRoute.get('/', async (c) => {
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
-  const rows = await db.select().from(agents).orderBy(desc(agents.createdAt));
-  return c.json({
-    agents: rows.map((r) => ({
-      ...r,
-      autonomyLevel: intToAutonomyLevel(r.autonomyLevel),
-      config: JSON.parse(r.config),
-    })),
-  });
+  const rows = await db
+    .select()
+    .from(agents)
+    .where(or(eq(agents.ownerAddress, walletAddress), isNull(agents.ownerAddress)))
+    .orderBy(desc(agents.createdAt));
+  return c.json({ agents: rows.map(formatAgent) });
 });
 
-/** POST /api/agents — create agent */
+/** POST /api/agents — create agent, scoped to authenticated user */
 agentsRoute.post('/', async (c) => {
   const body = await validateBody(c, CreateAgentRequestSchema);
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
   const id = generateId('agent');
   const now = nowIso();
   const autonomyLevel = autonomyLevelToInt(body.autonomyLevel);
-
   const config = { ...body };
 
   await db.insert(agents).values({
@@ -40,43 +48,47 @@ agentsRoute.post('/', async (c) => {
     autonomyLevel,
     config: JSON.stringify(config),
     llmModel: body.llmModel,
+    ownerAddress: walletAddress,
     createdAt: now,
     updatedAt: now,
   });
 
   const [created] = await db.select().from(agents).where(eq(agents.id, id));
-  return c.json(
-    {
-      ...created,
-      autonomyLevel: intToAutonomyLevel(created.autonomyLevel),
-      config: JSON.parse(created.config),
-    },
-    201
-  );
+  return c.json(formatAgent(created), 201);
 });
+
+/** Shared ownership check: owns or legacy unowned */
+async function requireOwnership(
+  db: ReturnType<typeof drizzle>,
+  id: string,
+  walletAddress: string
+): Promise<typeof agents.$inferSelect | null> {
+  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  if (!agent) return null;
+  if (agent.ownerAddress && agent.ownerAddress !== walletAddress) return null;
+  return agent;
+}
 
 /** GET /api/agents/:id — get single agent */
 agentsRoute.get('/:id', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
-  return c.json({
-    ...agent,
-    autonomyLevel: intToAutonomyLevel(agent.autonomyLevel),
-    config: JSON.parse(agent.config),
-  });
+  return c.json(formatAgent(agent));
 });
 
 /** PATCH /api/agents/:id — update agent config */
 agentsRoute.patch('/:id', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const body = await validateBody(c, UpdateAgentRequestSchema);
   const db = drizzle(c.env.DB);
 
-  const [existing] = await db.select().from(agents).where(eq(agents.id, id));
+  const existing = await requireOwnership(db, id, walletAddress);
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
   const existingConfig = JSON.parse(existing.config);
@@ -94,10 +106,7 @@ agentsRoute.patch('/:id', async (c) => {
 
   const [updated] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json({
-    ...updated,
-    autonomyLevel: intToAutonomyLevel(updated.autonomyLevel),
-    config: JSON.parse(updated.config),
-    // If agent was running, changes take effect on the next analysis cycle
+    ...formatAgent(updated),
     pendingRestart: existing.status === 'running',
   });
 });
@@ -105,24 +114,19 @@ agentsRoute.patch('/:id', async (c) => {
 /** DELETE /api/agents/:id — delete agent (stops first if running) */
 agentsRoute.delete('/:id', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [existing] = await db.select().from(agents).where(eq(agents.id, id));
+  const existing = await requireOwnership(db, id, walletAddress);
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
-  // If running or paused, stop the Durable Object and update DB so we can safely delete
   if (existing.status === 'running' || existing.status === 'paused') {
     const doId = c.env.TRADING_AGENT.idFromName(id);
     const stub = c.env.TRADING_AGENT.get(doId);
     await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
-    await db
-      .update(agents)
-      .set({ status: 'stopped', updatedAt: nowIso() })
-      .where(eq(agents.id, id));
+    await db.update(agents).set({ status: 'stopped', updatedAt: nowIso() }).where(eq(agents.id, id));
   }
 
-  // Delete related records first to satisfy foreign key constraints.
-  // D1 does not support SQL transactions (db.transaction() throws); deletes are sequential.
   await db.delete(trades).where(eq(trades.agentId, id));
   await db.delete(agentDecisions).where(eq(agentDecisions.agentId, id));
   await db.delete(performanceSnapshots).where(eq(performanceSnapshots.agentId, id));
@@ -133,16 +137,16 @@ agentsRoute.delete('/:id', async (c) => {
 /** POST /api/agents/:id/start — start agent */
 agentsRoute.post('/:id/start', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   if (agent.status === 'running') {
     return c.json({ ok: true, status: 'running', message: 'Already running' });
   }
 
-  // Get or create DO instance for this agent
   const agentConfig = JSON.parse(agent.config) as {
     paperBalance: number;
     slippageSimulation: number;
@@ -162,86 +166,73 @@ agentsRoute.post('/:id/start', async (c) => {
     })
   );
 
-  await db
-    .update(agents)
-    .set({ status: 'running', updatedAt: nowIso() })
-    .where(eq(agents.id, id));
-
+  await db.update(agents).set({ status: 'running', updatedAt: nowIso() }).where(eq(agents.id, id));
   return c.json({ ok: true, status: 'running' });
 });
 
-/** POST /api/agents/:id/reset — reset paper balance and clear position history */
+/** POST /api/agents/:id/reset */
 agentsRoute.post('/:id/reset', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const config = JSON.parse(agent.config) as { paperBalance?: number; slippageSimulation?: number };
-
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
-  await stub.fetch(new Request('http://do/reset', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paperBalance: config.paperBalance, slippageSimulation: config.slippageSimulation }),
-  }));
+  await stub.fetch(
+    new Request('http://do/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paperBalance: config.paperBalance, slippageSimulation: config.slippageSimulation }),
+    })
+  );
 
   await db.update(agents).set({ status: 'stopped', updatedAt: nowIso() }).where(eq(agents.id, id));
   return c.json({ ok: true, message: 'Agent reset to initial paper balance' });
 });
 
-/** POST /api/agents/:id/stop — stop agent */
+/** POST /api/agents/:id/stop */
 agentsRoute.post('/:id/stop', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
-  await stub.fetch(
-    new Request('http://do/stop', { method: 'POST' })
-  );
-
-  await db
-    .update(agents)
-    .set({ status: 'stopped', updatedAt: nowIso() })
-    .where(eq(agents.id, id));
-
+  await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
+  await db.update(agents).set({ status: 'stopped', updatedAt: nowIso() }).where(eq(agents.id, id));
   return c.json({ ok: true, status: 'stopped' });
 });
 
-/** POST /api/agents/:id/pause — pause agent */
+/** POST /api/agents/:id/pause */
 agentsRoute.post('/:id/pause', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
-  await stub.fetch(
-    new Request('http://do/pause', { method: 'POST' })
-  );
-
-  await db
-    .update(agents)
-    .set({ status: 'paused', updatedAt: nowIso() })
-    .where(eq(agents.id, id));
-
+  await stub.fetch(new Request('http://do/pause', { method: 'POST' }));
+  await db.update(agents).set({ status: 'paused', updatedAt: nowIso() }).where(eq(agents.id, id));
   return c.json({ ok: true, status: 'paused' });
 });
 
-/** GET /api/agents/:id/trades — agent's trade history */
+/** GET /api/agents/:id/trades */
 agentsRoute.get('/:id/trades', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const agentTrades = await db
@@ -249,16 +240,16 @@ agentsRoute.get('/:id/trades', async (c) => {
     .from(trades)
     .where(eq(trades.agentId, id))
     .orderBy(desc(trades.openedAt));
-
   return c.json({ trades: agentTrades });
 });
 
-/** GET /api/agents/:id/decisions — agent's decision log */
+/** GET /api/agents/:id/decisions */
 agentsRoute.get('/:id/decisions', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const decisions = await db
@@ -266,16 +257,16 @@ agentsRoute.get('/:id/decisions', async (c) => {
     .from(agentDecisions)
     .where(eq(agentDecisions.agentId, id))
     .orderBy(desc(agentDecisions.createdAt));
-
   return c.json({ decisions });
 });
 
-/** GET /api/agents/:id/performance — performance snapshots */
+/** GET /api/agents/:id/performance */
 agentsRoute.get('/:id/performance', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const snapshots = await db
@@ -283,20 +274,23 @@ agentsRoute.get('/:id/performance', async (c) => {
     .from(performanceSnapshots)
     .where(eq(performanceSnapshots.agentId, id))
     .orderBy(desc(performanceSnapshots.snapshotAt));
-
   return c.json({ snapshots });
 });
 
-/** POST /api/agents/:id/analyze — trigger one immediate analysis cycle */
+/** POST /api/agents/:id/analyze */
 agentsRoute.post('/:id/analyze', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   if (!c.env.OPENROUTER_API_KEY) {
-    return c.json({ error: 'OPENROUTER_API_KEY is not configured. Add it to .dev.vars (local) or Cloudflare secrets (production).' }, 503);
+    return c.json(
+      { error: 'OPENROUTER_API_KEY is not configured. Add it to .dev.vars (local) or Cloudflare secrets (production).' },
+      503
+    );
   }
 
   const agentConfig = JSON.parse(agent.config) as {
@@ -304,11 +298,9 @@ agentsRoute.post('/:id/analyze', async (c) => {
     slippageSimulation: number;
     analysisInterval: string;
   };
-
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
 
-  // Pass agent config so the DO can lazy-init if it hasn't been started yet
   const res = await stub.fetch(
     new Request('http://do/analyze', {
       method: 'POST',
@@ -326,23 +318,27 @@ agentsRoute.post('/:id/analyze', async (c) => {
     const body = await res.json<{ error?: string }>();
     return c.json({ error: body.error ?? 'Analysis failed' }, 500);
   }
-
   return c.json({ ok: true });
 });
 
-/** GET /api/agents/:id/status — get live DO status (nextAlarmAt, balance) */
+/** GET /api/agents/:id/status */
 agentsRoute.get('/:id/status', async (c) => {
   const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   const doId = c.env.TRADING_AGENT.idFromName(id);
   const stub = c.env.TRADING_AGENT.get(doId);
   const res = await stub.fetch(new Request('http://do/status'));
-  const doStatus = await res.json<{ agentId: string | null; status: string; balance: number | null; nextAlarmAt: number | null }>();
-
+  const doStatus = await res.json<{
+    agentId: string | null;
+    status: string;
+    balance: number | null;
+    nextAlarmAt: number | null;
+  }>();
   return c.json(doStatus);
 });
 
