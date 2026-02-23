@@ -110,7 +110,7 @@ Read task2.md sections 3.1 and 3.2. Implement both.
 - "Clone agent" button that copies config into a new agent for the current user
 - Pagination (start with simple offset-based, 20 per page)
 
-Use the existing component patterns. Match the current design system. Do not ask questions. Commit each feature separately.
+Use the existing component patterns. Match the current design system. Do not ask questions, follow your best estimation. Do not commit, we go through the changes.
 ```
 
 ---

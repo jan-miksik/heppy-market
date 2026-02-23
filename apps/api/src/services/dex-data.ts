@@ -69,11 +69,19 @@ const PairsResponseSchema = z.object({
 
 const DEXSCREENER_BASE = 'https://api.dexscreener.com/latest/dex';
 const CACHE_TTL_SECONDS = 60; // KV minimum is 60 seconds
+const TOP_PAIRS_CACHE_TTL = 300; // 5 minutes for top pairs list
+
+/** Base chain token addresses used to fetch top pairs by volume */
+const BASE_TOP_TOKEN_ADDRESSES = [
+  '0x4200000000000000000000000000000000000006', // WETH
+  '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
+];
 
 export interface DexDataService {
   searchPairs(query: string): Promise<DexPair[]>;
   getPairsByChain(chain: string, pairAddress: string): Promise<DexPair[]>;
   getTokenPairs(tokenAddress: string): Promise<DexPair[]>;
+  getTopPairsForChain(chainId: string): Promise<DexPair[]>;
 }
 
 export function createDexDataService(cache: KVNamespace): DexDataService {
@@ -148,6 +156,47 @@ export function createDexDataService(cache: KVNamespace): DexDataService {
       const url = `${DEXSCREENER_BASE}/tokens/${tokenAddress}`;
       const data = await cachedFetch(cacheKey, url, PairsResponseSchema);
       return data.pairs ?? [];
+    },
+
+    async getTopPairsForChain(chainId: string): Promise<DexPair[]> {
+      const cacheKey = `dex:top:${chainId.toLowerCase()}`;
+      const cached = await cache.get(cacheKey, 'text');
+      if (cached !== null) {
+        const parsed = z.array(PairSchema).safeParse(JSON.parse(cached));
+        if (parsed.success) return parsed.data;
+      }
+
+      const tokenAddresses =
+        chainId === 'base' ? BASE_TOP_TOKEN_ADDRESSES : [];
+      const allPairs: DexPair[] = [];
+
+      for (const addr of tokenAddresses) {
+        const pairs = await this.getTokenPairs(addr);
+        for (const p of pairs) {
+          if (p.chainId !== chainId) continue;
+          allPairs.push(p);
+        }
+      }
+
+      // One row per pair label (e.g. WETH/USDC): keep the listing with highest 24h volume
+      const byLabel = new Map<string, DexPair>();
+      for (const p of allPairs) {
+        const label = `${p.baseToken.symbol}/${p.quoteToken.symbol}`;
+        const existing = byLabel.get(label);
+        const vol = p.volume?.h24 ?? 0;
+        if (!existing || vol > (existing.volume?.h24 ?? 0)) {
+          byLabel.set(label, p);
+        }
+      }
+
+      const sorted = [...byLabel.values()]
+        .sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))
+        .slice(0, 80);
+
+      await cache.put(cacheKey, JSON.stringify(sorted), {
+        expirationTtl: TOP_PAIRS_CACHE_TTL,
+      });
+      return sorted;
     },
   };
 }

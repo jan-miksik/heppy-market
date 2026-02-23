@@ -13,7 +13,7 @@ import { createAppKit } from '@reown/appkit/vue';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { WagmiPlugin } from '@wagmi/vue';
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query';
-import { watchAccount } from '@wagmi/core';
+import { watchConnection } from '@wagmi/core';
 import { base } from '@reown/appkit/networks';
 import { defineNuxtPlugin, useRuntimeConfig } from '#app';
 import { setWagmiConfig } from '~/utils/wagmi-config';
@@ -63,12 +63,12 @@ export default defineNuxtPlugin((nuxtApp) => {
   //    composables and middleware without Vue's inject() context.
   setWagmiConfig(wagmiAdapter.wagmiConfig);
 
-  // 5. Track account state in module-level refs via watchAccount
+  // 5. Track connection state in module-level refs via watchConnection
   //    (no Vue lifecycle hooks — safe to use from anywhere).
-  watchAccount(wagmiAdapter.wagmiConfig, {
-    onChange(account) {
-      walletAddress.value = account.address ?? '';
-      walletIsConnected.value = account.isConnected;
+  watchConnection(wagmiAdapter.wagmiConfig, {
+    onChange(connection) {
+      walletAddress.value = connection.address ?? '';
+      walletIsConnected.value = connection.isConnected;
     },
   });
 });

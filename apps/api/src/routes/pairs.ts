@@ -41,6 +41,20 @@ pairs.get('/search', async (c) => {
   });
 });
 
+/** GET /api/pairs/top?chain=base — top pairs by 24h volume, cached 5min */
+pairs.get('/top', async (c) => {
+  const query = validateQuery(
+    c,
+    z.object({ chain: z.enum(['base']).default('base') })
+  );
+  const svc = createDexDataService(c.env.CACHE);
+  const topPairs = await svc.getTopPairsForChain(query.chain);
+  return c.json({
+    pairs: topPairs,
+    updatedAt: new Date().toISOString(),
+  });
+});
+
 /** GET /api/pairs/:chain/:address */
 pairs.get('/:chain/:address', async (c) => {
   const chain = c.req.param('chain');

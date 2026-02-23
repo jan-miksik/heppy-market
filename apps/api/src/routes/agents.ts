@@ -99,7 +99,8 @@ agentsRoute.patch('/:id', async (c) => {
     updatedAt: nowIso(),
   };
   if (body.name) updates.name = body.name;
-  if (body.llmModel) updates.llmModel = body.llmModel;
+  // Always sync llm_model column from merged config so the agent loop uses the selected model
+  updates.llmModel = (mergedConfig.llmModel ?? existing.llmModel) || 'nvidia/nemotron-3-nano-30b-a3b:free';
   if (body.autonomyLevel) updates.autonomyLevel = autonomyLevelToInt(body.autonomyLevel);
 
   await db.update(agents).set(updates).where(eq(agents.id, id));

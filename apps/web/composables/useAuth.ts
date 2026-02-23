@@ -6,7 +6,7 @@
  * Safe to call from plugins, middleware, and components alike.
  *
  * Wallet address / connection state come from module-level refs kept
- * in sync by watchAccount() in the 01.reown.client.ts plugin.
+ * in sync by watchConnection() in the 01.reown.client.ts plugin.
  */
 import { ref, computed } from 'vue';
 import { signMessage, disconnect } from '@wagmi/core';

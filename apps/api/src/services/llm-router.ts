@@ -77,7 +77,6 @@ export async function getTradeDecision(
   // Free models with tool-calling support, tried in order.
   // The user-configured model and fallback come first, then emergency backups.
   // Only models that support tool calling (required for generateObject).
-  // Verified against OpenRouter free-tier list on 2026-02-16.
   const EMERGENCY_FALLBACKS = [
     'nvidia/nemotron-3-nano-30b-a3b:free',
     'stepfun/step-3.5-flash:free',
@@ -85,6 +84,12 @@ export async function getTradeDecision(
     'liquid/lfm-2.5-1.2b-thinking:free',
     'liquid/lfm-2.5-1.2b-instruct:free',
     'arcee-ai/trinity-mini:free',
+    'nousresearch/hermes-3-llama-3.1-405b:free',
+    'qwen/qwen3-235b-a22b-thinking-2507:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'deepseek/deepseek-r1-0528:free',
+    'google/gemma-3-27b-it:free',
+    'qwen/qwen3-coder:free',
   ];
   const modelsToTry = [
     config.model,

@@ -79,8 +79,8 @@ export async function runAgentLoop(
   const config = JSON.parse(agentRow.config) as {
     pairs: string[];
     dexes: string[];
-    llmModel: string;
-    llmFallback: string;
+    llmModel?: string;
+    llmFallback?: string;
     autonomyLevel: string;
     maxPositionSizePct: number;
     maxOpenPositions: number;
@@ -94,6 +94,10 @@ export async function runAgentLoop(
     slippageSimulation: number;
     temperature?: number;
   };
+
+  // Use DB column as source of truth for model (avoids stale/missing config.llmModel)
+  const effectiveLlmModel = agentRow.llmModel?.trim() || config.llmModel || 'nvidia/nemotron-3-nano-30b-a3b:free';
+  const effectiveLlmFallback = config.llmFallback?.trim() || 'nvidia/nemotron-3-nano-30b-a3b:free';
 
   const autonomyLevel = intToAutonomyLevel(agentRow.autonomyLevel) as 'full' | 'guided' | 'strict';
 
@@ -153,7 +157,7 @@ export async function runAgentLoop(
     }
   }
 
-  console.log(`[agent-loop] ${agentId}: Starting analysis (${config.pairs.length} pairs, model=${config.llmModel})`);
+  console.log(`[agent-loop] ${agentId}: Starting analysis (${config.pairs.length} pairs, model=${effectiveLlmModel})`);
 
   // 4. Fetch market data — GeckoTerminal primary (network-scoped + real OHLCV),
   //    DexScreener fallback (global search, filter to Base).
@@ -327,7 +331,7 @@ export async function runAgentLoop(
       decision: 'hold',
       confidence: 0,
       reasoning: `No market data available from GeckoTerminal or DexScreener for pairs: ${config.pairs.join(', ')}. Check that the pair names are correct (e.g. "WETH/USDC", "AERO/USDC") and that the internet is reachable from the Worker.`,
-      llmModel: config.llmModel,
+      llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
       marketDataSnapshot: '[]',
       createdAt: nowIso(),
@@ -358,7 +362,7 @@ export async function runAgentLoop(
       decision: 'hold',
       confidence: 0,
       reasoning: 'OPENROUTER_API_KEY is not configured. Please set it in .dev.vars (local) or Cloudflare secrets (production) — get a free key at openrouter.ai',
-      llmModel: config.llmModel,
+      llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
       marketDataSnapshot: JSON.stringify(marketData),
       createdAt: nowIso(),
@@ -371,8 +375,8 @@ export async function runAgentLoop(
     decision = await getTradeDecision(
       {
         apiKey: env.OPENROUTER_API_KEY,
-        model: config.llmModel,
-        fallbackModel: config.llmFallback,
+        model: effectiveLlmModel,
+        fallbackModel: effectiveLlmFallback,
         maxRetries: 2,
         temperature: config.temperature,
       },
@@ -402,7 +406,7 @@ export async function runAgentLoop(
       decision: 'hold',
       confidence: 0,
       reasoning: `LLM error: ${String(err)}`,
-      llmModel: config.llmModel,
+      llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
       marketDataSnapshot: JSON.stringify(marketData),
       createdAt: nowIso(),

@@ -64,6 +64,20 @@ const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
 const analyzeError = ref<string | null>(null);
 
+/** True when the analysis failed due to model unavailability (e.g. free tier limit or all models failed) */
+const isModelUnavailableError = computed(() => {
+  const err = analyzeError.value?.toLowerCase() ?? '';
+  return (
+    err.includes('all llm models failed') ||
+    err.includes('unavailable for free') ||
+    err.includes('free requests') ||
+    err.includes('rate limit') ||
+    err.includes('402') ||
+    err.includes('429') ||
+    (err.includes('llm') && err.includes('failed'))
+  );
+});
+
 // Countdown timer
 const now = ref(Date.now());
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
@@ -364,10 +378,28 @@ function formatLatency(ms: number): string {
       <!-- Analysis error banner -->
       <div
         v-if="analyzeError"
-        style="background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: #f87171;"
+        style="background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #f87171;"
       >
-        <span>⚠ {{ analyzeError }}</span>
-        <button style="background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; line-height: 1; padding: 0;" @click="analyzeError = null">✕</button>
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+          <div style="flex: 1; min-width: 0;">
+            <span v-if="isModelUnavailableError">
+              This model is currently unavailable for free requests (or all fallback models failed). Try another model in the agent settings.
+            </span>
+            <span v-else>⚠ {{ analyzeError }}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+            <button
+              v-if="isModelUnavailableError"
+              type="button"
+              class="btn btn-ghost btn-sm"
+              style="color: #f87171; border-color: rgba(239,68,68,0.5);"
+              @click="showEditModal = true; analyzeError = null"
+            >
+              Use other model
+            </button>
+            <button style="background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; line-height: 1; padding: 0;" @click="analyzeError = null" aria-label="Dismiss">✕</button>
+          </div>
+        </div>
       </div>
 
       <!-- Stats row -->

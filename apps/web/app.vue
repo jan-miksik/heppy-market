@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useAppKit } from '@reown/appkit/vue';
+
 // Feature flag — set to false to remove the beta badge sitewide
 const IS_BETA = true;
 
-const { user, isAuthenticated, signOut } = useAuth();
+const { user, isAuthenticated } = useAuth();
+const { open: openAppKit } = useAppKit();
 
 useHead({
   htmlAttrs: { lang: 'en' },
@@ -31,7 +34,11 @@ function truncate(addr: string): string {
       </div>
       <div class="navbar-auth">
         <template v-if="isAuthenticated && user">
-          <span class="wallet-addr" :title="user.walletAddress">
+          <button
+            type="button"
+            class="wallet-trigger"
+            @click="openAppKit({ view: 'Account' })"
+          >
             <span class="wallet-dot" />
             {{ truncate(user.walletAddress) }}
             <span
@@ -39,8 +46,7 @@ function truncate(addr: string): string {
               class="provider-badge"
               :title="`Signed in with ${user.authProvider}`"
             >{{ user.authProvider }}</span>
-          </span>
-          <button class="btn btn-ghost btn-sm" @click="signOut">Disconnect</button>
+          </button>
         </template>
         <template v-else>
           <NuxtLink to="/connect" class="btn btn-primary btn-sm">Connect</NuxtLink>
@@ -52,6 +58,60 @@ function truncate(addr: string): string {
 </template>
 
 <style>
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+}
+
+.navbar-brand {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-nav {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.navbar-nav a {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.navbar-nav a:hover,
+.navbar-nav a.router-link-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.navbar-auth {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .beta-badge {
   display: inline-flex;
   align-items: center;
@@ -67,20 +127,23 @@ function truncate(addr: string): string {
   margin-left: 2px;
 }
 
-.navbar-auth {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-left: auto;
-}
-
-.wallet-addr {
+.wallet-trigger {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.8rem;
   font-family: 'JetBrains Mono', monospace;
   color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.wallet-trigger:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .wallet-dot {

@@ -30,6 +30,28 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
 
 const submitting = ref(false);
 const validationError = ref('');
+const showPairModal = ref(false);
+
+const isAllPairs = computed(() => form.pairs.length === 1 && form.pairs[0] === '*');
+
+function toggleAllPairs() {
+  if (isAllPairs.value) {
+    form.pairs = ['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC'];
+  } else {
+    form.pairs = ['*'];
+  }
+}
+
+function addPair(pairLabel: string) {
+  if (!form.pairs.includes(pairLabel)) {
+    form.pairs = [...form.pairs, pairLabel];
+  }
+  showPairModal.value = false;
+}
+
+function removePair(pairLabel: string) {
+  form.pairs = form.pairs.filter((p) => p !== pairLabel);
+}
 
 /** Extract a short model name from the OpenRouter model ID */
 function shortModelName(modelId: string): string {
@@ -41,6 +63,12 @@ function shortModelName(modelId: string): string {
     'liquid/lfm-2.5-1.2b-thinking:free': 'LFM-Think',
     'liquid/lfm-2.5-1.2b-instruct:free': 'LFM',
     'arcee-ai/trinity-mini:free': 'Trinity-Mini',
+    'nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes-405B',
+    'qwen/qwen3-235b-a22b-thinking-2507:free': 'Qwen3-Think',
+    'meta-llama/llama-3.3-70b-instruct:free': 'Llama-70B',
+    'deepseek/deepseek-r1-0528:free': 'DeepSeek-R1',
+    'google/gemma-3-27b-it:free': 'Gemma-27B',
+    'qwen/qwen3-coder:free': 'Qwen3-Coder',
   };
   return names[modelId] ?? modelId.split('/').pop()?.split(':')[0] ?? 'Agent';
 }
@@ -54,10 +82,11 @@ function generateName(): string {
   return `${model} · ${pairLabel}`;
 }
 
-// Auto-generate name when model or pairs change (only if user hasn't manually edited)
-const nameManuallyEdited = ref(false);
+/** When true, changing model or pairs updates the agent name */
+const syncNameWithModel = ref(true);
+
 watch([() => form.llmModel, () => [...form.pairs]], () => {
-  if (!nameManuallyEdited.value) {
+  if (syncNameWithModel.value) {
     form.name = generateName();
   }
 });
@@ -65,8 +94,6 @@ watch([() => form.llmModel, () => [...form.pairs]], () => {
 onMounted(() => {
   if (props.initialValues) {
     Object.assign(form, props.initialValues);
-    // When editing, treat the name as manually set
-    nameManuallyEdited.value = true;
   } else {
     form.name = generateName();
   }
@@ -84,7 +111,12 @@ async function handleSubmit() {
   validationError.value = '';
   submitting.value = true;
 
-  emit('submit', { ...form });
+  // Ensure llmModel (and fallback) are always sent so the API never falls back to default
+  const payload = {
+    ...form,
+    llmModel: form.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free',
+  };
+  emit('submit', payload);
   submitting.value = false;
 }
 </script>
@@ -95,7 +127,11 @@ async function handleSubmit() {
 
     <div class="form-group">
       <label class="form-label">Agent Name *</label>
-      <input v-model="form.name" class="form-input" placeholder="My Alpha Hunter" maxlength="50" required @input="nameManuallyEdited = true" />
+      <input v-model="form.name" class="form-input" placeholder="My Alpha Hunter" maxlength="50" required />
+      <label class="sync-name-checkbox">
+        <input v-model="syncNameWithModel" type="checkbox" />
+        <span>Sync name with model</span>
+      </label>
     </div>
 
     <div class="grid-2">
@@ -122,7 +158,36 @@ async function handleSubmit() {
 
     <div class="form-group">
       <label class="form-label">Trading Pairs</label>
-      <PairPicker v-model="form.pairs" />
+      <div class="pair-selector">
+        <label class="all-pairs-toggle" @click.prevent="toggleAllPairs">
+          <span class="toggle-track" :class="{ active: isAllPairs }">
+            <span class="toggle-thumb" />
+          </span>
+          <span class="toggle-label">All Base pairs</span>
+        </label>
+        <template v-if="!isAllPairs">
+          <div class="pair-selector-row">
+            <button type="button" class="btn btn-ghost btn-sm" @click="showPairModal = true">
+              + Select pairs
+            </button>
+          </div>
+          <div v-if="form.pairs.length > 0" class="pair-chips">
+            <span v-for="pair in form.pairs" :key="pair" class="pair-chip">
+              {{ pair }}
+              <button type="button" class="pair-chip-remove" @click="removePair(pair)">&times;</button>
+            </span>
+          </div>
+          <div v-else class="pair-hint">Click “Select pairs” to choose from top pairs by volume.</div>
+        </template>
+        <div v-else class="all-pairs-hint">
+          Agent will monitor all available Base chain pairs
+        </div>
+      </div>
+      <PairSelectionModal
+        :open="showPairModal"
+        @select="addPair"
+        @close="showPairModal = false"
+      />
     </div>
 
     <div class="grid-2">
@@ -135,6 +200,12 @@ async function handleSubmit() {
           <option value="liquid/lfm-2.5-1.2b-thinking:free">LFM 2.5 1.2B Thinking (free)</option>
           <option value="liquid/lfm-2.5-1.2b-instruct:free">LFM 2.5 1.2B Instruct (free)</option>
           <option value="arcee-ai/trinity-mini:free">Trinity Mini (free)</option>
+          <option value="nousresearch/hermes-3-llama-3.1-405b:free">Hermes 3 Llama 405B (free)</option>
+          <option value="qwen/qwen3-235b-a22b-thinking-2507:free">Qwen3 235B Thinking (free)</option>
+          <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B Instruct (free)</option>
+          <option value="deepseek/deepseek-r1-0528:free">DeepSeek R1 (free)</option>
+          <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
+          <option value="qwen/qwen3-coder:free">Qwen3 Coder (free)</option>
         </select>
       </div>
       <div class="form-group">
@@ -209,5 +280,105 @@ async function handleSubmit() {
   accent-color: var(--accent);
   cursor: pointer;
   margin-top: 4px;
+}
+
+.pair-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.all-pairs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 2px;
+}
+.toggle-track {
+  width: 32px;
+  height: 18px;
+  background: var(--border-light);
+  border-radius: 9px;
+  position: relative;
+  transition: background 0.2s;
+}
+.toggle-track.active {
+  background: var(--accent);
+}
+.toggle-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--text);
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+.toggle-track.active .toggle-thumb {
+  transform: translateX(14px);
+}
+.toggle-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.pair-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pair-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pair-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pair-chip-remove {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.pair-chip-remove:hover {
+  opacity: 1;
+}
+.pair-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.all-pairs-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.sync-name-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.sync-name-checkbox input[type="checkbox"] {
+  cursor: pointer;
 }
 </style>
