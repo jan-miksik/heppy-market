@@ -12,10 +12,12 @@
  */
 import { createAppKit } from '@reown/appkit/vue';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
+import { WagmiPlugin } from '@wagmi/vue';
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query';
 import { base } from '@reown/appkit/networks';
 import { defineNuxtPlugin, useRuntimeConfig } from '#app';
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig();
   const projectId = config.public.reownProjectId as string;
 
@@ -47,4 +49,8 @@ export default defineNuxtPlugin(() => {
     },
     themeMode: 'dark',
   });
+
+  // Register wagmi + tanstack-query plugins so useSignMessage / useAccount work
+  nuxtApp.vueApp.use(WagmiPlugin, { config: wagmiAdapter.wagmiConfig });
+  nuxtApp.vueApp.use(VueQueryPlugin, { queryClient: new QueryClient() });
 });
