@@ -1,16 +1,22 @@
 /**
- * useAuth — authentication state and SIWE sign-in flow.
+ * useAuth — authentication state + SIWE sign-in/out.
  *
- * Flow:
- *  1. User connects wallet (or email/social) via AppKit → address becomes available
- *  2. useAuth.signIn() fetches a nonce, builds SIWE message, signs it, sends to backend
- *  3. Backend verifies signature, upserts user in D1, creates session in KV, sets cookie
- *  4. Session cookie is auto-forwarded by the browser on all subsequent /api/* requests
+ * Uses ONLY @wagmi/core actions (signMessage, disconnect) — these call the
+ * wagmi config directly and do NOT require Vue's inject() context.
+ * Safe to call from plugins, middleware, and components alike.
+ *
+ * Wallet address / connection state come from module-level refs kept
+ * in sync by watchAccount() in the 01.reown.client.ts plugin.
  */
 import { ref, computed } from 'vue';
-import { useAppKitAccount, useDisconnect } from '@reown/appkit/vue';
-import { useSignMessage } from '@wagmi/vue';
+import { signMessage, disconnect } from '@wagmi/core';
 import { createSiweMessage } from 'viem/siwe';
+import { walletAddress, walletIsConnected } from './useWalletState';
+import { getWagmiConfig } from '~/utils/wagmi-config';
+
+// ─── Module-level auth state ──────────────────────────────────────────────────
+// Using module scope (not useState) so the ref is the same instance across
+// all calls to useAuth() in a single browser session.
 
 export interface AuthUser {
   id: string;
@@ -25,36 +31,12 @@ export interface AuthUser {
 const authUser = ref<AuthUser | null>(null);
 const authLoading = ref(false);
 
+// ─── Composable ───────────────────────────────────────────────────────────────
+
 export function useAuth() {
-  // AppKit account state — address/isConnected are reactive properties on the returned object
-  const appKitAccount = useAppKitAccount();
-  const { mutateAsync: signMessageAsync } = useSignMessage();
-  const { disconnect } = useDisconnect();
-
-  // Handle both Ref<T> and plain reactive object shapes from different AppKit versions
-  const address = computed<string>(() => {
-    const acc = appKitAccount as any;
-    return acc?.value?.address ?? acc?.address ?? '';
-  });
-
-  const isConnected = computed<boolean>(() => {
-    const acc = appKitAccount as any;
-    return acc?.value?.isConnected ?? acc?.isConnected ?? false;
-  });
-
-  // Try to get connector info for provider detection
-  const connectorId = computed<string>(() => {
-    const acc = appKitAccount as any;
-    return (
-      acc?.value?.embeddedWalletInfo?.authProvider ??
-      acc?.embeddedWalletInfo?.authProvider ??
-      ''
-    );
-  });
-
   const isAuthenticated = computed(() => !!authUser.value);
 
-  /** Fetch current session from backend. Called on app start to restore session. */
+  /** Restore session from the HttpOnly session cookie (called on app start). */
   async function fetchMe(): Promise<void> {
     try {
       const user = await $fetch<AuthUser>('/api/auth/me', { credentials: 'include' });
@@ -65,20 +47,26 @@ export function useAuth() {
   }
 
   /**
-   * Sign in with the currently connected wallet using SIWE.
-   * Also accepts optional profile fields from social/email logins.
+   * SIWE sign-in flow:
+   *  1. Fetch one-time nonce from backend
+   *  2. Build EIP-4361 message
+   *  3. Sign with wagmi (@wagmi/core — no Vue context needed)
+   *  4. Verify with backend → session cookie is set in the response
+   *
+   * Optional: pass profile fields from email/social logins so they're
+   * stored in the users table alongside the wallet address.
    */
   async function signIn(opts?: {
     email?: string;
     displayName?: string;
     avatarUrl?: string;
   }): Promise<void> {
-    const addr = address.value;
+    const addr = walletAddress.value;
     if (!addr) throw new Error('No wallet connected');
 
     authLoading.value = true;
     try {
-      // 1. Get one-time nonce from backend
+      // 1. Get a fresh nonce from the backend
       const { nonce } = await $fetch<{ nonce: string }>('/api/auth/nonce');
 
       // 2. Build SIWE message
@@ -92,25 +80,13 @@ export function useAuth() {
         statement: 'Sign in to Heppy Market',
       });
 
-      // 3. Sign the message with the connected wallet
-      const signature = await signMessageAsync({ message });
+      // 3. Sign with @wagmi/core — no Vue inject() needed
+      const signature = await signMessage(getWagmiConfig(), { message });
 
-      // 4. Detect auth provider (wallet / google / email / etc.)
-      const authProvider = connectorId.value
-        ? inferProvider(connectorId.value)
-        : 'wallet';
-
-      // 5. Verify with backend — response sets the session cookie
+      // 4. Send to backend; response sets the session cookie
       const user = await $fetch<AuthUser>('/api/auth/verify', {
         method: 'POST',
-        body: {
-          message,
-          signature,
-          authProvider,
-          email: opts?.email,
-          displayName: opts?.displayName,
-          avatarUrl: opts?.avatarUrl,
-        },
+        body: { message, signature, authProvider: 'wallet', ...opts },
         credentials: 'include',
       });
 
@@ -120,37 +96,29 @@ export function useAuth() {
     }
   }
 
-  /** Sign out: invalidate server session + disconnect wallet */
+  /** Sign out: invalidate server session + disconnect wallet. */
   async function signOut(): Promise<void> {
     try {
       await $fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
-      // Ignore — still clear local state
+      // Still clear local state even if server call fails
     }
     authUser.value = null;
-    disconnect();
+    try {
+      await disconnect(getWagmiConfig());
+    } catch {
+      // Ignore disconnect errors
+    }
   }
 
   return {
     user: authUser,
     isAuthenticated,
-    isConnected,
-    address,
+    isConnected: walletIsConnected,
+    address: walletAddress,
     isLoading: authLoading,
     fetchMe,
     signIn,
     signOut,
   };
-}
-
-/** Map AppKit provider name to a canonical string stored in the DB */
-function inferProvider(providerName: string): string {
-  const n = providerName.toLowerCase();
-  if (n.includes('google')) return 'google';
-  if (n.includes('github')) return 'github';
-  if (n.includes('discord')) return 'discord';
-  if (n === 'x' || n.includes('twitter')) return 'x';
-  if (n.includes('apple')) return 'apple';
-  if (n.includes('email')) return 'email';
-  return 'wallet';
 }

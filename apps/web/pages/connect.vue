@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { useAppKit } from '@reown/appkit/vue';
-
-const { open } = useAppKit();
 const { isConnected, isAuthenticated, isLoading, signIn, user } = useAuth();
 const error = ref<string | null>(null);
 
-// If already authenticated, redirect to dashboard
 const router = useRouter();
 watch(isAuthenticated, (val) => {
   if (val) router.push('/');
@@ -15,16 +11,21 @@ async function handleSignIn() {
   error.value = null;
   try {
     await signIn();
-  } catch (err: any) {
-    error.value = err?.message ?? 'Sign-in failed. Please try again.';
+  } catch (err: unknown) {
+    error.value = (err as Error)?.message ?? 'Sign-in failed. Please try again.';
   }
+}
+
+function truncate(addr: string): string {
+  if (!addr) return '';
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 </script>
 
 <template>
   <div class="connect-root">
     <div class="connect-card">
-      <!-- Logo / Brand -->
+      <!-- Brand -->
       <div class="connect-brand">
         <span class="dot" />
         <span class="brand-name">Heppy Market</span>
@@ -33,26 +34,26 @@ async function handleSignIn() {
 
       <p class="connect-tagline">AI-powered paper trading agents on Base chain</p>
 
-      <!-- Step 1: Connect wallet -->
+      <!-- Step 1: Connect wallet / email / social -->
       <div class="connect-section">
         <h2 class="step-label">Connect your wallet</h2>
         <p class="step-hint">
-          Use MetaMask, WalletConnect, Coinbase Wallet, or sign in with email / social (Google, GitHub, Discord, X, Apple).
+          Use MetaMask, WalletConnect, Coinbase Wallet, or sign in with email / social
+          (Google, GitHub, Discord, X, Apple).
         </p>
-
-        <!-- AppKit's built-in connect button -->
         <div class="connect-btn-wrap">
+          <!-- AppKit's built-in button — handles the full connection modal -->
           <w3m-button balance="hide" />
         </div>
       </div>
 
-      <!-- Step 2: Sign in (visible after wallet connection) -->
+      <!-- Step 2: SIWE verification (appears after wallet is connected) -->
       <Transition name="fade">
         <div v-if="isConnected && !isAuthenticated" class="connect-section siwe-section">
           <div class="divider" />
           <h2 class="step-label">Verify your wallet</h2>
           <p class="step-hint">
-            Sign a message to prove ownership of your wallet. This does not cost any gas.
+            Sign a short message to prove wallet ownership. No gas required.
           </p>
 
           <div v-if="error" class="connect-error">{{ error }}</div>
@@ -68,7 +69,7 @@ async function handleSignIn() {
         </div>
       </Transition>
 
-      <!-- Already signed in (shouldn't normally show — redirect fires first) -->
+      <!-- Already signed in -->
       <div v-if="isAuthenticated && user" class="connect-section">
         <p class="connect-hint">
           Signed in as <code>{{ truncate(user.walletAddress) }}</code>
@@ -78,13 +79,6 @@ async function handleSignIn() {
     </div>
   </div>
 </template>
-
-<script lang="ts">
-function truncate(addr: string): string {
-  if (!addr) return '';
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-</script>
 
 <style scoped>
 .connect-root {
@@ -117,9 +111,7 @@ function truncate(addr: string): string {
   color: var(--text-primary);
 }
 
-.brand-name {
-  font-family: 'JetBrains Mono', monospace;
-}
+.brand-name { font-family: 'JetBrains Mono', monospace; }
 
 .connect-tagline {
   font-size: 0.875rem;
@@ -133,9 +125,7 @@ function truncate(addr: string): string {
   gap: 0.75rem;
 }
 
-.siwe-section {
-  padding-top: 0.5rem;
-}
+.siwe-section { padding-top: 0.5rem; }
 
 .step-label {
   font-size: 0.9rem;
@@ -153,10 +143,7 @@ function truncate(addr: string): string {
   line-height: 1.5;
 }
 
-.connect-btn-wrap {
-  display: flex;
-  justify-content: flex-start;
-}
+.connect-btn-wrap { display: flex; justify-content: flex-start; }
 
 .divider {
   height: 1px;
@@ -173,10 +160,7 @@ function truncate(addr: string): string {
   font-size: 0.8rem;
 }
 
-.btn-wide {
-  width: 100%;
-  justify-content: center;
-}
+.btn-wide { width: 100%; justify-content: center; }
 
 .spinner {
   display: inline-block;
@@ -188,9 +172,7 @@ function truncate(addr: string): string {
   animation: spin 0.6s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .connect-hint {
   font-size: 0.8rem;
@@ -199,11 +181,7 @@ function truncate(addr: string): string {
 }
 
 .fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s;
-}
+.fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+.fade-leave-to { opacity: 0; }
 </style>
