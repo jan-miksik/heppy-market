@@ -16,6 +16,8 @@ export default defineNuxtConfig({
     public: {
       // Client always uses same-origin /api (proxy). No public API URL.
       apiBase: '',
+      // Reown AppKit project ID — replace REOWN_PROJECT_ID in .env
+      reownProjectId: process.env.REOWN_PROJECT_ID || '',
     },
     // Server-only: upstream for API proxy when Service Binding is not present (e.g. local dev)
     apiUpstream: process.env.API_BASE_URL || 'http://localhost:8787',
@@ -26,6 +28,13 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
     typeCheck: false,
+  },
+
+  // Apply auth guard to all routes
+  router: {
+    options: {
+      scrollBehaviorType: 'smooth',
+    },
   },
 
   app: {
