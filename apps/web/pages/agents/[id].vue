@@ -1,6 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false });
 import type { Trade } from '~/composables/useTrades';
+import { pollUntilFutureAlarm } from '~/utils/statusPolling';
 
 const route = useRoute();
 const id = computed(() => route.params.id as string);
@@ -83,12 +84,14 @@ const isModelUnavailableError = computed(() => {
 // Countdown timer
 const now = ref(Date.now());
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
+let cancelStatusPoll: (() => void) | null = null;
 
 onMounted(() => {
   countdownInterval = setInterval(() => { now.value = Date.now(); }, 1000);
 });
 onUnmounted(() => {
   if (countdownInterval) clearInterval(countdownInterval);
+  if (cancelStatusPoll) cancelStatusPoll();
 });
 
 async function loadAll() {
@@ -141,6 +144,28 @@ const secondsUntilNextAction = computed(() => {
   if (!doStatus.value?.nextAlarmAt) return null;
   const diff = Math.floor((doStatus.value.nextAlarmAt - now.value) / 1000);
   return diff > 0 ? diff : 0;
+});
+
+// When the countdown hits 0 while running, poll the DO every 5s until a future
+// alarm is confirmed (the loop has finished and rescheduled).
+watch(secondsUntilNextAction, (val) => {
+  if (val === 0 && agent.value?.status === 'running') {
+    if (cancelStatusPoll) cancelStatusPoll();
+    cancelStatusPoll = pollUntilFutureAlarm(
+      () => secondsUntilNextAction.value,
+      () => agent.value?.status === 'running',
+      refreshDoStatus,
+      5_000,
+      async () => {
+        const [t, d] = await Promise.all([
+          fetchAgentTrades(id.value),
+          request<{ decisions: AgentDecision[] }>(`/api/agents/${id.value}/decisions`),
+        ]);
+        trades.value = t;
+        decisions.value = d.decisions;
+      },
+    );
+  }
 });
 
 function formatCountdown(seconds: number | null): string {

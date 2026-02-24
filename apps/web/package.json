@@ -6,7 +6,8 @@
     "dev": "nuxt dev --port 3000",
     "build": "nuxt build",
     "preview": "nuxt preview",
-    "lint": "nuxt typecheck"
+    "lint": "nuxt typecheck",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dex-agents/shared": "*",
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@nuxt/devtools": "latest",
     "typescript": "^5.4.0",
+    "vitest": "^2.1.0",
     "vue-tsc": "^2.0.21"
   }
 }
