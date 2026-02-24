@@ -18,6 +18,7 @@ export interface Agent {
     maxOpenPositions: number;
     slippageSimulation: number;
     temperature: number;
+    allowFallback?: boolean;
   };
   createdAt: string;
   updatedAt: string;
@@ -35,6 +36,7 @@ export interface CreateAgentPayload {
   takeProfitPct?: number;
   maxOpenPositions?: number;
   llmModel?: string;
+  allowFallback?: boolean;
   temperature?: number;
 }
 

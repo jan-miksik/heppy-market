@@ -81,6 +81,7 @@ export async function runAgentLoop(
     dexes: string[];
     llmModel?: string;
     llmFallback?: string;
+    allowFallback?: boolean;
     autonomyLevel: string;
     maxPositionSizePct: number;
     maxOpenPositions: number;
@@ -98,6 +99,7 @@ export async function runAgentLoop(
   // Use DB column as source of truth for model (avoids stale/missing config.llmModel)
   const effectiveLlmModel = agentRow.llmModel?.trim() || config.llmModel || 'nvidia/nemotron-3-nano-30b-a3b:free';
   const effectiveLlmFallback = config.llmFallback?.trim() || 'nvidia/nemotron-3-nano-30b-a3b:free';
+  const allowFallback = config.allowFallback === true;
 
   const autonomyLevel = intToAutonomyLevel(agentRow.autonomyLevel) as 'full' | 'guided' | 'strict';
 
@@ -377,8 +379,9 @@ export async function runAgentLoop(
         apiKey: env.OPENROUTER_API_KEY,
         model: effectiveLlmModel,
         fallbackModel: effectiveLlmFallback,
-        maxRetries: 2,
+        allowFallback,
         temperature: config.temperature,
+        timeoutMs: 90_000,
       },
       {
         autonomyLevel,

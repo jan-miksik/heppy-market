@@ -25,6 +25,7 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   takeProfitPct: 7,
   maxOpenPositions: 3,
   llmModel: 'nvidia/nemotron-3-nano-30b-a3b:free',
+  allowFallback: false,
   temperature: 0.7,
 });
 
@@ -111,10 +112,10 @@ async function handleSubmit() {
   validationError.value = '';
   submitting.value = true;
 
-  // Ensure llmModel (and fallback) are always sent so the API never falls back to default
   const payload = {
     ...form,
     llmModel: form.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free',
+    allowFallback: form.allowFallback ?? false,
   };
   emit('submit', payload);
   submitting.value = false;
@@ -207,6 +208,14 @@ async function handleSubmit() {
           <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
           <option value="qwen/qwen3-coder:free">Qwen3 Coder (free)</option>
         </select>
+        <div class="form-hint">If this model is unavailable, you’ll be prompted to choose another (no automatic fallback).</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+          <input v-model="form.allowFallback" type="checkbox" class="form-checkbox" />
+          Try fallback model if primary fails
+        </label>
+        <div class="form-hint">When enabled, a fallback model is tried if the primary fails. Off by default.</div>
       </div>
       <div class="form-group">
         <label class="form-label">

@@ -10,12 +10,17 @@ import {
   buildAnalysisPrompt,
 } from '../agents/prompts.js';
 
+/** When true, if the primary model fails we try the user-configured fallback model. No automatic emergency fallbacks. */
 export interface LLMRouterConfig {
   apiKey: string;
   model: string;
+  /** Only used when allowFallback is true (user consent). */
   fallbackModel?: string;
+  allowFallback?: boolean;
   maxRetries?: number;
   temperature?: number;
+  /** Request timeout in ms; prevents analysis from hanging (default 90_000). */
+  timeoutMs?: number;
 }
 
 export interface TradeDecisionRequest {
@@ -57,9 +62,12 @@ function getSystemPrompt(autonomyLevel: string): string {
   }
 }
 
+const DEFAULT_LLM_TIMEOUT_MS = 90_000;
+
 /**
  * Get a structured trade decision from the LLM.
- * Implements fallback model logic and exponential backoff retries.
+ * Only tries the user's selected model (and optionally fallback if allowFallback is true).
+ * No automatic emergency fallbacks — if the model fails, we surface an error so the user can choose another model.
  */
 export async function getTradeDecision(
   config: LLMRouterConfig,
@@ -73,45 +81,38 @@ export async function getTradeDecision(
   });
 
   const startTime = Date.now();
+  const timeoutMs = config.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS;
 
-  // Free models with tool-calling support, tried in order.
-  // The user-configured model and fallback come first, then emergency backups.
-  // Only models that support tool calling (required for generateObject).
-  const EMERGENCY_FALLBACKS = [
-    'nvidia/nemotron-3-nano-30b-a3b:free',
-    'stepfun/step-3.5-flash:free',
-    'arcee-ai/trinity-large-preview:free',
-    'liquid/lfm-2.5-1.2b-thinking:free',
-    'liquid/lfm-2.5-1.2b-instruct:free',
-    'arcee-ai/trinity-mini:free',
-    'nousresearch/hermes-3-llama-3.1-405b:free',
-    'qwen/qwen3-235b-a22b-thinking-2507:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'deepseek/deepseek-r1-0528:free',
-    'google/gemma-3-27b-it:free',
-    'qwen/qwen3-coder:free',
-  ];
-  const modelsToTry = [
-    config.model,
-    ...(config.fallbackModel ? [config.fallbackModel] : []),
-    ...EMERGENCY_FALLBACKS.filter(
-      (m) => m !== config.model && m !== config.fallbackModel
-    ),
-  ];
+  // Only user-selected model; fallback only if user explicitly consented (allowFallback).
+  const modelsToTry: string[] = [config.model];
+  if (config.allowFallback && config.fallbackModel && config.fallbackModel !== config.model) {
+    modelsToTry.push(config.fallbackModel);
+  }
 
   let lastError: unknown;
 
   for (const modelId of modelsToTry) {
     try {
-      const { object, usage } = await generateObject({
-        model: openrouter(modelId),
-        schema: TradeDecisionSchema,
-        system: systemPrompt,
-        prompt: userPrompt,
-        ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
-        maxRetries: 0, // SDK must not retry — we fall through to the next model on any error
-      });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Model request timed out after ${timeoutMs / 1000}s`)),
+          timeoutMs
+        )
+      );
 
+      const result = await Promise.race([
+        generateObject({
+          model: openrouter(modelId),
+          schema: TradeDecisionSchema,
+          system: systemPrompt,
+          prompt: userPrompt,
+          ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+          maxRetries: 0,
+        }),
+        timeoutPromise,
+      ]);
+
+      const { object, usage } = result;
       const latencyMs = Date.now() - startTime;
 
       return {
@@ -123,14 +124,17 @@ export async function getTradeDecision(
     } catch (err) {
       lastError = err;
       console.warn(`[llm-router] Model ${modelId} failed:`, err);
-      // Short pause before next model
-      await sleep(300);
+      if (modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
+        await sleep(300);
+      }
     }
   }
 
-  throw new Error(
-    `All LLM models failed. Last error: ${String(lastError)}`
-  );
+  const msg =
+    modelsToTry.length === 1
+      ? `Model "${modelsToTry[0]}" is unavailable. ${String(lastError)}`
+      : `Primary and fallback models failed. Last error: ${String(lastError)}`;
+  throw new Error(msg);
 }
 
 /**

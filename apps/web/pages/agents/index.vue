@@ -153,6 +153,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
                 takeProfitPct: editingAgent.config.takeProfitPct,
                 maxOpenPositions: editingAgent.config.maxOpenPositions,
                 temperature: editingAgent.config.temperature ?? 0.7,
+                allowFallback: editingAgent.config.allowFallback ?? false,
               }"
               @submit="handleEditSubmit"
               @cancel="showEditModal = false"

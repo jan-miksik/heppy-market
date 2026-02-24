@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const { isConnected, isAuthenticated, isLoading, signIn, user } = useAuth();
+import { useAccount } from '@wagmi/vue';
+
+const { isConnected } = useAccount();
+const { isAuthenticated, isLoading, signIn, user } = useAuth();
 const error = ref<string | null>(null);
 
 const router = useRouter();
@@ -36,11 +39,6 @@ function truncate(addr: string): string {
 
       <!-- Step 1: Connect wallet / email / social -->
       <div class="connect-section">
-        <h2 class="step-label">Connect your wallet</h2>
-        <p class="step-hint">
-          Use MetaMask, WalletConnect, Coinbase Wallet, or sign in with email / social
-          (Google, GitHub, Discord, X, Apple).
-        </p>
         <div class="connect-btn-wrap">
           <!-- AppKit's built-in button — handles the full connection modal -->
           <w3m-button balance="hide" />

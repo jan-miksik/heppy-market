@@ -1,17 +1,15 @@
 /**
  * useAuth — authentication state + SIWE sign-in/out.
  *
- * Uses ONLY @wagmi/core actions (signMessage, disconnect) — these call the
+ * Uses ONLY @wagmi/core actions (signMessage, disconnect, getConnection) — these call the
  * wagmi config directly and do NOT require Vue's inject() context.
  * Safe to call from plugins, middleware, and components alike.
  *
- * Wallet address / connection state come from module-level refs kept
- * in sync by watchConnection() in the 01.reown.client.ts plugin.
+ * Wallet connection state for components should come from useAccount() in @wagmi/vue.
  */
 import { ref, computed } from 'vue';
-import { signMessage, disconnect } from '@wagmi/core';
+import { signMessage, disconnect, getConnection } from '@wagmi/core';
 import { createSiweMessage } from 'viem/siwe';
-import { walletAddress, walletIsConnected } from './useWalletState';
 import { getWagmiConfig } from '~/utils/wagmi-config';
 
 // ─── Module-level auth state ──────────────────────────────────────────────────
@@ -31,6 +29,20 @@ export interface AuthUser {
 const authUser = ref<AuthUser | null>(null);
 const authLoading = ref(false);
 let fetchMePromise: Promise<void> | null = null;
+
+// ─── Auto-disconnect hook ─────────────────────────────────────────────────────
+// Called by the reown plugin when wagmi reports the wallet has disconnected.
+// Signs out from the backend without calling disconnect() again (already done).
+
+export async function handleWalletDisconnect(): Promise<void> {
+  if (!authUser.value) return; // nothing to sign out of
+  authUser.value = null;
+  try {
+    await $fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch {
+    // Session already gone — that's fine
+  }
+}
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
@@ -77,7 +89,7 @@ export function useAuth() {
     displayName?: string;
     avatarUrl?: string;
   }): Promise<void> {
-    const addr = walletAddress.value;
+    const { address: addr } = getConnection(getWagmiConfig());
     if (!addr) throw new Error('No wallet connected');
 
     authLoading.value = true;
@@ -87,7 +99,7 @@ export function useAuth() {
 
       // 2. Build SIWE message
       const message = createSiweMessage({
-        address: addr as `0x${string}`,
+        address: addr,
         chainId: 8453, // Base mainnet
         domain: window.location.host,
         nonce,
@@ -130,8 +142,6 @@ export function useAuth() {
   return {
     user: authUser,
     isAuthenticated,
-    isConnected: walletIsConnected,
-    address: walletAddress,
     isLoading: authLoading,
     fetchMe,
     signIn,

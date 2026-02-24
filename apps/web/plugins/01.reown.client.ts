@@ -17,7 +17,7 @@ import { watchConnection } from '@wagmi/core';
 import { base } from '@reown/appkit/networks';
 import { defineNuxtPlugin, useRuntimeConfig } from '#app';
 import { setWagmiConfig } from '~/utils/wagmi-config';
-import { walletAddress, walletIsConnected } from '~/composables/useWalletState';
+import { handleWalletDisconnect } from '~/composables/useAuth';
 
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig();
@@ -63,12 +63,13 @@ export default defineNuxtPlugin((nuxtApp) => {
   //    composables and middleware without Vue's inject() context.
   setWagmiConfig(wagmiAdapter.wagmiConfig);
 
-  // 5. Track connection state in module-level refs via watchConnection
-  //    (no Vue lifecycle hooks — safe to use from anywhere).
+  // 5. Watch for wallet disconnection and automatically sign out of the app.
+  //    Components should use useAccount() from @wagmi/vue for reactive wallet state.
   watchConnection(wagmiAdapter.wagmiConfig, {
     onChange(connection) {
-      walletAddress.value = connection.address ?? '';
-      walletIsConnected.value = connection.isConnected;
+      if (!connection.isConnected) {
+        handleWalletDisconnect();
+      }
     },
   });
 });

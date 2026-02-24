@@ -11,6 +11,8 @@ export const AgentConfigSchema = z.object({
   // LLM
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
+  /** When true, if primary model fails we try the fallback model. No automatic fallbacks without consent. */
+  allowFallback: z.boolean().default(false),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
   temperature: z.number().min(0).max(2).default(0.7),
 
@@ -73,6 +75,7 @@ export const CreateAgentRequestSchema = z.object({
   autonomyLevel: z.enum(['full', 'guided', 'strict']).default('guided'),
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
+  allowFallback: z.boolean().default(false),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
   temperature: z.number().min(0).max(2).default(0.7),
   chain: z.literal('base').default('base'),

@@ -65,14 +65,15 @@ const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
 const analyzeError = ref<string | null>(null);
 
-/** True when the analysis failed due to model unavailability (e.g. free tier limit or all models failed) */
+/** True when the analysis failed because the selected model is unavailable (no automatic fallback) */
 const isModelUnavailableError = computed(() => {
   const err = analyzeError.value?.toLowerCase() ?? '';
   return (
-    err.includes('all llm models failed') ||
+    err.includes('is unavailable') ||
     err.includes('unavailable for free') ||
     err.includes('free requests') ||
     err.includes('rate limit') ||
+    err.includes('timed out') ||
     err.includes('402') ||
     err.includes('429') ||
     (err.includes('llm') && err.includes('failed'))
@@ -292,6 +293,7 @@ const editInitialValues = computed(() => {
     takeProfitPct: agent.value.config.takeProfitPct,
     maxOpenPositions: agent.value.config.maxOpenPositions,
     temperature: agent.value.config.temperature ?? 0.7,
+    allowFallback: agent.value.config.allowFallback ?? false,
   };
 });
 
@@ -395,7 +397,7 @@ function formatLatency(ms: number): string {
         <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
           <div style="flex: 1; min-width: 0;">
             <span v-if="isModelUnavailableError">
-              This model is currently unavailable for free requests (or all fallback models failed). Try another model in the agent settings.
+              This model is currently unavailable. Choose another model in agent settings, or enable “Try fallback model” if you’ve set one.
             </span>
             <span v-else>⚠ {{ analyzeError }}</span>
           </div>
@@ -407,7 +409,7 @@ function formatLatency(ms: number): string {
               style="color: #f87171; border-color: rgba(239,68,68,0.5);"
               @click="showEditModal = true; analyzeError = null"
             >
-              Use other model
+              Select other model
             </button>
             <button style="background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; line-height: 1; padding: 0;" @click="analyzeError = null" aria-label="Dismiss">✕</button>
           </div>
