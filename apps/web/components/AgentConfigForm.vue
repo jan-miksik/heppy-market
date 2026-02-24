@@ -16,7 +16,7 @@ const isEditing = computed(() => !!props.initialValues);
 const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   name: '',
   autonomyLevel: 'guided',
-  pairs: ['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC'],
+  pairs: ['WETH/USDC'],
   paperBalance: 10000,
   strategies: ['combined'],
   analysisInterval: '1h',
@@ -37,7 +37,7 @@ const isAllPairs = computed(() => form.pairs.length === 1 && form.pairs[0] === '
 
 function toggleAllPairs() {
   if (isAllPairs.value) {
-    form.pairs = ['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC'];
+    form.pairs = ['WETH/USDC'];
   } else {
     form.pairs = ['*'];
   }
@@ -58,18 +58,17 @@ function removePair(pairLabel: string) {
 function shortModelName(modelId: string): string {
   // "nvidia/nemotron-3-nano-30b-a3b:free" → "Nemotron"
   const names: Record<string, string> = {
-    'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron',
-    'stepfun/step-3.5-flash:free': 'Step',
-    'arcee-ai/trinity-large-preview:free': 'Trinity',
-    'liquid/lfm-2.5-1.2b-thinking:free': 'LFM-Think',
-    'liquid/lfm-2.5-1.2b-instruct:free': 'LFM',
-    'arcee-ai/trinity-mini:free': 'Trinity-Mini',
-    'nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes-405B',
-    'qwen/qwen3-235b-a22b-thinking-2507:free': 'Qwen3-Think',
-    'meta-llama/llama-3.3-70b-instruct:free': 'Llama-70B',
+    'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
     'deepseek/deepseek-r1-0528:free': 'DeepSeek-R1',
     'google/gemma-3-27b-it:free': 'Gemma-27B',
+    'google/gemma-3-12b-it:free': 'Gemma-12B',
+    'meta-llama/llama-3.3-70b-instruct:free': 'Llama-70B',
+    'mistralai/mistral-small-3.1-24b-instruct:free': 'Mistral-24B',
     'qwen/qwen3-coder:free': 'Qwen3-Coder',
+    'qwen/qwen3-next-80b-a3b-instruct:free': 'Qwen3-80B',
+    'nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes-405B',
+    'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
+    'stepfun/step-3.5-flash:free': 'Step-3.5',
   };
   return names[modelId] ?? modelId.split('/').pop()?.split(':')[0] ?? 'Agent';
 }
@@ -178,7 +177,7 @@ async function handleSubmit() {
               <button type="button" class="pair-chip-remove" @click="removePair(pair)">&times;</button>
             </span>
           </div>
-          <div v-else class="pair-hint">Click “Select pairs” to choose from top pairs by volume.</div>
+          <div v-else class="pair-hint">Click “Select pairs” to choose from the top 3 pairs by volume.</div>
         </template>
         <div v-else class="all-pairs-hint">
           Agent will monitor all available Base chain pairs
@@ -196,17 +195,16 @@ async function handleSubmit() {
         <label class="form-label">LLM Model</label>
         <select v-model="form.llmModel" class="form-select">
           <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
-          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
-          <option value="arcee-ai/trinity-large-preview:free">Trinity Large Preview (free)</option>
-          <option value="liquid/lfm-2.5-1.2b-thinking:free">LFM 2.5 1.2B Thinking (free)</option>
-          <option value="liquid/lfm-2.5-1.2b-instruct:free">LFM 2.5 1.2B Instruct (free)</option>
-          <option value="arcee-ai/trinity-mini:free">Trinity Mini (free)</option>
-          <option value="nousresearch/hermes-3-llama-3.1-405b:free">Hermes 3 Llama 405B (free)</option>
-          <option value="qwen/qwen3-235b-a22b-thinking-2507:free">Qwen3 235B Thinking (free)</option>
-          <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B Instruct (free)</option>
-          <option value="deepseek/deepseek-r1-0528:free">DeepSeek R1 (free)</option>
+          <option value="deepseek/deepseek-r1-0528:free">DeepSeek R1 0528 (free)</option>
           <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
+          <option value="google/gemma-3-12b-it:free">Gemma 3 12B (free)</option>
+          <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
+          <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (free)</option>
           <option value="qwen/qwen3-coder:free">Qwen3 Coder (free)</option>
+          <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen3 80B (free)</option>
+          <option value="nousresearch/hermes-3-llama-3.1-405b:free">Hermes 3 Llama 405B (free)</option>
+          <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B v2 (free)</option>
+          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
         </select>
         <div class="form-hint">If this model is unavailable, you’ll be prompted to choose another (no automatic fallback).</div>
       </div>

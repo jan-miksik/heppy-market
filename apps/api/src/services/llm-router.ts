@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { TradeDecisionSchema } from '@dex-agents/shared';
 import type { TradeDecision } from '@dex-agents/shared';
@@ -51,14 +51,45 @@ export interface TradeDecisionRequest {
   };
 }
 
+const JSON_SCHEMA_INSTRUCTION = `
+IMPORTANT: Respond with ONLY a valid JSON object — no markdown, no code blocks, no explanation.
+The JSON must match this schema exactly:
+{
+  "action": "buy" | "sell" | "hold" | "close",
+  "confidence": <number 0.0–1.0>,
+  "reasoning": "<string>",
+  "targetPair": "<string, optional>",
+  "suggestedPositionSizePct": <number 0–100, optional>
+}`;
+
+/**
+ * Extract a JSON object from raw LLM text.
+ * Handles: plain JSON, markdown code blocks, reasoning tags (<think>...</think>).
+ */
+function extractJson(text: string): string {
+  // Strip markdown code fences
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenced) return fenced[1].trim();
+
+  // Strip reasoning tags (DeepSeek, etc.)
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // Extract first top-level JSON object
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) return text.slice(start, end + 1);
+
+  return text.trim();
+}
+
 function getSystemPrompt(autonomyLevel: string): string {
   switch (autonomyLevel) {
     case 'full':
-      return FULL_AUTONOMY_PROMPT;
+      return FULL_AUTONOMY_PROMPT + JSON_SCHEMA_INSTRUCTION;
     case 'strict':
-      return STRICT_RULES_PROMPT;
+      return STRICT_RULES_PROMPT + JSON_SCHEMA_INSTRUCTION;
     default:
-      return GUIDED_PROMPT;
+      return GUIDED_PROMPT + JSON_SCHEMA_INSTRUCTION;
   }
 }
 
@@ -66,8 +97,10 @@ const DEFAULT_LLM_TIMEOUT_MS = 180_000;
 
 /**
  * Get a structured trade decision from the LLM.
- * Only tries the user's selected model (and optionally fallback if allowFallback is true).
- * No automatic emergency fallbacks — if the model fails, we surface an error so the user can choose another model.
+ *
+ * Uses generateText + manual JSON extraction instead of generateObject, because
+ * generateObject sends `json_schema` with strict:true which most free OpenRouter
+ * models don't support. Plain text generation + prompt-based JSON works universally.
  */
 export async function getTradeDecision(
   config: LLMRouterConfig,
@@ -101,9 +134,8 @@ export async function getTradeDecision(
       );
 
       const result = await Promise.race([
-        generateObject({
+        generateText({
           model: openrouter(modelId),
-          schema: TradeDecisionSchema,
           system: systemPrompt,
           prompt: userPrompt,
           ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
@@ -112,13 +144,14 @@ export async function getTradeDecision(
         timeoutPromise,
       ]);
 
-      const { object, usage } = result;
+      const json = extractJson(result.text);
+      const object = TradeDecisionSchema.parse(JSON.parse(json));
       const latencyMs = Date.now() - startTime;
 
       return {
         ...object,
         latencyMs,
-        tokensUsed: usage?.totalTokens,
+        tokensUsed: result.usage?.totalTokens,
         modelUsed: modelId,
       };
     } catch (err) {
