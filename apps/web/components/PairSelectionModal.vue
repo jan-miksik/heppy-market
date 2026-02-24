@@ -93,7 +93,7 @@ async function fetchTopPairs() {
     pairs.value = (data.pairs ?? []).map((p: unknown) => rowToRecord(p as ApiPair));
     updatedAt.value = data.updatedAt ?? null;
   } catch (e) {
-    error.value = String(e);
+    error.value = extractApiError(e);
     pairs.value = [];
   } finally {
     loading.value = false;

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false });
-const { agents, fetchAgents, startAgent, stopAgent } = useAgents();
-const { stats, trades, fetchStats, fetchTrades } = useTrades();
+const { agents, error: agentsError, fetchAgents, startAgent, stopAgent } = useAgents();
+const { stats, trades, error: tradesError, fetchStats, fetchTrades } = useTrades();
 
 const refreshing = ref(false);
 const initialLoading = ref(true);
+
+const apiError = computed(() => agentsError.value || tradesError.value);
 
 async function refresh() {
   refreshing.value = true;
@@ -35,6 +37,13 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
         <span v-else>↻</span>
         Refresh
       </button>
+    </div>
+
+    <!-- API error banner -->
+    <div v-if="apiError && !initialLoading" class="api-error-banner">
+      <span class="error-icon">!</span>
+      <span>{{ apiError }}</span>
+      <button class="btn btn-ghost btn-sm" @click="refresh">Retry</button>
     </div>
 
     <!-- Skeleton: Stats -->

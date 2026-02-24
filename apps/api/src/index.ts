@@ -29,10 +29,11 @@ app.use(
   '*',
   cors({
     origin: (reqOrigin, c) => {
+      if (!reqOrigin) return reqOrigin;
       const allowed = [...defaultOrigins];
       const extra = c.env.CORS_ORIGINS?.split(',').map((s: string) => s.trim()).filter(Boolean);
       if (extra?.length) allowed.push(...extra);
-      return allowed.includes(reqOrigin) ? reqOrigin : undefined;
+      return allowed.includes(reqOrigin) ? reqOrigin : null;
     },
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],

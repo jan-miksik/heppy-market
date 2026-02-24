@@ -51,7 +51,7 @@ export function useTrades() {
       const res = await request<{ trades: Trade[] }>(`/api/trades${qs}`);
       trades.value = res.trades;
     } catch (e) {
-      error.value = String(e);
+      error.value = extractApiError(e);
     } finally {
       loading.value = false;
     }
@@ -61,7 +61,7 @@ export function useTrades() {
     try {
       stats.value = await request<TradeStats>('/api/trades/stats');
     } catch (e) {
-      console.error('Failed to fetch stats:', e);
+      error.value = extractApiError(e);
     }
   }
 

@@ -30,20 +30,36 @@ export interface AuthUser {
 
 const authUser = ref<AuthUser | null>(null);
 const authLoading = ref(false);
+let fetchMePromise: Promise<void> | null = null;
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!authUser.value);
 
-  /** Restore session from the HttpOnly session cookie (called on app start). */
-  async function fetchMe(): Promise<void> {
-    try {
-      const user = await $fetch<AuthUser>('/api/auth/me', { credentials: 'include' });
-      authUser.value = user;
-    } catch {
-      authUser.value = null;
-    }
+  /** Restore session from the HttpOnly session cookie. Deduplicates concurrent calls. */
+  function fetchMe(): Promise<void> {
+    if (fetchMePromise) return fetchMePromise;
+    fetchMePromise = (async () => {
+      try {
+        const user = await $fetch<AuthUser>('/api/auth/me', {
+          credentials: 'include',
+          timeout: 8000,
+        });
+        authUser.value = user;
+      } catch (err: unknown) {
+        authUser.value = null;
+        // 401 is expected when not signed in — don't log it
+        const status = (err as { statusCode?: number })?.statusCode
+          ?? (err as { status?: number })?.status;
+        if (status !== 401) {
+          console.error('[auth] fetchMe failed:', err);
+        }
+      } finally {
+        fetchMePromise = null;
+      }
+    })();
+    return fetchMePromise;
   }
 
   /**

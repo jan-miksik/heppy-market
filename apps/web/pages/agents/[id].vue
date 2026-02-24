@@ -55,6 +55,7 @@ const decisions = ref<AgentDecision[]>([]);
 const snapshots = ref<PerformanceSnapshot[]>([]);
 const doStatus = ref<DoStatus | null>(null);
 const loading = ref(true);
+const loadError = ref<string | null>(null);
 const isAnalyzing = ref(false);
 const showEditModal = ref(false);
 const saving = ref(false);
@@ -91,6 +92,7 @@ onUnmounted(() => {
 
 async function loadAll() {
   loading.value = true;
+  loadError.value = null;
   try {
     const [a, t, d, p] = await Promise.all([
       getAgent(id.value),
@@ -104,6 +106,8 @@ async function loadAll() {
     snapshots.value = p.snapshots;
     // Load DO status for countdown
     await refreshDoStatus();
+  } catch (err) {
+    loadError.value = extractApiError(err);
   } finally {
     loading.value = false;
   }
@@ -266,7 +270,7 @@ async function handleEdit(payload: Parameters<typeof updateAgent>[1]) {
     agent.value = updated;
     showEditModal.value = false;
   } catch (e) {
-    saveError.value = String(e);
+    saveError.value = extractApiError(e);
   } finally {
     saving.value = false;
   }
@@ -341,6 +345,14 @@ function formatLatency(ms: number): string {
   <main class="page">
     <div v-if="loading" style="text-align: center; padding: 64px;">
       <span class="spinner" style="width: 32px; height: 32px;" />
+    </div>
+
+    <div v-else-if="loadError" style="text-align: center; padding: 64px;">
+      <div class="api-error-banner" style="display: inline-flex; max-width: 500px;">
+        <span class="error-icon">!</span>
+        <span>{{ loadError }}</span>
+        <button class="btn btn-ghost btn-sm" @click="loadAll">Retry</button>
+      </div>
     </div>
 
     <template v-else-if="agent">

@@ -3,7 +3,7 @@
 name = "dex-trading-agents-api"
 # Built from monorepo root so node_modules and @dex-agents/shared resolve (see build command)
 main = "dist/worker.js"
-compatibility_date = "2026-02-17"
+compatibility_date = "2026-02-12"
 compatibility_flags = ["nodejs_compat"]
 
 # Build from repo root so all dependencies and workspace packages resolve

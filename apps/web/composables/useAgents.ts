@@ -52,7 +52,7 @@ export function useAgents() {
       const res = await request<{ agents: Agent[] }>('/api/agents');
       agents.value = res.agents;
     } catch (e) {
-      error.value = String(e);
+      error.value = extractApiError(e);
     } finally {
       loading.value = false;
     }

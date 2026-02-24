@@ -29,7 +29,7 @@ async function handleCreate(payload: Parameters<typeof createAgent>[0]) {
     showCreateModal.value = false;
     router.push(`/agents/${agent.id}`);
   } catch (e) {
-    createError.value = String(e);
+    createError.value = extractApiError(e);
   } finally {
     creating.value = false;
   }
@@ -40,7 +40,7 @@ async function handleDelete(id: string) {
   try {
     await deleteAgent(id);
   } catch (e) {
-    alert(`Failed to delete: ${e}`);
+    alert(`Failed to delete: ${extractApiError(e)}`);
   }
 }
 
@@ -60,7 +60,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
     showEditModal.value = false;
     editingAgent.value = null;
   } catch (e) {
-    saveError.value = String(e);
+    saveError.value = extractApiError(e);
   } finally {
     saving.value = false;
   }

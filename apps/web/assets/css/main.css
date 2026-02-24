@@ -532,6 +532,37 @@ tbody tr:last-child td {
   height: 200px;
 }
 
+/* API error banner */
+.api-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: var(--red-dim);
+  border: 1px solid #7f1d1d;
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 13px;
+}
+.api-error-banner .error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.api-error-banner .btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Skeleton loader */
 .skeleton {
   background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%);
