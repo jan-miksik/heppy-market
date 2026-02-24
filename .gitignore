@@ -9,3 +9,4 @@ dist/
 .turbo/
 apps/*/node_modules/
 packages/*/node_modules/
+.worktrees/

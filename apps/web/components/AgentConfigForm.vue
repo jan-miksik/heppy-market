@@ -173,13 +173,11 @@ async function handleSubmit() {
       <div class="form-group">
         <label class="form-label">LLM Model</label>
         <select v-model="form.llmModel" class="form-select">
-          <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
-          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
-          <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
-          <option value="google/gemma-3-12b-it:free">Gemma 3 12B (free)</option>
-          <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B v2 (free)</option>
+          <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
+          <option value="stepfun/step-3.5-flash:free">Step-3.5 (free)</option>
+          <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
+          <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
         </select>
-        <div class="form-hint">If this model is unavailable, you’ll be prompted to choose another (no automatic fallback).</div>
       </div>
       <div class="form-group">
         <label class="form-label">
