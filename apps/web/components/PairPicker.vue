@@ -106,7 +106,7 @@ function toggleAllPairs() {
   if (allPairs.value) {
     emit('update:modelValue', ['*']);
   } else {
-    emit('update:modelValue', ['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']);
+    emit('update:modelValue', ['WETH/USDC']);
   }
 }
 

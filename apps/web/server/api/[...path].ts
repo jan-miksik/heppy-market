@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
   reqHeaders.delete('host');
 
   try {
-    const res = await fetch(target, { method, headers: reqHeaders, body: body ?? undefined });
+    const res = await fetch(target, { method, headers: reqHeaders, body: body ?? undefined, signal: AbortSignal.timeout(200_000) });
     return proxyResponse(event, res);
   } catch (err: unknown) {
     const e = err as { statusCode?: number; statusMessage?: string; message?: string };

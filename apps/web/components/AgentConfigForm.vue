@@ -31,27 +31,21 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
 
 const submitting = ref(false);
 const validationError = ref('');
-const showPairModal = ref(false);
+const { request } = useApi();
 
-const isAllPairs = computed(() => form.pairs.length === 1 && form.pairs[0] === '*');
+/** Top 3 pairs by volume (from API); used for the 3 toggles */
+const availablePairs = ref<{ pairLabel: string }[]>([]);
 
-function toggleAllPairs() {
-  if (isAllPairs.value) {
-    form.pairs = ['WETH/USDC'];
+function togglePair(pairLabel: string) {
+  if (form.pairs.includes(pairLabel)) {
+    form.pairs = form.pairs.filter((p) => p !== pairLabel);
   } else {
-    form.pairs = ['*'];
-  }
-}
-
-function addPair(pairLabel: string) {
-  if (!form.pairs.includes(pairLabel)) {
     form.pairs = [...form.pairs, pairLabel];
   }
-  showPairModal.value = false;
 }
 
-function removePair(pairLabel: string) {
-  form.pairs = form.pairs.filter((p) => p !== pairLabel);
+function isPairSelected(pairLabel: string) {
+  return form.pairs.includes(pairLabel);
 }
 
 /** Extract a short model name from the OpenRouter model ID */
@@ -77,7 +71,6 @@ function shortModelName(modelId: string): string {
 function generateName(): string {
   const model = shortModelName(form.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free');
   const pairs = form.pairs;
-  if (pairs.length === 1 && pairs[0] === '*') return `${model} · All Pairs`;
   const pairLabel = pairs.length === 1 ? pairs[0] : pairs.length > 1 ? `${pairs[0]} +${pairs.length - 1}` : 'Base';
   return `${model} · ${pairLabel}`;
 }
@@ -91,11 +84,36 @@ watch([() => form.llmModel, () => [...form.pairs]], () => {
   }
 });
 
-onMounted(() => {
+onMounted(async () => {
   if (props.initialValues) {
     Object.assign(form, props.initialValues);
   } else {
     form.name = generateName();
+  }
+  // Fetch top 3 pairs for the toggles
+  try {
+    const data = await request<{ pairs: Array<{ baseToken: { symbol: string }; quoteToken: { symbol: string } }> }>(
+      '/api/pairs/top?chain=base'
+    );
+    const list = (data.pairs ?? []).map((p) => ({
+      pairLabel: `${p.baseToken.symbol}/${p.quoteToken.symbol}`,
+    }));
+    availablePairs.value = list;
+    const labels = new Set(list.map((p) => p.pairLabel));
+    if (!props.initialValues?.pairs?.length && list.length > 0) {
+      form.pairs = [list[0].pairLabel];
+    } else if (props.initialValues?.pairs?.length) {
+      // When editing, keep only selected pairs that are in the top 3
+      form.pairs = form.pairs.filter((p) => labels.has(p));
+      if (form.pairs.length === 0 && list.length > 0) {
+        form.pairs = [list[0].pairLabel];
+      }
+    }
+  } catch {
+    availablePairs.value = [{ pairLabel: 'WETH/USDC' }];
+    if (!props.initialValues?.pairs?.length) {
+      form.pairs = ['WETH/USDC'];
+    }
   }
 });
 
@@ -158,36 +176,19 @@ async function handleSubmit() {
 
     <div class="form-group">
       <label class="form-label">Trading Pairs</label>
-      <div class="pair-selector">
-        <label class="all-pairs-toggle" @click.prevent="toggleAllPairs">
-          <span class="toggle-track" :class="{ active: isAllPairs }">
+      <div class="pair-toggles">
+        <label
+          v-for="p in availablePairs"
+          :key="p.pairLabel"
+          class="pair-toggle"
+        >
+          <span class="toggle-track" :class="{ active: isPairSelected(p.pairLabel) }" @click.prevent="togglePair(p.pairLabel)">
             <span class="toggle-thumb" />
           </span>
-          <span class="toggle-label">All Base pairs</span>
+          <span class="pair-toggle-label">{{ p.pairLabel }}</span>
         </label>
-        <template v-if="!isAllPairs">
-          <div class="pair-selector-row">
-            <button type="button" class="btn btn-ghost btn-sm" @click="showPairModal = true">
-              + Select pairs
-            </button>
-          </div>
-          <div v-if="form.pairs.length > 0" class="pair-chips">
-            <span v-for="pair in form.pairs" :key="pair" class="pair-chip">
-              {{ pair }}
-              <button type="button" class="pair-chip-remove" @click="removePair(pair)">&times;</button>
-            </span>
-          </div>
-          <div v-else class="pair-hint">Click “Select pairs” to choose from the top 3 pairs by volume.</div>
-        </template>
-        <div v-else class="all-pairs-hint">
-          Agent will monitor all available Base chain pairs
-        </div>
       </div>
-      <PairSelectionModal
-        :open="showPairModal"
-        @select="addPair"
-        @close="showPairModal = false"
-      />
+      <p v-if="!availablePairs.length" class="pair-loading">Loading pairs…</p>
     </div>
 
     <div class="grid-2">
@@ -289,18 +290,20 @@ async function handleSubmit() {
   margin-top: 4px;
 }
 
-.pair-selector {
+.pair-toggles {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
-.all-pairs-toggle {
+.pair-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
-  margin-bottom: 2px;
+}
+.pair-toggle .toggle-track {
+  flex-shrink: 0;
 }
 .toggle-track {
   width: 32px;
@@ -326,54 +329,16 @@ async function handleSubmit() {
 .toggle-track.active .toggle-thumb {
   transform: translateX(14px);
 }
-.toggle-label {
-  font-size: 12px;
-  color: var(--text-dim);
+.pair-toggle-label {
+  font-size: 14px;
   font-weight: 500;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
 }
-.pair-selector-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.pair-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.pair-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.pair-chip-remove {
-  background: none;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 15px;
-  line-height: 1;
-  padding: 0 0 0 2px;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-}
-.pair-chip-remove:hover {
-  opacity: 1;
-}
-.pair-hint {
+.pair-loading {
   font-size: 12px;
   color: var(--text-muted);
-}
-.all-pairs-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-style: italic;
+  margin: 0;
 }
 .sync-name-checkbox {
   display: inline-flex;

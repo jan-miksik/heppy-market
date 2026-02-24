@@ -6,6 +6,7 @@ const TokenSchema = z.object({
   address: z.string(),
   name: z.string(),
   symbol: z.string(),
+  image: z.string().optional(),
 });
 
 const TxnsSchema = z.object({
@@ -51,6 +52,7 @@ export const PairSchema = z.object({
   fdv: z.number().optional(),
   marketCap: z.number().optional(),
   pairCreatedAt: z.number().optional(),
+  info: z.object({ imageUrl: z.string().optional() }).optional(),
 });
 
 export type DexPair = z.infer<typeof PairSchema>;
@@ -191,7 +193,7 @@ export function createDexDataService(cache: KVNamespace): DexDataService {
 
       const sorted = [...byLabel.values()]
         .sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))
-        .slice(0, 80);
+        .slice(0, 3);
 
       await cache.put(cacheKey, JSON.stringify(sorted), {
         expirationTtl: TOP_PAIRS_CACHE_TTL,

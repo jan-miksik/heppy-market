@@ -13,6 +13,8 @@ export interface TopPairRow {
   quoteTokenSymbol: string;
   baseTokenAddress: string;
   quoteTokenAddress: string;
+  baseTokenImage: string | null;
+  quoteTokenImage: string | null;
   volume24h: number;
   marketCap: number;
   change1d: number | null;
@@ -55,8 +57,8 @@ function formatPct(val: number | null | undefined): string {
 }
 
 interface ApiPair {
-  baseToken: { symbol: string; address: string };
-  quoteToken: { symbol: string; address: string };
+  baseToken: { symbol: string; address: string; image?: string };
+  quoteToken: { symbol: string; address: string; image?: string };
   pairAddress: string;
   chainId: string;
   dexId: string;
@@ -64,10 +66,13 @@ interface ApiPair {
   marketCap?: number;
   fdv?: number;
   priceChange?: { h24?: number };
+  info?: { imageUrl?: string };
 }
 
 function rowToRecord(p: ApiPair): TopPairRow {
   const pairLabel = `${p.baseToken.symbol}/${p.quoteToken.symbol}`;
+  const baseImage = p.baseToken.image ?? p.info?.imageUrl ?? null;
+  const quoteImage = p.quoteToken.image ?? null;
   return {
     pairLabel,
     pairAddress: p.pairAddress,
@@ -77,6 +82,8 @@ function rowToRecord(p: ApiPair): TopPairRow {
     quoteTokenSymbol: p.quoteToken.symbol,
     baseTokenAddress: p.baseToken.address,
     quoteTokenAddress: p.quoteToken.address,
+    baseTokenImage: baseImage && baseImage.startsWith('http') ? baseImage : null,
+    quoteTokenImage: quoteImage && quoteImage.startsWith('http') ? quoteImage : null,
     volume24h: p.volume?.h24 ?? 0,
     marketCap: p.marketCap ?? p.fdv ?? 0,
     change1d: p.priceChange?.h24 ?? null,
@@ -161,12 +168,29 @@ function formatUpdated() {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-/** Token logo URL (Uniswap assets for Base; fallback shows first letter on error) */
-function tokenLogoUrl(chainId: string, address: string): string {
-  if (!address) return '';
+/** Ordered list of logo URLs to try: API (if any), Uniswap assets, Trust Wallet assets. */
+function tokenLogoUrls(
+  chainId: string,
+  address: string,
+  apiUrl: string | null
+): string[] {
+  if (!address) return [];
   const chain = chainId === 'base' ? 'base' : 'ethereum';
   const addr = address.toLowerCase();
-  return `https://raw.githubusercontent.com/Uniswap/assets/master/blockchains/${chain}/assets/${addr}/logo.png`;
+  const uniswap = `https://raw.githubusercontent.com/Uniswap/assets/master/blockchains/${chain}/assets/${addr}/logo.png`;
+  const trust = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${chain}/assets/${addr}/logo.png`;
+  const urls = [apiUrl, uniswap, trust].filter((u): u is string => Boolean(u));
+  return [...new Set(urls)];
+}
+
+function onLogoError(ev: Event, urls: string[]) {
+  const el = ev.target as HTMLImageElement;
+  const i = urls.findIndex((u) => el.src === u || el.src.startsWith(u));
+  if (i >= 0 && i < urls.length - 1) {
+    el.src = urls[i + 1];
+  } else {
+    el.style.display = 'none';
+  }
 }
 </script>
 
@@ -245,19 +269,21 @@ function tokenLogoUrl(chainId: string, address: string): string {
                       <span class="pair-tokens">
                         <span class="token-icon-wrap">
                           <img
-                            :src="tokenLogoUrl(row.chainId, row.baseTokenAddress)"
+                            v-if="tokenLogoUrls(row.chainId, row.baseTokenAddress, row.baseTokenImage).length"
+                            :src="tokenLogoUrls(row.chainId, row.baseTokenAddress, row.baseTokenImage)[0]"
                             :alt="row.baseTokenSymbol"
                             class="token-icon"
-                            @error="($event.target as HTMLImageElement).style.display = 'none'"
+                            @error="onLogoError($event, tokenLogoUrls(row.chainId, row.baseTokenAddress, row.baseTokenImage))"
                           >
                           <span v-if="row.baseTokenSymbol" class="token-fallback" aria-hidden="true">{{ row.baseTokenSymbol.slice(0, 1) }}</span>
                         </span>
                         <span class="token-icon-wrap">
                           <img
-                            :src="tokenLogoUrl(row.chainId, row.quoteTokenAddress)"
+                            v-if="tokenLogoUrls(row.chainId, row.quoteTokenAddress, row.quoteTokenImage).length"
+                            :src="tokenLogoUrls(row.chainId, row.quoteTokenAddress, row.quoteTokenImage)[0]"
                             :alt="row.quoteTokenSymbol"
                             class="token-icon"
-                            @error="($event.target as HTMLImageElement).style.display = 'none'"
+                            @error="onLogoError($event, tokenLogoUrls(row.chainId, row.quoteTokenAddress, row.quoteTokenImage))"
                           >
                           <span v-if="row.quoteTokenSymbol" class="token-fallback" aria-hidden="true">{{ row.quoteTokenSymbol.slice(0, 1) }}</span>
                         </span>
