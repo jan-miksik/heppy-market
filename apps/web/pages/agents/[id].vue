@@ -261,7 +261,7 @@ async function handleAnalyze() {
   isAnalyzing.value = true;
   analyzeError.value = null;
   try {
-    await request(`/api/agents/${id.value}/analyze`, { method: 'POST' });
+    await request(`/api/agents/${id.value}/analyze`, { method: 'POST', timeout: 200_000 });
     // Refresh data after a short delay for the loop to write to D1
     await new Promise((r) => setTimeout(r, 2000));
     const [t, d] = await Promise.all([
