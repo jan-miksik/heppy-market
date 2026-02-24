@@ -56,16 +56,9 @@ function shortModelName(modelId: string): string {
   // "nvidia/nemotron-3-nano-30b-a3b:free" → "Nemotron"
   const names: Record<string, string> = {
     'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
-    'deepseek/deepseek-r1-0528:free': 'DeepSeek-R1',
-    'google/gemma-3-27b-it:free': 'Gemma-27B',
-    'google/gemma-3-12b-it:free': 'Gemma-12B',
-    'meta-llama/llama-3.3-70b-instruct:free': 'Llama-70B',
-    'mistralai/mistral-small-3.1-24b-instruct:free': 'Mistral-24B',
-    'qwen/qwen3-coder:free': 'Qwen3-Coder',
-    'qwen/qwen3-next-80b-a3b-instruct:free': 'Qwen3-80B',
-    'nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes-405B',
-    'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
     'stepfun/step-3.5-flash:free': 'Step-3.5',
+    'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
+    'arcee-ai/trinity-large-preview:free': 'Trinity-Large',
   };
   return names[modelId] ?? modelId.split('/').pop()?.split(':')[0] ?? 'Agent';
 }
@@ -127,13 +120,15 @@ async function handleSubmit() {
   <form @submit.prevent="handleSubmit">
     <div class="alert alert-error" v-if="validationError">{{ validationError }}</div>
 
-    <div class="form-group">
-      <label class="form-label">Agent Name *</label>
+    <div class="form-group agent-name-row">
+      <div class="agent-name-label-row">
+        <label class="form-label">Agent Name</label>
+        <label class="sync-name-checkbox">
+          <input v-model="syncNameWithModel" type="checkbox" />
+          <span>Sync with setup</span>
+        </label>
+      </div>
       <input v-model="form.name" class="form-input" placeholder="My Alpha Hunter" maxlength="50" required />
-      <label class="sync-name-checkbox">
-        <input v-model="syncNameWithModel" type="checkbox" />
-        <span>Sync name with model</span>
-      </label>
     </div>
 
     <div class="grid-2">
@@ -174,30 +169,17 @@ async function handleSubmit() {
       </div>
     </div>
 
-    <div class="grid-2">
+    <div class="grid-2 llm-row">
       <div class="form-group">
         <label class="form-label">LLM Model</label>
         <select v-model="form.llmModel" class="form-select">
           <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nvidia Nemotron Nano 30B (free)</option>
-          <option value="deepseek/deepseek-r1-0528:free">DeepSeek R1 0528 (free)</option>
+          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
           <option value="google/gemma-3-27b-it:free">Gemma 3 27B (free)</option>
           <option value="google/gemma-3-12b-it:free">Gemma 3 12B (free)</option>
-          <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
-          <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B (free)</option>
-          <option value="qwen/qwen3-coder:free">Qwen3 Coder (free)</option>
-          <option value="qwen/qwen3-next-80b-a3b-instruct:free">Qwen3 80B (free)</option>
-          <option value="nousresearch/hermes-3-llama-3.1-405b:free">Hermes 3 Llama 405B (free)</option>
           <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B v2 (free)</option>
-          <option value="stepfun/step-3.5-flash:free">Step 3.5 Flash (free)</option>
         </select>
         <div class="form-hint">If this model is unavailable, you’ll be prompted to choose another (no automatic fallback).</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
-          <input v-model="form.allowFallback" type="checkbox" class="form-checkbox" />
-          Try fallback model if primary fails
-        </label>
-        <div class="form-hint">When enabled, a fallback model is tried if the primary fails. Off by default.</div>
       </div>
       <div class="form-group">
         <label class="form-label">
@@ -319,11 +301,17 @@ async function handleSubmit() {
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
 }
+.agent-name-label-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
 .sync-name-checkbox {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;

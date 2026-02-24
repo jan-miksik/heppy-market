@@ -472,6 +472,28 @@ tbody tr:last-child td {
   font-size: 16px;
   font-weight: 700;
 }
+.modal-header-warning {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--yellow);
+  background: var(--yellow-dim);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--yellow-dim);
+}
+.modal-header .btn {
+  flex-shrink: 0;
+}
+.modal-bottom-warning {
+  font-size: 12px;
+  color: var(--yellow);
+  background: var(--yellow-dim);
+  padding: 12px 24px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border: 1px solid var(--yellow-dim);
+  border-top: 1px solid var(--border);
+}
 .modal-body {
   padding: 20px 24px;
 }

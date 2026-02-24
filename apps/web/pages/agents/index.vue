@@ -135,9 +135,6 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
             <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>
           </div>
           <div class="modal-body">
-            <div v-if="editingAgent.status === 'running'" class="alert" style="background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow-dim); margin-bottom: 12px; font-size: 12px;">
-              Agent is running — changes take effect on the next analysis cycle.
-            </div>
             <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
             <AgentConfigForm
               :initialValues="{
@@ -159,6 +156,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
               @cancel="showEditModal = false"
             />
           </div>
+          <div v-if="editingAgent.status === 'running'" class="modal-bottom-warning">Agent is running — changes take effect on the next analysis cycle.</div>
         </div>
       </div>
     </Teleport>

@@ -116,10 +116,25 @@ export async function getTradeDecision(
   const startTime = Date.now();
   const timeoutMs = config.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS;
 
-  // Only user-selected model; fallback only if user explicitly consented (allowFallback).
+  // Emergency free models tried last when allowFallback is enabled.
+  // Verified working as of 2026-02-24.
+  const EMERGENCY_FREE_MODELS = [
+    'arcee-ai/trinity-large-preview:free',
+    'google/gemma-3-27b-it:free',
+    'google/gemma-3-12b-it:free',
+    'google/gemma-3-4b-it:free',
+    'google/gemma-3n-e4b-it:free',
+    'google/gemma-3n-e2b-it:free',
+  ];
+
   const modelsToTry: string[] = [config.model];
   if (config.allowFallback && config.fallbackModel && config.fallbackModel !== config.model) {
     modelsToTry.push(config.fallbackModel);
+  }
+  if (config.allowFallback) {
+    for (const m of EMERGENCY_FREE_MODELS) {
+      if (!modelsToTry.includes(m)) modelsToTry.push(m);
+    }
   }
 
   let lastError: unknown;
@@ -136,8 +151,8 @@ export async function getTradeDecision(
       const result = await Promise.race([
         generateText({
           model: openrouter(modelId),
-          system: systemPrompt,
-          prompt: userPrompt,
+          // Merge system into prompt — some models (e.g. Gemma) reject the system role
+          prompt: `${systemPrompt}\n\n${userPrompt}`,
           ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
           maxRetries: 0,
         }),

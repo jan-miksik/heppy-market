@@ -795,9 +795,6 @@ function formatLatency(ms: number): string {
             <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>
           </div>
           <div class="modal-body">
-            <div v-if="agent?.status === 'running'" class="alert" style="background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow-dim); margin-bottom: 12px; font-size: 12px;">
-              Agent is running — changes take effect on the next analysis cycle.
-            </div>
             <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
             <AgentConfigForm
               v-if="editInitialValues"
@@ -806,6 +803,7 @@ function formatLatency(ms: number): string {
               @cancel="showEditModal = false"
             />
           </div>
+          <div v-if="agent?.status === 'running'" class="modal-bottom-warning">Agent is running — changes take effect on the next analysis cycle.</div>
         </div>
       </div>
     </Teleport>
