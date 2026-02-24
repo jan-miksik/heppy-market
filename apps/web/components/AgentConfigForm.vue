@@ -31,10 +31,13 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
 
 const submitting = ref(false);
 const validationError = ref('');
-const { request } = useApi();
 
-/** Top 3 pairs by volume (from API); used for the 3 toggles */
-const availablePairs = ref<{ pairLabel: string }[]>([]);
+/** Hardcoded pairs shown as toggles (in a row) */
+const AVAILABLE_PAIRS = [
+  'WETH/USDC',
+  'cbBTC/USDC',
+  'AERO/WETH',
+] as const;
 
 function togglePair(pairLabel: string) {
   if (form.pairs.includes(pairLabel)) {
@@ -84,36 +87,17 @@ watch([() => form.llmModel, () => [...form.pairs]], () => {
   }
 });
 
-onMounted(async () => {
+onMounted(() => {
   if (props.initialValues) {
     Object.assign(form, props.initialValues);
+    // When editing, keep only selected pairs that are in our hardcoded list
+    const allowed = new Set<string>(AVAILABLE_PAIRS);
+    form.pairs = form.pairs.filter((p) => allowed.has(p));
+    if (form.pairs.length === 0) {
+      form.pairs = [AVAILABLE_PAIRS[0]];
+    }
   } else {
     form.name = generateName();
-  }
-  // Fetch top 3 pairs for the toggles
-  try {
-    const data = await request<{ pairs: Array<{ baseToken: { symbol: string }; quoteToken: { symbol: string } }> }>(
-      '/api/pairs/top?chain=base'
-    );
-    const list = (data.pairs ?? []).map((p) => ({
-      pairLabel: `${p.baseToken.symbol}/${p.quoteToken.symbol}`,
-    }));
-    availablePairs.value = list;
-    const labels = new Set(list.map((p) => p.pairLabel));
-    if (!props.initialValues?.pairs?.length && list.length > 0) {
-      form.pairs = [list[0].pairLabel];
-    } else if (props.initialValues?.pairs?.length) {
-      // When editing, keep only selected pairs that are in the top 3
-      form.pairs = form.pairs.filter((p) => labels.has(p));
-      if (form.pairs.length === 0 && list.length > 0) {
-        form.pairs = [list[0].pairLabel];
-      }
-    }
-  } catch {
-    availablePairs.value = [{ pairLabel: 'WETH/USDC' }];
-    if (!props.initialValues?.pairs?.length) {
-      form.pairs = ['WETH/USDC'];
-    }
   }
 });
 
@@ -178,17 +162,16 @@ async function handleSubmit() {
       <label class="form-label">Trading Pairs</label>
       <div class="pair-toggles">
         <label
-          v-for="p in availablePairs"
-          :key="p.pairLabel"
+          v-for="pairLabel in AVAILABLE_PAIRS"
+          :key="pairLabel"
           class="pair-toggle"
         >
-          <span class="toggle-track" :class="{ active: isPairSelected(p.pairLabel) }" @click.prevent="togglePair(p.pairLabel)">
+          <span class="toggle-track" :class="{ active: isPairSelected(pairLabel) }" @click.prevent="togglePair(pairLabel)">
             <span class="toggle-thumb" />
           </span>
-          <span class="pair-toggle-label">{{ p.pairLabel }}</span>
+          <span class="pair-toggle-label">{{ pairLabel }}</span>
         </label>
       </div>
-      <p v-if="!availablePairs.length" class="pair-loading">Loading pairs…</p>
     </div>
 
     <div class="grid-2">
@@ -292,8 +275,9 @@ async function handleSubmit() {
 
 .pair-toggles {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px 20px;
 }
 .pair-toggle {
   display: flex;
@@ -334,11 +318,6 @@ async function handleSubmit() {
   font-weight: 500;
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
-}
-.pair-loading {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0;
 }
 .sync-name-checkbox {
   display: inline-flex;
