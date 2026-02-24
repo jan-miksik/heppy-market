@@ -37,43 +37,44 @@ function truncate(addr: string): string {
 
       <p class="connect-tagline">AI-powered paper trading agents on Base chain</p>
 
-      <!-- Step 1: Connect wallet / email / social -->
+      <!-- Connect wallet (always visible, big button inside box) -->
       <div class="connect-section">
         <div class="connect-btn-wrap">
-          <!-- AppKit's built-in button — handles the full connection modal -->
           <w3m-button balance="hide" />
         </div>
       </div>
 
       <!-- Step 2: SIWE verification (appears after wallet is connected) -->
-      <Transition name="fade">
-        <div v-if="isConnected && !isAuthenticated" class="connect-section siwe-section">
-          <div class="divider" />
-          <h2 class="step-label">Verify your wallet</h2>
-          <p class="step-hint">
-            Sign a short message to prove wallet ownership. No gas required.
+        <Transition name="fade">
+          <div v-if="isConnected && !isAuthenticated" class="connect-section siwe-section">
+            <div class="divider" />
+            <h2 class="step-label">Verify your wallet</h2>
+            <p class="step-hint">
+              Sign a short message to prove wallet ownership. No gas required.
+            </p>
+
+            <div v-if="error" class="connect-error">{{ error }}</div>
+
+            <button
+              class="btn btn-primary btn-wide btn-sign-in"
+              :disabled="isLoading"
+              @click="handleSignIn"
+            >
+              <span v-if="isLoading" class="loading-dots">
+                <span /><span /><span />
+              </span>
+              <span v-else>Sign In with Wallet</span>
+            </button>
+          </div>
+        </Transition>
+
+        <!-- Already signed in -->
+        <div v-if="isAuthenticated && user" class="connect-section">
+          <p class="connect-hint">
+            Signed in as <code>{{ truncate(user.walletAddress) }}</code>
           </p>
-
-          <div v-if="error" class="connect-error">{{ error }}</div>
-
-          <button
-            class="btn btn-primary btn-wide"
-            :disabled="isLoading"
-            @click="handleSignIn"
-          >
-            <span v-if="isLoading" class="spinner" />
-            <span v-else>Sign In with Wallet</span>
-          </button>
+          <NuxtLink to="/" class="btn btn-primary btn-wide">Go to Dashboard</NuxtLink>
         </div>
-      </Transition>
-
-      <!-- Already signed in -->
-      <div v-if="isAuthenticated && user" class="connect-section">
-        <p class="connect-hint">
-          Signed in as <code>{{ truncate(user.walletAddress) }}</code>
-        </p>
-        <NuxtLink to="/" class="btn btn-primary btn-wide">Go to Dashboard</NuxtLink>
-      </div>
     </div>
   </div>
 </template>
@@ -82,22 +83,36 @@ function truncate(addr: string): string {
 .connect-root {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 2rem 1rem;
+  padding: 2rem 1rem 4rem;
   background: var(--bg-primary);
 }
 
 .connect-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 2.5rem 2rem;
+  padding: 2.75rem 2.25rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+/* Connect button: inside box, full width, bigger */
+.connect-btn-wrap {
+  width: 100%;
+}
+
+.connect-btn-wrap :deep(w3m-button),
+.connect-btn-wrap :deep(button) {
+  width: 100% !important;
+  min-height: 52px !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  border-radius: 12px !important;
 }
 
 .connect-brand {
@@ -141,8 +156,6 @@ function truncate(addr: string): string {
   line-height: 1.5;
 }
 
-.connect-btn-wrap { display: flex; justify-content: flex-start; }
-
 .divider {
   height: 1px;
   background: var(--border);
@@ -160,17 +173,36 @@ function truncate(addr: string): string {
 
 .btn-wide { width: 100%; justify-content: center; }
 
-.spinner {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid transparent;
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
+.btn-sign-in {
+  min-height: 48px;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+/* Loading: three bouncing dots */
+.loading-dots {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: bounce 0.6s ease-in-out infinite both;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: 0s; }
+.loading-dots span:nth-child(2) { animation-delay: 0.15s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.6; }
+  40% { transform: scale(1); opacity: 1; }
+}
 
 .connect-hint {
   font-size: 0.8rem;

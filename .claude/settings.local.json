@@ -1,14 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "WebSearch",
       "*",
-      "Bash(code:*)",
-      "Bash(find:*)",
-      "Bash(npx tsc:*)",
-      "WebFetch(domain:api.dexscreener.com)",
-      "WebFetch(domain:api.geckoterminal.com)",
-      "Bash(npm test)",
-      "Bash(curl:*)",
       "Bash(*)",
       "Read(*)",
       "Write(*)",
@@ -16,7 +10,9 @@
       "WebFetch(*)",
       "mcp__*",
       "Bash(python3:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npx skills add mattpocock/skills/tdd -a claude-code -y 2>&1)",
+      "Bash(npx skills search frontend-design 2>&1 | head -50)"
     ]
   }
 }

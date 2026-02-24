@@ -19,7 +19,7 @@ export interface LLMRouterConfig {
   allowFallback?: boolean;
   maxRetries?: number;
   temperature?: number;
-  /** Request timeout in ms; prevents analysis from hanging (default 90_000). */
+  /** Request timeout in ms; prevents analysis from hanging (default 180_000). */
   timeoutMs?: number;
 }
 
@@ -62,7 +62,7 @@ function getSystemPrompt(autonomyLevel: string): string {
   }
 }
 
-const DEFAULT_LLM_TIMEOUT_MS = 90_000;
+const DEFAULT_LLM_TIMEOUT_MS = 180_000;
 
 /**
  * Get a structured trade decision from the LLM.

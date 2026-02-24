@@ -4,7 +4,7 @@
   "private": true,
   "main": "src/index.ts",
   "scripts": {
-    "dev": "wrangler dev --port 8787",
+    "dev": "wrangler dev --port 8787 --ip 0.0.0.0",
     "deploy": "wrangler deploy",
     "build": "tsc",
     "test": "vitest run",

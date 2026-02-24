@@ -21,7 +21,8 @@
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
         "Vue.volar",
-        "ms-vscode.vscode-typescript-next"
+        "ms-vscode.vscode-typescript-next",
+        "anthropic.claude-code"
       ],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "zsh",

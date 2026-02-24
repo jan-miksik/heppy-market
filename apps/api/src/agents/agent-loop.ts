@@ -381,7 +381,7 @@ export async function runAgentLoop(
         fallbackModel: effectiveLlmFallback,
         allowFallback,
         temperature: config.temperature,
-        timeoutMs: 90_000,
+        timeoutMs: 180_000,
       },
       {
         autonomyLevel,

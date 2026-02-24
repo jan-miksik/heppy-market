@@ -10,6 +10,7 @@
 import { ref, computed } from 'vue';
 import { signMessage, disconnect, getConnection } from '@wagmi/core';
 import { createSiweMessage } from 'viem/siwe';
+import { navigateTo } from '#app';
 import { getWagmiConfig } from '~/utils/wagmi-config';
 
 // ─── Module-level auth state ──────────────────────────────────────────────────
@@ -136,6 +137,9 @@ export function useAuth() {
       await disconnect(getWagmiConfig());
     } catch {
       // Ignore disconnect errors
+    }
+    if (import.meta.client) {
+      await navigateTo('/connect');
     }
   }
 

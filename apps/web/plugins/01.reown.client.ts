@@ -15,7 +15,7 @@ import { WagmiPlugin } from '@wagmi/vue';
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query';
 import { watchConnection } from '@wagmi/core';
 import { base } from '@reown/appkit/networks';
-import { defineNuxtPlugin, useRuntimeConfig } from '#app';
+import { defineNuxtPlugin, useRuntimeConfig, navigateTo } from '#app';
 import { setWagmiConfig } from '~/utils/wagmi-config';
 import { handleWalletDisconnect } from '~/composables/useAuth';
 
@@ -68,7 +68,11 @@ export default defineNuxtPlugin((nuxtApp) => {
   watchConnection(wagmiAdapter.wagmiConfig, {
     onChange(connection) {
       if (!connection.isConnected) {
-        handleWalletDisconnect();
+        handleWalletDisconnect().then(() => {
+          if (import.meta.client) {
+            navigateTo('/connect');
+          }
+        });
       }
     },
   });
