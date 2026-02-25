@@ -24,6 +24,7 @@ export const agents = sqliteTable('agents', {
   config: text('config').notNull(),
   llmModel: text('llm_model').notNull(),
   ownerAddress: text('owner_address'),
+  managerId: text('manager_id'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -78,4 +79,31 @@ export const performanceSnapshots = sqliteTable('performance_snapshots', {
   sharpeRatio: real('sharpe_ratio'),
   maxDrawdown: real('max_drawdown'),
   snapshotAt: text('snapshot_at').notNull(),
+});
+
+export const agentManagers = sqliteTable('agent_managers', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  ownerAddress: text('owner_address').notNull(),
+  config: text('config').notNull(),
+  status: text('status').notNull().default('stopped'),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export const agentManagerLogs = sqliteTable('agent_manager_logs', {
+  id: text('id').primaryKey(),
+  managerId: text('manager_id')
+    .notNull()
+    .references(() => agentManagers.id),
+  action: text('action').notNull(),
+  reasoning: text('reasoning').notNull(),
+  result: text('result').notNull(),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
 });

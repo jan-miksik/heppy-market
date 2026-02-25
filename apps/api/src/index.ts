@@ -12,9 +12,11 @@ import authRoute from './routes/auth.js';
 import { snapshotAllAgents } from './services/snapshot.js';
 import { listFreeModels } from './services/llm-router.js';
 import comparisonRoute from './routes/comparison.js';
+import managersRoute from './routes/managers.js';
 
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
+export { AgentManagerDO } from './agents/agent-manager.js';
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -55,11 +57,13 @@ const authMiddleware = createAuthMiddleware();
 app.use('/api/agents/*', authMiddleware as any);
 app.use('/api/trades/*', authMiddleware as any);
 app.use('/api/compare/*', authMiddleware as any);
+app.use('/api/managers/*', authMiddleware as any);
 
 // Protected routes
 app.route('/api/agents', agentsRoute);
 app.route('/api/trades', tradesRoute);
 app.route('/api/compare', comparisonRoute);
+app.route('/api/managers', managersRoute);
 
 /** GET /api/models — list available LLM models from OpenRouter */
 app.get('/api/models', async (c) => {
@@ -118,6 +122,16 @@ app.get('/', (c) =>
       'GET  /api/trades/stats',
       'GET  /api/pairs/search?q=',
       'GET  /api/pairs/:chain/:address',
+      'GET  /api/managers',
+      'POST /api/managers',
+      'GET  /api/managers/:id',
+      'PATCH /api/managers/:id',
+      'DELETE /api/managers/:id',
+      'POST /api/managers/:id/start',
+      'POST /api/managers/:id/stop',
+      'POST /api/managers/:id/pause',
+      'GET  /api/managers/:id/logs',
+      'GET  /api/managers/:id/agents',
     ],
   })
 );

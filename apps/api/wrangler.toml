@@ -34,13 +34,14 @@ id = "local-cache"
 
 [durable_objects]
 bindings = [
-  { name = "TRADING_AGENT", class_name = "TradingAgentDO" }
+  { name = "TRADING_AGENT", class_name = "TradingAgentDO" },
+  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" }
 ]
 
 # Free plan requires SQLite-backed DOs (new_sqlite_classes)
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["TradingAgentDO"]
+new_sqlite_classes = ["TradingAgentDO", "AgentManagerDO"]
 
 # Production: create D1 + KV in dashboard, then set database_id and id below. Deploy with: wrangler deploy --env production
 [env.production]
@@ -58,8 +59,9 @@ binding = "CACHE"
 id = "b056ff9b5da14b23b8f4a5076038b783"
 [env.production.durable_objects]
 bindings = [
-  { name = "TRADING_AGENT", class_name = "TradingAgentDO" }
+  { name = "TRADING_AGENT", class_name = "TradingAgentDO" },
+  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" }
 ]
 [[env.production.migrations]]
 tag = "v1"
-new_sqlite_classes = ["TradingAgentDO"]
+new_sqlite_classes = ["TradingAgentDO", "AgentManagerDO"]
