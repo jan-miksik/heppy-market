@@ -1,27 +1,32 @@
 <template>
-  <div class="p-6 max-w-2xl mx-auto">
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/managers/${id}`" class="text-gray-400 hover:text-white text-sm">← Manager</NuxtLink>
-      <h1 class="text-xl font-bold text-white">Edit Manager</h1>
+  <main class="page">
+    <div class="page-header">
+      <div>
+        <NuxtLink :to="`/managers/${id}`" class="back-link">← Manager</NuxtLink>
+        <h1 class="page-title" style="margin-top: 4px;">Edit Manager</h1>
+      </div>
     </div>
-    <div v-if="pending" class="text-gray-400 text-sm">Loading…</div>
-    <div v-else-if="manager" class="bg-gray-900 border border-gray-700 rounded-lg p-6">
-      <ManagerConfigForm
-        :initial="manager.config ? { name: manager.name, ...manager.config } : undefined"
-        :is-edit="true"
-        :on-cancel="() => router.push(`/managers/${id}`)"
-        @submit="handleSave"
-      />
+
+    <div style="max-width: 560px;">
+      <div v-if="pending" style="text-align: center; padding: 48px;">
+        <span class="spinner" />
+      </div>
+      <div v-else-if="manager" class="card">
+        <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
+        <ManagerConfigForm
+          :initial="manager.config ? { name: manager.name, ...manager.config } : undefined"
+          :is-edit="true"
+          :on-cancel="() => router.push(`/managers/${id}`)"
+          @submit="handleSave"
+        />
+      </div>
     </div>
-    <div v-if="saveError" class="mt-4 text-red-400 text-sm">{{ saveError }}</div>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-
-definePageMeta({ middleware: 'auth' });
 
 const route = useRoute();
 const router = useRouter();
@@ -45,3 +50,13 @@ async function handleSave(form: Record<string, unknown>) {
   }
 }
 </script>
+
+<style scoped>
+.back-link {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.back-link:hover {
+  color: var(--text-dim);
+}
+</style>

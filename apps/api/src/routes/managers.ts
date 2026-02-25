@@ -190,6 +190,24 @@ managersRoute.post('/:id/pause', async (c) => {
   return c.json({ ok: true, status: 'paused' });
 });
 
+/** POST /api/managers/:id/trigger */
+managersRoute.post('/:id/trigger', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+
+  const manager = await requireManagerOwnership(db, id, walletAddress);
+  if (!manager) return c.json({ error: 'Manager not found' }, 404);
+
+  const doId = c.env.AGENT_MANAGER.idFromName(id);
+  const stub = c.env.AGENT_MANAGER.get(doId);
+  const res = await stub.fetch(new Request('http://do/trigger', { method: 'POST' }));
+  const body = await res.json() as { ok?: boolean; error?: string };
+
+  if (!res.ok) return c.json({ error: body.error ?? 'Failed to trigger' }, res.status as 400 | 409);
+  return c.json({ ok: true });
+});
+
 /** GET /api/managers/:id/logs */
 managersRoute.get('/:id/logs', async (c) => {
   const id = c.req.param('id');

@@ -35,8 +35,9 @@ function statusDot(status: string) {
       </span>
     </div>
 
-    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
-      {{ agent.config.pairs.join(', ') }}
+    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+      <span style="font-size: 11px; color: var(--text-muted);">{{ agent.config.pairs.join(', ') }}</span>
+      <span v-if="agent.managerId" class="managed-tag">🧠 managed</span>
     </div>
     <div style="font-size: 11px; color: var(--text-muted);">
       {{ agent.llmModel.split('/')[1] ?? agent.llmModel }}
@@ -87,3 +88,19 @@ function statusDot(status: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.managed-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  letter-spacing: 0.02em;
+}
+</style>

@@ -20,6 +20,7 @@ export interface Agent {
     temperature: number;
     allowFallback?: boolean;
   };
+  managerId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

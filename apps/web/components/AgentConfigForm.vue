@@ -179,21 +179,6 @@ async function handleSubmit() {
           <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">
-          Temperature
-          <span style="color: var(--text-muted); font-weight: 400;">{{ (form.temperature ?? 0.7).toFixed(1) }}</span>
-        </label>
-        <input
-          v-model.number="form.temperature"
-          type="range"
-          class="form-range"
-          min="0"
-          max="2"
-          step="0.1"
-        />
-        <div class="form-hint">Lower = more deterministic · Higher = more creative</div>
-      </div>
     </div>
 
     <div class="grid-2">

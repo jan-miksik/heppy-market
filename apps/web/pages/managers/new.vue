@@ -1,21 +1,24 @@
 <template>
-  <div class="p-6 max-w-2xl mx-auto">
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink to="/managers" class="text-gray-400 hover:text-white text-sm">← Managers</NuxtLink>
-      <h1 class="text-xl font-bold text-white">New Manager</h1>
+  <main class="page">
+    <div class="page-header">
+      <div>
+        <NuxtLink to="/managers" class="back-link">← Managers</NuxtLink>
+        <h1 class="page-title" style="margin-top: 4px;">New Manager</h1>
+      </div>
     </div>
-    <div class="bg-gray-900 border border-gray-700 rounded-lg p-6">
-      <ManagerConfigForm @submit="handleCreate" />
+
+    <div style="max-width: 560px;">
+      <div class="card">
+        <div v-if="createError" class="alert alert-error">{{ createError }}</div>
+        <ManagerConfigForm @submit="handleCreate" :on-cancel="() => $router.push('/managers')" />
+      </div>
     </div>
-    <div v-if="createError" class="mt-4 text-red-400 text-sm">{{ createError }}</div>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-
-definePageMeta({ middleware: 'auth' });
 
 const router = useRouter();
 const createError = ref('');
@@ -34,3 +37,13 @@ async function handleCreate(form: Record<string, unknown>) {
   }
 }
 </script>
+
+<style scoped>
+.back-link {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.back-link:hover {
+  color: var(--text-dim);
+}
+</style>

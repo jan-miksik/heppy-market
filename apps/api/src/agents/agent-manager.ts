@@ -24,8 +24,11 @@ export class AgentManagerDO extends DurableObject<Env> {
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
       const tickCount = (await this.ctx.storage.get<number>('tickCount')) ?? 0;
       const nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
+      const deciding = (await this.ctx.storage.get<boolean>('deciding')) ?? false;
+      const lastDecisionAt = (await this.ctx.storage.get<number>('lastDecisionAt')) ?? null;
+      const lastDecisionMs = (await this.ctx.storage.get<number>('lastDecisionMs')) ?? null;
       const memory = await this.ctx.storage.get('memory');
-      return Response.json({ managerId, status, tickCount, nextAlarmAt, hasMemory: !!memory });
+      return Response.json({ managerId, status, tickCount, nextAlarmAt, deciding, lastDecisionAt, lastDecisionMs, hasMemory: !!memory });
     }
 
     if (url.pathname === '/start' && request.method === 'POST') {
@@ -56,6 +59,22 @@ export class AgentManagerDO extends DurableObject<Env> {
       return Response.json({ ok: true, status: 'paused' });
     }
 
+    if (url.pathname === '/trigger' && request.method === 'POST') {
+      const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+      if (status !== 'running') {
+        return Response.json({ error: 'Manager is not running' }, { status: 400 });
+      }
+      const deciding = (await this.ctx.storage.get<boolean>('deciding')) ?? false;
+      if (deciding) {
+        return Response.json({ error: 'Decision already in progress' }, { status: 409 });
+      }
+      // Reschedule alarm to fire in 1s
+      const nextAlarmAt = Date.now() + 1_000;
+      await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+      await this.ctx.storage.setAlarm(nextAlarmAt);
+      return Response.json({ ok: true });
+    }
+
     return new Response('Not Found', { status: 404 });
   }
 
@@ -68,12 +87,17 @@ export class AgentManagerDO extends DurableObject<Env> {
 
     const tickCount = ((await this.ctx.storage.get<number>('tickCount')) ?? 0) + 1;
     await this.ctx.storage.put('tickCount', tickCount);
+    await this.ctx.storage.put('deciding', true);
+    const decisionStart = Date.now();
 
     try {
       await runManagerLoop(managerId, this.env, this.ctx);
     } catch (err) {
       console.error(`[AgentManagerDO] alarm error for ${managerId}:`, err);
     } finally {
+      await this.ctx.storage.put('deciding', false);
+      await this.ctx.storage.put('lastDecisionAt', Date.now());
+      await this.ctx.storage.put('lastDecisionMs', Date.now() - decisionStart);
       try {
         const currentStatus = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
         if (currentStatus === 'running') {

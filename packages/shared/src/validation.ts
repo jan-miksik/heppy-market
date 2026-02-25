@@ -117,7 +117,7 @@ export const UpdateAgentRequestSchema = CreateAgentRequestSchema.partial();
 
 export const ManagerRiskParamsSchema = z.object({
   maxTotalDrawdown: z.number().min(0.01).max(1).default(0.2),
-  maxAgents: z.number().min(1).max(20).default(10),
+  maxAgents: z.number().min(1).max(20).default(3),
   maxCorrelatedPositions: z.number().min(1).max(10).default(3),
 });
 
