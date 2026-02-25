@@ -29,6 +29,7 @@ function truncate(addr: string): string {
         <template v-if="isAuthenticated">
           <NuxtLink to="/">Dashboard</NuxtLink>
           <NuxtLink to="/agents">Agents</NuxtLink>
+          <NuxtLink to="/managers">Managers</NuxtLink>
           <NuxtLink to="/trades">Trades</NuxtLink>
         </template>
       </div>

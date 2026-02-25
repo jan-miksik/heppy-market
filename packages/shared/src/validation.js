@@ -92,3 +92,23 @@ export const CreateAgentRequestSchema = z.object({
     cooldownAfterLossMinutes: z.number().min(0).max(1440).default(30),
 });
 export const UpdateAgentRequestSchema = CreateAgentRequestSchema.partial();
+export const ManagerRiskParamsSchema = z.object({
+    maxTotalDrawdown: z.number().min(0.01).max(1).default(0.2),
+    maxAgents: z.number().min(1).max(20).default(10),
+    maxCorrelatedPositions: z.number().min(1).max(10).default(3),
+});
+export const ManagerConfigSchema = z.object({
+    llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
+    temperature: z.number().min(0).max(2).default(0.7),
+    decisionInterval: z.enum(['1h', '4h', '1d']).default('1h'),
+    riskParams: ManagerRiskParamsSchema.default({}),
+});
+export const CreateManagerRequestSchema = z.object({
+    name: z.string().min(1).max(50),
+    description: z.string().max(500).optional(),
+    llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
+    temperature: z.number().min(0).max(2).default(0.7),
+    decisionInterval: z.enum(['1h', '4h', '1d']).default('1h'),
+    riskParams: ManagerRiskParamsSchema.optional(),
+});
+export const UpdateManagerRequestSchema = CreateManagerRequestSchema.partial();
