@@ -19,7 +19,7 @@ export interface LLMRouterConfig {
   allowFallback?: boolean;
   maxRetries?: number;
   temperature?: number;
-  /** Request timeout in ms; prevents analysis from hanging (default 180_000). */
+  /** Request timeout in ms; prevents analysis from hanging (default 90_000). */
   timeoutMs?: number;
 }
 
@@ -93,7 +93,7 @@ function getSystemPrompt(autonomyLevel: string): string {
   }
 }
 
-const DEFAULT_LLM_TIMEOUT_MS = 180_000;
+const DEFAULT_LLM_TIMEOUT_MS = 90_000;
 
 /**
  * Get a structured trade decision from the LLM.
@@ -159,8 +159,19 @@ export async function getTradeDecision(
         timeoutPromise,
       ]);
 
-      const json = extractJson(result.text);
-      const object = TradeDecisionSchema.parse(JSON.parse(json));
+      const json = extractJson(result.text ?? '');
+      if (!json.trim()) {
+        throw new Error(`Model returned empty response`);
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(json);
+      } catch (parseErr) {
+        throw new Error(
+          `Model returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw length: ${json.length}`
+        );
+      }
+      const object = TradeDecisionSchema.parse(parsed);
       const latencyMs = Date.now() - startTime;
 
       return {
