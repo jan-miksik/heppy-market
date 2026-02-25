@@ -12,6 +12,18 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'cloudflare-pages',
   },
+  vite: {
+    base: '/',
+    build: {
+      rollupOptions: {
+        output: {
+          entryFileNames: '_nuxt/[name]-[hash].js',
+          chunkFileNames: '_nuxt/[name]-[hash].js',
+          assetFileNames: '_nuxt/[name]-[hash].[ext]',
+        },
+      },
+    },
+  },
 
   runtimeConfig: {
     public: {
@@ -38,7 +50,10 @@ export default defineNuxtConfig({
     },
   },
 
+  // Ensure production assets use root-relative paths (avoids /_nuxt/workspace/... when build runs in /workspace)
   app: {
+    baseURL: '/',
+    buildAssetsDir: '_nuxt',
     head: {
       title: 'Heppy Market',
       meta: [

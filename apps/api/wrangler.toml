@@ -38,10 +38,13 @@ bindings = [
   { name = "AGENT_MANAGER", class_name = "AgentManagerDO" }
 ]
 
-# Free plan requires SQLite-backed DOs (new_sqlite_classes)
+# Free plan requires SQLite-backed DOs. Add a new [[migrations]] entry when adding a new DO class.
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["TradingAgentDO", "AgentManagerDO"]
+new_sqlite_classes = ["TradingAgentDO"]
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AgentManagerDO"]
 
 # Production: create D1 + KV in dashboard, then set database_id and id below. Deploy with: wrangler deploy --env production
 [env.production]
@@ -64,4 +67,7 @@ bindings = [
 ]
 [[env.production.migrations]]
 tag = "v1"
-new_sqlite_classes = ["TradingAgentDO", "AgentManagerDO"]
+new_sqlite_classes = ["TradingAgentDO"]
+[[env.production.migrations]]
+tag = "v2"
+new_sqlite_classes = ["AgentManagerDO"]
