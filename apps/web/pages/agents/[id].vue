@@ -287,12 +287,42 @@ async function handleDelete() {
   router.push('/agents');
 }
 
+const VALID_ANALYSIS_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+const VALID_STRATEGIES = ['ema_crossover', 'rsi_oversold', 'macd_signal', 'bollinger_bounce', 'volume_breakout', 'llm_sentiment', 'combined'] as const;
+
+/** Build a PATCH body that matches UpdateAgentRequestSchema (partial, valid enums and types). */
+function normalizeAgentUpdatePayload(p: Partial<Parameters<typeof updateAgent>[1]>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (p.name !== undefined && typeof p.name === 'string' && p.name.trim().length > 0) body.name = p.name.trim();
+  if (p.autonomyLevel !== undefined && ['full', 'guided', 'strict'].includes(p.autonomyLevel)) body.autonomyLevel = p.autonomyLevel;
+  if (p.llmModel !== undefined && typeof p.llmModel === 'string') body.llmModel = p.llmModel;
+  if (p.allowFallback !== undefined && typeof p.allowFallback === 'boolean') body.allowFallback = p.allowFallback;
+  if (p.temperature !== undefined && typeof p.temperature === 'number' && p.temperature >= 0 && p.temperature <= 2) body.temperature = p.temperature;
+  if (p.pairs !== undefined && Array.isArray(p.pairs) && p.pairs.length >= 1 && p.pairs.length <= 10) {
+    const pairs = p.pairs.filter((s): s is string => typeof s === 'string');
+    body.pairs = pairs.length >= 1 ? pairs : [agent.value?.config?.pairs?.[0] ?? 'WETH/USDC'];
+  }
+  if (p.paperBalance !== undefined && typeof p.paperBalance === 'number' && p.paperBalance >= 100 && p.paperBalance <= 1_000_000) body.paperBalance = p.paperBalance;
+  if (p.maxPositionSizePct !== undefined && typeof p.maxPositionSizePct === 'number' && p.maxPositionSizePct >= 1 && p.maxPositionSizePct <= 100) body.maxPositionSizePct = p.maxPositionSizePct;
+  if (p.stopLossPct !== undefined && typeof p.stopLossPct === 'number' && p.stopLossPct >= 0.5 && p.stopLossPct <= 50) body.stopLossPct = p.stopLossPct;
+  if (p.takeProfitPct !== undefined && typeof p.takeProfitPct === 'number' && p.takeProfitPct >= 0.5 && p.takeProfitPct <= 100) body.takeProfitPct = p.takeProfitPct;
+  if (p.maxOpenPositions !== undefined && typeof p.maxOpenPositions === 'number' && p.maxOpenPositions >= 1 && p.maxOpenPositions <= 10) body.maxOpenPositions = p.maxOpenPositions;
+  if (p.analysisInterval !== undefined && VALID_ANALYSIS_INTERVALS.includes(p.analysisInterval as typeof VALID_ANALYSIS_INTERVALS[number])) body.analysisInterval = p.analysisInterval;
+  if (p.strategies !== undefined) {
+    const arr = Array.isArray(p.strategies) ? p.strategies : [p.strategies].filter(Boolean);
+    const valid = arr.filter((s): s is (typeof VALID_STRATEGIES)[number] => typeof s === 'string' && (VALID_STRATEGIES as readonly string[]).includes(s));
+    if (valid.length > 0) body.strategies = valid;
+  }
+  return body;
+}
+
 async function handleEdit(payload: Parameters<typeof updateAgent>[1]) {
   if (!agent.value) return;
   saving.value = true;
   saveError.value = null;
   try {
-    const updated = await updateAgent(id.value, payload);
+    const normalized = normalizeAgentUpdatePayload(payload);
+    const updated = await updateAgent(id.value, normalized as Parameters<typeof updateAgent>[1]);
     agent.value = updated;
     showEditModal.value = false;
   } catch (e) {

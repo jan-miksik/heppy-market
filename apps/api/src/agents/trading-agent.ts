@@ -43,7 +43,18 @@ export class TradingAgentDO extends DurableObject<Env> {
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
       const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
       const balance = engineState?.balance ?? null;
-      const nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
+      let nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
+
+      // Auto-heal: if running but the alarm is more than 10s overdue, it was likely
+      // lost (Wrangler restart in dev, DO eviction). Reschedule in 5s to self-recover.
+      if (status === 'running' && nextAlarmAt !== null && nextAlarmAt < Date.now() - 10_000) {
+        const healed = Date.now() + 5_000;
+        await this.ctx.storage.put('nextAlarmAt', healed);
+        await this.ctx.storage.setAlarm(healed);
+        nextAlarmAt = healed;
+        console.log(`[TradingAgentDO] ${agentId}: alarm was overdue — rescheduled in 5s`);
+      }
+
       return Response.json({ agentId, status, balance, nextAlarmAt });
     }
 

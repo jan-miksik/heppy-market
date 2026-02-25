@@ -115,9 +115,12 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
             style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);"
           >
             <div>
-              <NuxtLink :to="`/agents/${agent.id}`" style="font-weight: 500; color: var(--text);">
-                {{ agent.name }}
-              </NuxtLink>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <NuxtLink :to="`/agents/${agent.id}`" style="font-weight: 500; color: var(--text);">
+                  {{ agent.name }}
+                </NuxtLink>
+                <span v-if="agent.managerId" class="managed-pill">🧠 managed</span>
+              </div>
               <div style="font-size: 11px; color: var(--text-muted);">
                 {{ agent.config.pairs.slice(0, 2).join(', ') }}
               </div>
@@ -193,3 +196,20 @@ const openTrades = computed(() => trades.value.filter((t) => t.status === 'open'
     </div>
   </main>
 </template>
+
+<style scoped>
+.managed-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+</style>

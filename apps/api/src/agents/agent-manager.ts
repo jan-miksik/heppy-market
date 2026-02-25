@@ -23,11 +23,23 @@ export class AgentManagerDO extends DurableObject<Env> {
       const managerId = (await this.ctx.storage.get<string>('managerId')) ?? null;
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
       const tickCount = (await this.ctx.storage.get<number>('tickCount')) ?? 0;
-      const nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
+      let nextAlarmAt = (await this.ctx.storage.get<number>('nextAlarmAt')) ?? null;
       const deciding = (await this.ctx.storage.get<boolean>('deciding')) ?? false;
       const lastDecisionAt = (await this.ctx.storage.get<number>('lastDecisionAt')) ?? null;
       const lastDecisionMs = (await this.ctx.storage.get<number>('lastDecisionMs')) ?? null;
       const memory = await this.ctx.storage.get('memory');
+
+      // Auto-heal: if running but the alarm is more than 10s overdue and not currently
+      // deciding, the alarm was likely lost (e.g. Wrangler restart in dev, or DO eviction).
+      // Reschedule it to fire in 5s so the manager self-recovers without user intervention.
+      if (status === 'running' && !deciding && nextAlarmAt !== null && nextAlarmAt < Date.now() - 10_000) {
+        const healed = Date.now() + 5_000;
+        await this.ctx.storage.put('nextAlarmAt', healed);
+        await this.ctx.storage.setAlarm(healed);
+        nextAlarmAt = healed;
+        console.log(`[AgentManagerDO] ${managerId}: alarm was overdue — rescheduled in 5s`);
+      }
+
       return Response.json({ managerId, status, tickCount, nextAlarmAt, deciding, lastDecisionAt, lastDecisionMs, hasMemory: !!memory });
     }
 

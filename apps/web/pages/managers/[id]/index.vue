@@ -17,9 +17,9 @@
         <div style="display: flex; gap: 8px;">
           <button v-if="manager.status !== 'running'" class="btn btn-success" :disabled="actionLoading" @click="doAction('start')">Start</button>
           <button v-if="manager.status === 'running'" class="btn btn-ghost" :disabled="actionLoading || !!doStatus?.deciding" @click="triggerDecision">Push decision</button>
-          <button v-if="manager.status === 'running'" class="btn btn-ghost" :disabled="actionLoading" @click="doAction('pause')">Pause</button>
-          <button v-if="manager.status !== 'stopped'" class="btn btn-ghost" :disabled="actionLoading" @click="doAction('stop')">Stop</button>
+          <button v-if="manager.status === 'running'" class="btn btn-ghost" :disabled="actionLoading" @click="doAction('stop')">Stop</button>
           <NuxtLink :to="`/managers/${manager.id}/edit`" class="btn btn-ghost">Edit</NuxtLink>
+          <button class="btn btn-danger" :disabled="actionLoading" @click="showDeleteModal = true">Delete</button>
         </div>
       </div>
 
@@ -120,18 +120,50 @@
     </template>
 
     <div v-else class="alert alert-error">Manager not found.</div>
+
+    <!-- Delete confirmation modal -->
+    <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+      <div class="modal">
+        <h2 class="modal-title">Delete manager?</h2>
+        <p style="font-size: 14px; color: var(--text-dim); margin-bottom: 16px;">
+          <strong style="color: var(--text);">{{ manager?.name }}</strong> will be permanently deleted along with its decision log.
+        </p>
+        <div v-if="managedAgents.length > 0" class="delete-agents-choice">
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px;">
+            This manager has <strong style="color: var(--text);">{{ managedAgents.length }} agent{{ managedAgents.length !== 1 ? 's' : '' }}</strong>. What should happen to them?
+          </p>
+          <label class="radio-row">
+            <input v-model="deleteAgentsChoice" type="radio" value="detach" />
+            <span>Keep agents — detach them from this manager</span>
+          </label>
+          <label class="radio-row">
+            <input v-model="deleteAgentsChoice" type="radio" value="delete" />
+            <span style="color: var(--red);">Delete agents too</span>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="showDeleteModal = false">Cancel</button>
+          <button class="btn btn-danger" :disabled="actionLoading" @click="doDelete">
+            {{ actionLoading ? 'Deleting…' : 'Delete' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
+const router = useRouter();
 const id = route.params.id as string;
 
 const activeTab = ref<'agents' | 'logs'>('agents');
 const actionLoading = ref(false);
+const showDeleteModal = ref(false);
+const deleteAgentsChoice = ref<'detach' | 'delete'>('detach');
 
 const { data: managerData, pending, refresh } = await useFetch<any>(`/api/managers/${id}`, {
   credentials: 'include',
@@ -252,7 +284,24 @@ async function triggerDecision() {
   }
 }
 
-async function doAction(action: 'start' | 'stop' | 'pause') {
+async function doDelete() {
+  actionLoading.value = true;
+  try {
+    const deleteAgents = managedAgents.value.length > 0 && deleteAgentsChoice.value === 'delete';
+    await $fetch(`/api/managers/${id}${deleteAgents ? '?deleteAgents=true' : ''}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    router.push('/managers');
+  } catch (err) {
+    console.error(err);
+    showDeleteModal.value = false;
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function doAction(action: 'start' | 'stop') {
   actionLoading.value = true;
   try {
     await $fetch(`/api/managers/${id}/${action}`, { method: 'POST', credentials: 'include' });
@@ -330,4 +379,23 @@ async function loadMoreLogs() {
   color: var(--text-muted);
   font-family: 'JetBrains Mono', monospace;
 }
+
+/* Delete modal */
+.delete-agents-choice {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.radio-row input { cursor: pointer; accent-color: var(--accent); }
 </style>

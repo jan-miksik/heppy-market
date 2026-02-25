@@ -25,17 +25,11 @@
       <div class="form-group">
         <label class="form-label">LLM Model</label>
         <select v-model="form.llmModel" class="form-select">
-          <optgroup label="Fast · lightweight">
+          <optgroup label="Free models">
             <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
             <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
             <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
             <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
-          </optgroup>
-          <optgroup label="Reasoning · orchestration">
-            <option value="meta-llama/llama-3.3-70b-instruct:free">Llama-3.3 70B (free)</option>
-            <option value="nousresearch/hermes-3-llama-3.1-405b:free">Hermes-3 405B (free)</option>
-            <option value="qwen/qwen3-235b-a22b-thinking-2507:free">Qwen3-235B Thinking (free)</option>
-            <option value="deepseek/deepseek-r1-0528:free">DeepSeek R1 (free)</option>
           </optgroup>
         </select>
       </div>
@@ -123,14 +117,12 @@ const emit = defineEmits<{
 }>();
 
 const MODEL_SHORT_NAMES: Record<string, string> = {
+  'openai/gpt-4o': 'GPT-4o',
+  'openai/gpt-3.5-turbo': 'GPT-3.5',
   'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
   'stepfun/step-3.5-flash:free': 'Step-3.5',
   'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
   'arcee-ai/trinity-large-preview:free': 'Trinity-Large',
-  'meta-llama/llama-3.3-70b-instruct:free': 'Llama-70B',
-  'nousresearch/hermes-3-llama-3.1-405b:free': 'Hermes-405B',
-  'qwen/qwen3-235b-a22b-thinking-2507:free': 'Qwen3-235B',
-  'deepseek/deepseek-r1-0528:free': 'DeepSeek-R1',
 };
 
 function shortModelName(modelId: string): string {

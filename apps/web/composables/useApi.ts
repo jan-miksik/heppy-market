@@ -13,13 +13,20 @@ export function extractApiError(err: unknown): string {
     statusCode?: number;
     status?: number;
     statusMessage?: string;
-    data?: { error?: string; message?: string };
+    data?: { error?: string; message?: string; fieldErrors?: Record<string, string[]> };
     message?: string;
   };
 
-  // Prefer the API's error body
+  // Prefer the API's error body; append field errors when present (e.g. validation 400)
   const body = e.data?.error || e.data?.message;
-  if (body) return body;
+  const fieldErrors = e.data?.fieldErrors;
+  if (body) {
+    if (fieldErrors && Object.keys(fieldErrors).length > 0) {
+      const parts = Object.entries(fieldErrors).flatMap(([k, v]) => (v?.length ? [`${k}: ${v.join(', ')}`] : []));
+      return parts.length ? `${body}: ${parts.join('; ')}` : body;
+    }
+    return body;
+  }
 
   // Fetch/network errors
   if (e.statusCode === 502 || e.status === 502) return 'API server is unavailable';

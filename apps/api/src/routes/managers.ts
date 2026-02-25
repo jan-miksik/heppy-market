@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
-import { agentManagers, agentManagerLogs, agents } from '../db/schema.js';
+import { agentManagers, agentManagerLogs, agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
 import { CreateManagerRequestSchema, UpdateManagerRequestSchema } from '@dex-agents/shared';
 import { validateBody } from '../lib/validation.js';
 import { generateId, nowIso } from '../lib/utils.js';
@@ -112,22 +112,48 @@ managersRoute.patch('/:id', async (c) => {
   return c.json(formatManager(updated));
 });
 
-/** DELETE /api/managers/:id */
+/** DELETE /api/managers/:id?deleteAgents=true */
 managersRoute.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const walletAddress = c.get('walletAddress');
+  const deleteAgents = c.req.query('deleteAgents') === 'true';
   const db = drizzle(c.env.DB);
 
   const existing = await requireManagerOwnership(db, id, walletAddress);
   if (!existing) return c.json({ error: 'Manager not found' }, 404);
 
+  // Stop the DO alarm if running
   if (existing.status === 'running' || existing.status === 'paused') {
     const doId = c.env.AGENT_MANAGER.idFromName(id);
     const stub = c.env.AGENT_MANAGER.get(doId);
     await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
   }
 
-  await db.update(agents).set({ managerId: null }).where(eq(agents.managerId, id));
+  if (deleteAgents) {
+    // Stop each managed agent's DO, then delete agents + all related rows
+    const managedAgents = await db.select({ id: agents.id, status: agents.status }).from(agents).where(eq(agents.managerId, id));
+    if (managedAgents.length > 0) {
+      const agentIds = managedAgents.map((a) => a.id);
+      for (const agent of managedAgents) {
+        if (agent.status === 'running' || agent.status === 'paused') {
+          try {
+            const doId = c.env.TRADING_AGENT.idFromName(agent.id);
+            const stub = c.env.TRADING_AGENT.get(doId);
+            await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
+          } catch { /* best-effort */ }
+        }
+      }
+      // Delete child rows before agents (trades has a FK on agentId)
+      await db.delete(trades).where(inArray(trades.agentId, agentIds));
+      await db.delete(agentDecisions).where(inArray(agentDecisions.agentId, agentIds));
+      await db.delete(performanceSnapshots).where(inArray(performanceSnapshots.agentId, agentIds));
+      await db.delete(agents).where(inArray(agents.id, agentIds));
+    }
+  } else {
+    // Just detach agents from this manager
+    await db.update(agents).set({ managerId: null }).where(eq(agents.managerId, id));
+  }
+
   await db.delete(agentManagerLogs).where(eq(agentManagerLogs.managerId, id));
   await db.delete(agentManagers).where(eq(agentManagers.id, id));
   return c.json({ ok: true });

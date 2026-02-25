@@ -3,6 +3,9 @@ definePageMeta({ ssr: false });
 const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent, updateAgent } = useAgents();
 const router = useRouter();
 
+const userAgents = computed(() => agents.value.filter((a) => !a.managerId));
+const managedAgents = computed(() => agents.value.filter((a) => !!a.managerId));
+
 const showCreateModal = ref(false);
 const creating = ref(false);
 const createError = ref('');
@@ -72,7 +75,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
     <div class="page-header">
       <div>
         <h1 class="page-title">Trading Agents</h1>
-        <p class="page-subtitle">{{ agents.length }} agents · {{ agents.filter(a => a.status === 'running').length }} running</p>
+        <p class="page-subtitle">{{ agents.length }} agents · {{ agents.filter(a => a.status === 'running').length }} running<span v-if="managedAgents.length"> · {{ managedAgents.length }} managed</span></p>
       </div>
       <button class="btn btn-primary" @click="showCreateModal = true">
         + New Agent
@@ -94,17 +97,43 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
       </button>
     </div>
 
-    <div v-else class="agents-grid">
-      <AgentCard
-        v-for="agent in agents"
-        :key="agent.id"
-        :agent="agent"
-        @click="$router.push(`/agents/${agent.id}`)"
-        @start="startAgent"
-        @stop="stopAgent"
-        @delete="handleDelete"
-        @edit="handleEditClick"
-      />
+    <div v-else>
+      <!-- User-created agents -->
+      <div v-if="userAgents.length > 0">
+        <div v-if="managedAgents.length > 0" class="section-header">Your agents</div>
+        <div class="agents-grid">
+          <AgentCard
+            v-for="agent in userAgents"
+            :key="agent.id"
+            :agent="agent"
+            @click="$router.push(`/agents/${agent.id}`)"
+            @start="startAgent"
+            @stop="stopAgent"
+            @delete="handleDelete"
+            @edit="handleEditClick"
+          />
+        </div>
+      </div>
+
+      <!-- Manager-created agents -->
+      <div v-if="managedAgents.length > 0" :style="userAgents.length > 0 ? 'margin-top: 28px;' : ''">
+        <div class="section-header">
+          <span>Managed by Agent Manager</span>
+          <span class="section-count">{{ managedAgents.length }}</span>
+        </div>
+        <div class="agents-grid">
+          <AgentCard
+            v-for="agent in managedAgents"
+            :key="agent.id"
+            :agent="agent"
+            @click="$router.push(`/agents/${agent.id}`)"
+            @start="startAgent"
+            @stop="stopAgent"
+            @delete="handleDelete"
+            @edit="handleEditClick"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Create Modal -->
@@ -162,3 +191,31 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
     </Teleport>
   </main>
 </template>
+
+<style scoped>
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+</style>

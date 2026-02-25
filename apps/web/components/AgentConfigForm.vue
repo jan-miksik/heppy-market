@@ -173,10 +173,12 @@ async function handleSubmit() {
       <div class="form-group">
         <label class="form-label">LLM Model</label>
         <select v-model="form.llmModel" class="form-select">
-          <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
-          <option value="stepfun/step-3.5-flash:free">Step-3.5 (free)</option>
-          <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
-          <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
+          <optgroup label="Free models">
+            <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
+            <option value="stepfun/step-3.5-flash:free">Step-3.5 (free)</option>
+            <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
+            <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
+          </optgroup>
         </select>
       </div>
     </div>
