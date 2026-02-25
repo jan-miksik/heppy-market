@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.42",
+    "@oxc-parser/binding-linux-arm64-gnu": "^0.115.0",
     "turbo": "^2.0.0",
     "wrangler": "^4.65.0"
   },
