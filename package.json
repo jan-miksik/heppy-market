@@ -22,5 +22,8 @@
   },
   "dependencies": {
     "esbuild": "^0.27.3"
+  },
+  "overrides": {
+    "vue": "^3.4.0"
   }
 }
