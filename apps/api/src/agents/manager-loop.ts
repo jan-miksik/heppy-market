@@ -16,7 +16,7 @@ import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import type { ManagerConfig } from '@dex-agents/shared';
 
-export type ManagerAction = 'create_agent' | 'pause_agent' | 'modify_agent' | 'terminate_agent' | 'hold';
+export type ManagerAction = 'create_agent' | 'start_agent' | 'pause_agent' | 'modify_agent' | 'terminate_agent' | 'hold';
 
 export interface ManagerDecision {
   action: ManagerAction;
@@ -76,38 +76,76 @@ export interface ManagedAgentSnapshot {
   }>;
 }
 
-const VALID_ACTIONS: ManagerAction[] = ['create_agent', 'pause_agent', 'modify_agent', 'terminate_agent', 'hold'];
+const VALID_ACTIONS: ManagerAction[] = ['create_agent', 'start_agent', 'pause_agent', 'modify_agent', 'terminate_agent', 'hold'];
 
-/** Strip reasoning tags and extract JSON array from LLM response */
-export function parseManagerDecisions(raw: string): ManagerDecision[] {
-  try {
-    // Strip reasoning tags (DeepSeek, etc.)
-    let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-    // Strip markdown code fences
-    const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (fenced) cleaned = fenced[1].trim();
-
-    // Extract JSON array
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-    if (start === -1 || end <= start) return [];
-    cleaned = cleaned.slice(start, end + 1);
-
-    const parsed = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter((d) => d && typeof d === 'object' && VALID_ACTIONS.includes(d.action))
-      .map((d) => ({
-        action: d.action as ManagerAction,
-        agentId: typeof d.agentId === 'string' ? d.agentId : undefined,
-        params: d.params && typeof d.params === 'object' ? d.params : undefined,
-        reasoning: typeof d.reasoning === 'string' ? d.reasoning : '',
-      }));
-  } catch {
-    return [];
+/** Find the index of the bracket/brace that closes the one opened at `openIdx`. */
+function findClosingBracket(str: string, openIdx: number): number {
+  const open = str[openIdx];
+  const close = open === '[' ? ']' : '}';
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = openIdx; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === open) depth++;
+    if (ch === close) { if (--depth === 0) return i; }
   }
+  return -1;
+}
+
+function normaliseParsed(items: unknown[]): ManagerDecision[] {
+  return items
+    .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object' && VALID_ACTIONS.includes((d as any).action))
+    .map((d) => ({
+      action: d.action as ManagerAction,
+      agentId: typeof d.agentId === 'string' ? d.agentId : undefined,
+      params: d.params && typeof d.params === 'object' ? d.params as Record<string, unknown> : undefined,
+      reasoning: typeof d.reasoning === 'string' ? d.reasoning : '',
+    }));
+}
+
+/** Strip reasoning tags and extract JSON array (or single object) from LLM response */
+export function parseManagerDecisions(raw: string): ManagerDecision[] {
+  // Strip reasoning tags (DeepSeek, Qwen thinking, etc.)
+  let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // Strip markdown code fences
+  const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/s);
+  if (fenced) cleaned = fenced[1].trim();
+
+  // Strategy 1: find first `[` and its proper matching `]`
+  const arrStart = cleaned.indexOf('[');
+  if (arrStart !== -1) {
+    const arrEnd = findClosingBracket(cleaned, arrStart);
+    if (arrEnd !== -1) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(arrStart, arrEnd + 1));
+        if (Array.isArray(parsed)) {
+          const decisions = normaliseParsed(parsed);
+          if (decisions.length > 0) return decisions;
+        }
+      } catch { /* fall through */ }
+    }
+  }
+
+  // Strategy 2: model returned a single JSON object instead of an array
+  const objStart = cleaned.indexOf('{');
+  if (objStart !== -1) {
+    const objEnd = findClosingBracket(cleaned, objStart);
+    if (objEnd !== -1) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(objStart, objEnd + 1));
+        const decisions = normaliseParsed([parsed]);
+        if (decisions.length > 0) return decisions;
+      } catch { /* fall through */ }
+    }
+  }
+
+  return [];
 }
 
 export function buildManagerPrompt(ctx: {
@@ -155,6 +193,7 @@ Evaluate each agent's performance and decide what actions to take this cycle.
 
 Valid actions:
 - "create_agent": spawn a new agent (provide params: { name, pairs, llmModel, temperature, analysisInterval, strategies, paperBalance })
+- "start_agent": start a stopped or paused agent (provide agentId)
 - "pause_agent": pause an underperforming agent (provide agentId)
 - "modify_agent": change agent parameters (provide agentId + params)
 - "terminate_agent": permanently stop an agent (provide agentId)
@@ -183,6 +222,27 @@ export async function executeManagerAction(
   switch (action) {
     case 'hold':
       return { success: true, detail: 'No action taken' };
+
+    case 'start_agent': {
+      if (!agentId) return { success: false, error: 'start_agent requires agentId' };
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      if (!agent) return { success: false, error: `Agent ${agentId} not found` };
+      if (agent.status === 'running') return { success: true, detail: `Agent ${agentId} already running` };
+      const agentConfig = JSON.parse(agent.config) as { paperBalance?: number; slippageSimulation?: number; analysisInterval?: string };
+      const doId = env.TRADING_AGENT.idFromName(agentId);
+      const stub = env.TRADING_AGENT.get(doId);
+      await stub.fetch(new Request('http://do/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          agentId,
+          paperBalance: agentConfig.paperBalance ?? 10000,
+          slippageSimulation: agentConfig.slippageSimulation ?? 0.3,
+          analysisInterval: agentConfig.analysisInterval ?? '1h',
+        }),
+      }));
+      await db.update(agents).set({ status: 'running', updatedAt: nowIso() }).where(eq(agents.id, agentId));
+      return { success: true, detail: `Agent ${agentId} started` };
+    }
 
     case 'pause_agent': {
       if (!agentId) return { success: false, error: 'pause_agent requires agentId' };
@@ -228,20 +288,23 @@ export async function executeManagerAction(
       if (!params) return { success: false, error: 'create_agent requires params' };
       const id = generateId('agent');
       const now = nowIso();
+      const paperBalance = Number(params.paperBalance ?? 10000);
+      const slippageSimulation = 0.3;
+      const analysisInterval = String(params.analysisInterval ?? '1h');
       const config = {
         name: params.name ?? 'Manager-created Agent',
         autonomyLevel: 'guided',
         llmModel: params.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free',
         temperature: params.temperature ?? 0.7,
         pairs: params.pairs ?? ['WETH/USDC'],
-        analysisInterval: params.analysisInterval ?? '1h',
+        analysisInterval,
         strategies: params.strategies ?? ['combined'],
-        paperBalance: params.paperBalance ?? 10000,
+        paperBalance,
         maxPositionSizePct: params.maxPositionSizePct ?? 5,
         maxOpenPositions: 3,
         stopLossPct: 5,
         takeProfitPct: 7,
-        slippageSimulation: 0.3,
+        slippageSimulation,
         maxDailyLossPct: 10,
         cooldownAfterLossMinutes: 30,
         chain: 'base',
@@ -253,7 +316,7 @@ export async function executeManagerAction(
       await db.insert(agents).values({
         id,
         name: String(params.name ?? 'Manager-created Agent'),
-        status: 'stopped',
+        status: 'running',
         autonomyLevel: 2,
         config: JSON.stringify(config),
         llmModel: String(params.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free'),
@@ -262,7 +325,14 @@ export async function executeManagerAction(
         createdAt: now,
         updatedAt: now,
       });
-      return { success: true, detail: `Agent ${id} created and linked to manager ${managerId}` };
+      // Start the TradingAgentDO immediately
+      const doId = env.TRADING_AGENT.idFromName(id);
+      const stub = env.TRADING_AGENT.get(doId);
+      await stub.fetch(new Request('http://do/start', {
+        method: 'POST',
+        body: JSON.stringify({ agentId: id, paperBalance, slippageSimulation, analysisInterval }),
+      }));
+      return { success: true, detail: `Agent ${id} created and started` };
     }
 
     default:
@@ -397,7 +467,7 @@ export async function runManagerLoop(
         model: openrouter(config.llmModel),
         messages: [{ role: 'user', content: prompt }],
         temperature: config.temperature,
-        maxTokens: 2048,
+        maxOutputTokens: 2048,
       });
       rawResponse = result.text;
     } catch (err) {
@@ -409,8 +479,12 @@ export async function runManagerLoop(
   // 8. Parse decisions
   const decisions = parseManagerDecisions(rawResponse);
   if (decisions.length === 0) {
-    console.warn(`[manager-loop] ${managerId}: No valid decisions parsed`);
-    decisions.push({ action: 'hold', reasoning: 'Could not parse LLM response' });
+    const preview = rawResponse.slice(0, 500);
+    console.warn(`[manager-loop] ${managerId}: No valid decisions parsed. Raw response (first 500 chars): ${preview}`);
+    decisions.push({
+      action: 'hold',
+      reasoning: `Could not parse LLM response. Raw: ${preview}${rawResponse.length > 500 ? '…' : ''}`,
+    });
   }
 
   // 9. Execute and log each decision

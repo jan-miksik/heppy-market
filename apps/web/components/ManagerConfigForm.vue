@@ -141,7 +141,23 @@ function generateName(): string {
   return `${shortModelName(form.llmModel)} · ${form.decisionInterval}`;
 }
 
-const syncName = ref(!props.isEdit);
+const SYNC_NAME_KEY = 'manager:syncName';
+
+function readSyncName(): boolean {
+  if (props.isEdit) return false;
+  try {
+    const stored = localStorage.getItem(SYNC_NAME_KEY);
+    if (stored !== null) return stored === 'true';
+  } catch { /* localStorage unavailable (SSR / private mode) */ }
+  return true; // default: on
+}
+
+const syncName = ref(readSyncName());
+
+watch(syncName, (val) => {
+  if (props.isEdit) return;
+  try { localStorage.setItem(SYNC_NAME_KEY, String(val)); } catch { /* ignore */ }
+});
 
 const submitting = ref(false);
 const validationError = ref('');

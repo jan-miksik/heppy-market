@@ -1,6 +1,6 @@
 <template>
   <main class="page">
-    <div v-if="pending" style="text-align: center; padding: 48px;">
+    <div v-if="pending && !manager" style="text-align: center; padding: 48px;">
       <span class="spinner" />
     </div>
 
@@ -150,22 +150,25 @@ const { data: logsData, refresh: refreshLogs } = await useFetch<{ logs: any[] }>
 const logs = ref<any[]>(logsData.value?.logs ?? []);
 const hasMoreLogs = ref((logsData.value?.logs?.length ?? 0) === 20);
 
-// Polling: refresh manager (for doStatus) every 3s when running
-let prevTickCount = doStatus.value?.tickCount ?? 0;
+// Polling: refresh manager (for doStatus) every 2s when running.
+// Reload logs+agents when `deciding` transitions true→false (decision just finished).
+// NOTE: tickCount increments at the START of alarm(), before runManagerLoop writes logs,
+// so tracking tickCount would reload before the log entry exists. Track `deciding` instead.
+let prevDeciding = doStatus.value?.deciding ?? false;
 
 const pollTimer = setInterval(async () => {
   if (manager.value?.status !== 'running') return;
   await refresh();
-  const newTickCount = doStatus.value?.tickCount ?? 0;
-  if (newTickCount > prevTickCount) {
-    prevTickCount = newTickCount;
-    // New decision cycle completed — reload logs + agents
+  const nowDeciding = doStatus.value?.deciding ?? false;
+  if (prevDeciding && !nowDeciding) {
+    // Decision just finished — reload logs + agents
     const fresh = await $fetch<{ logs: any[] }>(`/api/managers/${id}/logs`, { credentials: 'include' });
     logs.value = fresh.logs ?? [];
     hasMoreLogs.value = (fresh.logs?.length ?? 0) === 20;
     await refreshAgents();
   }
-}, 3000);
+  prevDeciding = nowDeciding;
+}, 2000);
 
 // Countdown to next decision — updated directly by interval, not via reactive `now`
 const INTERVAL_MS: Record<string, number> = { '1h': 3600_000, '4h': 14400_000, '1d': 86400_000 };
@@ -240,6 +243,7 @@ async function triggerDecision() {
   actionLoading.value = true;
   try {
     await $fetch(`/api/managers/${id}/trigger`, { method: 'POST', credentials: 'include' });
+    activeTab.value = 'logs';
     await refresh();
   } catch (err) {
     console.error(err);
