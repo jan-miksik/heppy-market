@@ -13,7 +13,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "deploy:api": "npm run deploy --workspace=@dex-agents/api -- --env production",
-    "deploy:web": "npm run build --workspace=@dex-agents/web && cd apps/web && npx wrangler pages deploy .output --project-name=heppy-market"
+    "deploy:web": "npm run build --workspace=@dex-agents/web && cd apps/web && npx wrangler pages deploy dist --project-name=heppy-market"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.42",
