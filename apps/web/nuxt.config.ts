@@ -8,7 +8,7 @@ export default defineNuxtConfig({
   ssr: false,
 
   // Cloudflare Pages compatible (compatibility date for Workers runtime when using Pages Functions)
-  compatibilityDate: '2026-02-12',
+  compatibilityDate: '2026-02-17',
   nitro: {
     preset: 'cloudflare-pages',
   },
