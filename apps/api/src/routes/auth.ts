@@ -66,6 +66,7 @@ authRoute.post('/verify', async (c) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Verification failed';
+    console.error('[auth/verify] error:', msg, err);
     return c.json({ error: msg }, 401);
   }
 

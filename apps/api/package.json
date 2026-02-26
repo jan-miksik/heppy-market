@@ -14,7 +14,7 @@
     "migration:apply": "wrangler d1 migrations apply trading-agents"
   },
   "dependencies": {
-    "@dex-agents/shared": "*",
+    "@dex-agents/shared": "workspace:*",
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "ai": "^6.0.86",
     "drizzle-orm": "^0.30.10",

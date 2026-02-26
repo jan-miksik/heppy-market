@@ -189,14 +189,3 @@ ANTHROPIC_API_KEY=sk-ant-...   # optional
 ```
 
 ---
-
-## Implementation Status
-
-All 6 planned phases are complete:
-
-- [x] Phase 1 — Foundation (monorepo, Hono, D1, health endpoint)
-- [x] Phase 2 — Data layer (DexScreener client, TA indicators, pair proxy)
-- [x] Phase 3 — Agent core (CRUD, paper engine, LLM router, Durable Object)
-- [x] Phase 4 — Agent loop (full analysis cycle, crons, risk management, decision logging)
-- [x] Phase 5 — Frontend (dashboard, agent pages, trade history, charts)
-- [x] Phase 6 — Polish (performance snapshots, comparison view, rate limiting, error handling)

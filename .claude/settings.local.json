@@ -2,17 +2,15 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "*",
-      "Bash(*)",
-      "Read(*)",
-      "Write(*)",
-      "Edit(*)",
-      "WebFetch(*)",
-      "mcp__*",
-      "Bash(python3:*)",
-      "mcp__ide__getDiagnostics",
       "Bash(npx skills add mattpocock/skills/tdd -a claude-code -y 2>&1)",
-      "Bash(npx skills search frontend-design 2>&1 | head -50)"
+      "Bash(npx skills search frontend-design 2>&1 | head -50)",
+      "Bash(grep:*)",
+      "Bash(afplay:*)",
+      "Bash(python3:*)",
+      "Bash(/dev/null:*)",
+      "Bash(find:*)",
+      "Bash(echo:*)",
+      "Bash(ls:*)"
     ]
   }
 }
