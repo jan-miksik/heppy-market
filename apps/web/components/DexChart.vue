@@ -9,7 +9,7 @@ defineProps<{
 <template>
   <div v-if="pairAddress" class="dex-chart">
     <iframe
-      :src="`https://dexscreener.com/${chain}/${pairAddress}?embed=1&theme=dark&trades=0&info=0`"
+      :src="`https://dexscreener.com/${chain}/${pairAddress}?embed=1&theme=dark&trades=0&info=0&chartType=usd&loadChartSettings=0`"
       :style="{ height: `${height ?? 380}px`, width: '100%', border: 'none', borderRadius: '6px' }"
       frameborder="0"
       title="DexScreener chart"

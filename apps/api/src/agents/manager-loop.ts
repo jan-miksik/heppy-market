@@ -78,6 +78,20 @@ export interface ManagedAgentSnapshot {
 
 const VALID_ACTIONS: ManagerAction[] = ['create_agent', 'start_agent', 'pause_agent', 'modify_agent', 'terminate_agent', 'hold'];
 
+// Restrict manager-created agents to free OpenRouter models only, to avoid accidental paid usage.
+const FREE_AGENT_MODELS = new Set<string>([
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'stepfun/step-3.5-flash:free',
+  'nvidia/nemotron-nano-9b-v2:free',
+  'arcee-ai/trinity-large-preview:free',
+]);
+
+function normaliseAgentModel(requested: unknown): string {
+  const fallback = 'nvidia/nemotron-3-nano-30b-a3b:free';
+  if (typeof requested !== 'string') return fallback;
+  return FREE_AGENT_MODELS.has(requested) ? requested : fallback;
+}
+
 /** Find the index of the bracket/brace that closes the one opened at `openIdx`. */
 function findClosingBracket(str: string, openIdx: number): number {
   const open = str[openIdx];
@@ -188,6 +202,15 @@ ${memorySummary}
 ## Risk Limits
 ${riskSummary}
 
+## Model Cost Constraints
+You must use only the following free OpenRouter models when creating or modifying agents:
+- "nvidia/nemotron-3-nano-30b-a3b:free"
+- "stepfun/step-3.5-flash:free"
+- "nvidia/nemotron-nano-9b-v2:free"
+- "arcee-ai/trinity-large-preview:free"
+
+Never propose or use any paid or other model IDs (no OpenAI, GPT-4, GPT-3.5, etc). If unsure, default to "nvidia/nemotron-3-nano-30b-a3b:free".
+
 ## Instructions
 Evaluate each agent's performance and decide what actions to take this cycle.
 
@@ -275,7 +298,11 @@ export async function executeManagerAction(
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       if (!agent) return { success: false, error: `Agent ${agentId} not found` };
       const existingConfig = JSON.parse(agent.config);
-      const mergedConfig = { ...existingConfig, ...params };
+      const patch: Record<string, unknown> = { ...params };
+      if (typeof patch.llmModel === 'string') {
+        patch.llmModel = normaliseAgentModel(patch.llmModel);
+      }
+      const mergedConfig = { ...existingConfig, ...patch };
       await db.update(agents).set({
         config: JSON.stringify(mergedConfig),
         llmModel: (mergedConfig.llmModel ?? agent.llmModel) || 'nvidia/nemotron-3-nano-30b-a3b:free',
@@ -291,10 +318,11 @@ export async function executeManagerAction(
       const paperBalance = Number(params.paperBalance ?? 10000);
       const slippageSimulation = 0.3;
       const analysisInterval = String(params.analysisInterval ?? '1h');
+      const llmModel = normaliseAgentModel(params.llmModel);
       const config = {
         name: params.name ?? 'Manager-created Agent',
         autonomyLevel: 'guided',
-        llmModel: params.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free',
+        llmModel,
         temperature: params.temperature ?? 0.7,
         pairs: params.pairs ?? ['WETH/USDC'],
         analysisInterval,
@@ -319,7 +347,7 @@ export async function executeManagerAction(
         status: 'running',
         autonomyLevel: 2,
         config: JSON.stringify(config),
-        llmModel: String(params.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free'),
+        llmModel,
         ownerAddress,
         managerId,
         createdAt: now,
@@ -483,7 +511,8 @@ export async function runManagerLoop(
     console.warn(`[manager-loop] ${managerId}: No valid decisions parsed. Raw response (first 500 chars): ${preview}`);
     decisions.push({
       action: 'hold',
-      reasoning: `Could not parse LLM response. Raw: ${preview}${rawResponse.length > 500 ? '…' : ''}`,
+      // Use the raw model output as the human-readable reasoning instead of a scary parse error.
+      reasoning: preview || 'Holding this cycle (no structured decisions returned by model).',
     });
   }
 

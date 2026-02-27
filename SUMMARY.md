@@ -20,7 +20,7 @@ Users create trading agents that simulate trades using real market data from Dex
 | Cache | Cloudflare KV |
 | Agent State | Cloudflare Durable Objects |
 | Scheduling | Cron Triggers + DO Alarms |
-| LLM | Vercel AI SDK + OpenRouter (free models) |
+| LLM | Vercel AI SDK + OpenRouter (curated free models) |
 | Price Data | DexScreener API (free, no key) |
 | Technical Analysis | `technicalindicators` npm package |
 | Validation | Zod |
@@ -46,10 +46,13 @@ src/
 ├── index.ts                  # App entry, route registration, cron handler
 ├── agents/
 │   ├── trading-agent.ts      # Durable Object (agent state + lifecycle)
-│   ├── agent-loop.ts         # Analysis → Decision → Execute loop
+│   ├── agent-manager.ts      # Durable Object managing a fleet of agents
+│   ├── agent-loop.ts         # Per-agent Analysis → Decision → Execute loop
+│   ├── manager-loop.ts       # Periodic manager loop (create/modify/stop agents)
 │   └── prompts.ts            # System prompts per autonomy level
 ├── routes/
-│   ├── agents.ts             # CRUD + start/stop/pause/reset
+│   ├── agents.ts             # Agent CRUD + start/stop/pause/reset
+│   ├── managers.ts           # Manager CRUD + start/stop/pause
 │   ├── trades.ts             # Trade history & aggregate stats
 │   ├── pairs.ts              # DEX pair search (cached)
 │   └── comparison.ts         # Agent comparison metrics
@@ -69,20 +72,28 @@ src/
 
 ```
 pages/
-├── index.vue                 # Dashboard (stats, active agents, recent trades)
+├── index.vue                     # Dashboard (stats, active agents, recent trades)
 ├── agents/
-│   ├── index.vue             # Agent list + create modal
-│   └── [id].vue              # Agent detail (status, trades, charts, decisions)
+│   ├── index.vue                 # Agent list + create modal
+│   └── [id].vue                  # Agent detail (status, trades, charts, decisions)
+├── managers/
+│   ├── index.vue                 # Manager list
+│   ├── new.vue                   # Create manager (LLM model, interval, risk)
+│   └── [id]/
+│       ├── index.vue             # Manager detail (status, managed agents, logs)
+│       └── edit.vue              # Edit manager config
 └── trades/
-    └── index.vue             # Full trade history with filters
+    └── index.vue                 # Full trade history with filters
 
 components/
-├── AgentCard.vue             # Agent card with start/stop controls
-├── AgentConfigForm.vue       # Full config form (20+ options)
-├── TradeTable.vue            # Sortable trade list
-├── PnLChart.vue              # Cumulative P&L chart (Chart.js)
-├── DexChart.vue              # DEX pair visualization
-└── PairPicker.vue            # Multi-select pair picker
+├── AgentCard.vue                 # Agent card with start/stop controls
+├── AgentConfigForm.vue           # Full config form (20+ options)
+├── ManagerCard.vue               # Manager summary card (status, model, interval)
+├── ManagerConfigForm.vue         # Manager config (free LLM model + risk params)
+├── TradeTable.vue                # Sortable trade list
+├── PnLChart.vue                  # Cumulative P&L chart (Chart.js)
+├── DexChart.vue                  # Embedded DexScreener chart (price view by default)
+└── PairPicker.vue                # Multi-select pair picker
 ```
 
 ---
@@ -112,6 +123,12 @@ GET        /api/agents/:id/trades       # Trade history
 GET        /api/agents/:id/decisions    # LLM decision log
 GET        /api/agents/:id/performance  # Performance snapshots
 
+GET/POST   /api/managers            # List / create managers
+GET/PATCH/DELETE /api/managers/:id  # Get / update / delete manager
+POST       /api/managers/:id/start  # Start manager loop
+POST       /api/managers/:id/stop   # Stop manager
+POST       /api/managers/:id/pause  # Pause manager
+
 GET        /api/trades             # All trades (filterable)
 GET        /api/trades/stats       # Aggregate statistics
 GET        /api/pairs/search?q=    # Search DEX pairs (cached)
@@ -136,7 +153,7 @@ Key options per agent:
 | Stop loss | 5% | 0.5–50% |
 | Take profit | 7% | 0.5–100% |
 | Max open positions | 3 | 1–10 |
-| LLM model | `nvidia/nemotron-...free` | Any OpenRouter model |
+| LLM model | `nvidia/nemotron-...free` | Any OpenRouter model (agents); curated free models for manager |
 | Strategies | `combined` | EMA crossover, RSI, MACD, Bollinger, volume, LLM sentiment |
 
 ### Autonomy Levels
@@ -162,6 +179,21 @@ Each agent runs this cycle on its configured interval:
 8. Log decision to D1
 9. Check risk limits (daily loss cap, cooldown)
 10. Schedule next alarm
+```
+
+---
+
+## Manager Loop
+
+The agent manager is an LLM-powered “meta-agent” that creates and adjusts trading agents automatically:
+
+```
+1. Wake up on its decision interval (1h/4h/1d)
+2. Load performance + risk metrics for all managed agents
+3. Ask an OpenRouter free model for structured manager decisions
+4. Execute actions (create/modify/pause/terminate agents) with safety checks
+5. Log decisions and results to D1 for auditability
+6. Update manager memory and schedule the next evaluation
 ```
 
 ---

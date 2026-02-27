@@ -65,6 +65,21 @@ managersRoute.post('/', async (c) => {
     updatedAt: now,
   });
 
+  // Automatically start the manager after creation so it is active by default
+  const decisionInterval = config.decisionInterval ?? '1h';
+  try {
+    const doId = c.env.AGENT_MANAGER.idFromName(id);
+    const stub = c.env.AGENT_MANAGER.get(doId);
+    await stub.fetch(new Request('http://do/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ managerId: id, decisionInterval }),
+    }));
+    await db.update(agentManagers).set({ status: 'running', updatedAt: nowIso() }).where(eq(agentManagers.id, id));
+  } catch (err) {
+    console.error('[managers] Failed to auto-start manager on create', err);
+  }
+
   const [created] = await db.select().from(agentManagers).where(eq(agentManagers.id, id));
   return c.json(formatManager(created), 201);
 });

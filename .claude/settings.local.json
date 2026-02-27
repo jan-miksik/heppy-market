@@ -13,7 +13,12 @@
       "Bash(ls:*)",
       "Bash(pnpm add:*)",
       "Bash(pnpm install:*)",
-      "Bash(CI=true pnpm install:*)"
+      "Bash(CI=true pnpm install:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
