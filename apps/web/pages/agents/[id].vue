@@ -8,6 +8,7 @@ const id = computed(() => route.params.id as string);
 const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent, updateAgent } = useAgents();
 const { fetchAgentTrades, formatPnl, pnlClass } = useTrades();
 const { request } = useApi();
+const { getAgentPersona, updateAgentPersona, resetAgentPersona } = useProfiles();
 const router = useRouter();
 
 interface MarketDataEntry {
@@ -61,10 +62,12 @@ const isAnalyzing = ref(false);
 const showEditModal = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const activeTab = ref<'trades' | 'decisions' | 'performance'>('trades');
+const activeTab = ref<'trades' | 'decisions' | 'performance' | 'behavior' | 'persona'>('trades');
 const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
 const analyzeError = ref<string | null>(null);
+const personaMd = ref('');
+const personaSaving = ref(false);
 
 /** True when the analysis failed because the selected model is unavailable (no automatic fallback) */
 const isModelUnavailableError = computed(() => {
@@ -110,6 +113,10 @@ async function loadAll() {
     snapshots.value = p.snapshots;
     // Load DO status for countdown
     await refreshDoStatus();
+    try {
+      const personaData = await getAgentPersona(id.value);
+      personaMd.value = personaData.personaMd ?? '';
+    } catch { /* ignore */ }
   } catch (err) {
     loadError.value = extractApiError(err);
   } finally {
@@ -285,6 +292,26 @@ async function handleDelete() {
   if (!confirm('Delete this agent?')) return;
   await deleteAgent(id.value);
   router.push('/agents');
+}
+
+async function savePersona(md: string) {
+  personaSaving.value = true;
+  try {
+    await updateAgentPersona(id.value, md);
+    personaMd.value = md;
+  } finally {
+    personaSaving.value = false;
+  }
+}
+
+async function doResetPersona() {
+  personaSaving.value = true;
+  try {
+    const res = await resetAgentPersona(id.value);
+    personaMd.value = res.personaMd;
+  } finally {
+    personaSaving.value = false;
+  }
 }
 
 const VALID_ANALYSIS_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
@@ -633,6 +660,12 @@ function formatLatency(ms: number): string {
         <div class="tab" :class="{ active: activeTab === 'performance' }" @click="activeTab = 'performance'">
           Performance
         </div>
+        <div class="tab" :class="{ active: activeTab === 'behavior' }" @click="activeTab = 'behavior'">
+          Behavior
+        </div>
+        <div class="tab" :class="{ active: activeTab === 'persona' }" @click="activeTab = 'persona'">
+          Persona
+        </div>
       </div>
 
       <!-- Trades tab -->
@@ -813,6 +846,34 @@ function formatLatency(ms: number): string {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Behavior Tab -->
+      <div v-show="activeTab === 'behavior'">
+        <template v-if="agent?.config?.behavior">
+          <BehaviorSettingsForm
+            :model-value="agent.config.behavior as Record<string, unknown>"
+            type="agent"
+            :readonly="true"
+            @update:model-value="() => {}"
+          />
+          <div style="margin-top: 16px;">
+            <NuxtLink :to="`/agents/${agent.id}/edit`" class="btn btn-primary">Edit Behavior</NuxtLink>
+          </div>
+        </template>
+        <div v-else style="color: var(--text-secondary, #888); padding: 32px; text-align: center;">
+          No behavior profile set. <NuxtLink :to="`/agents/${id}/edit`" style="color: var(--accent, #7c6af7);">Edit the agent</NuxtLink> to add one.
+        </div>
+      </div>
+
+      <!-- Persona Tab -->
+      <div v-show="activeTab === 'persona'">
+        <PersonaEditor
+          v-model="personaMd"
+          :loading="personaSaving"
+          @save="savePersona"
+          @reset="doResetPersona"
+        />
       </div>
     </template>
 

@@ -68,6 +68,12 @@
         <div class="tab" :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">
           Decision Log <span v-if="logs.length" style="color: var(--text-muted); margin-left: 4px;">{{ logs.length }}</span>
         </div>
+        <div class="tab" :class="{ active: activeTab === 'behavior' }" @click="activeTab = 'behavior'">
+          Behavior
+        </div>
+        <div class="tab" :class="{ active: activeTab === 'persona' }" @click="activeTab = 'persona'">
+          Persona
+        </div>
       </div>
 
       <!-- Agents tab -->
@@ -117,6 +123,34 @@
           <button v-if="hasMoreLogs" class="btn btn-ghost" style="align-self: center; margin-top: 8px;" @click="loadMoreLogs">Load more…</button>
         </div>
       </div>
+
+      <!-- Behavior Tab -->
+      <div v-show="activeTab === 'behavior'">
+        <template v-if="manager?.config?.behavior">
+          <BehaviorSettingsForm
+            :model-value="manager.config.behavior as Record<string, unknown>"
+            type="manager"
+            :readonly="true"
+            @update:model-value="() => {}"
+          />
+          <div style="margin-top: 16px;">
+            <NuxtLink :to="`/managers/${manager.id}/edit`" class="btn btn-primary">Edit Behavior</NuxtLink>
+          </div>
+        </template>
+        <div v-else style="color: var(--text-secondary, #888); padding: 32px; text-align: center;">
+          No behavior profile set. <NuxtLink :to="`/managers/${id}/edit`" style="color: var(--accent, #7c6af7);">Edit the manager</NuxtLink> to add one.
+        </div>
+      </div>
+
+      <!-- Persona Tab -->
+      <div v-show="activeTab === 'persona'">
+        <PersonaEditor
+          v-model="personaMd"
+          :loading="personaSaving"
+          @save="savePersona"
+          @reset="doResetPersona"
+        />
+      </div>
     </template>
 
     <div v-else class="alert alert-error">Manager not found.</div>
@@ -160,10 +194,14 @@ const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
 
-const activeTab = ref<'agents' | 'logs'>('agents');
+const activeTab = ref<'agents' | 'logs' | 'behavior' | 'persona'>('agents');
 const actionLoading = ref(false);
 const showDeleteModal = ref(false);
 const deleteAgentsChoice = ref<'detach' | 'delete'>('detach');
+
+const { getManagerPersona, updateManagerPersona, resetManagerPersona } = useProfiles();
+const personaMd = ref('');
+const personaSaving = ref(false);
 
 const { data: managerData, pending, refresh } = await useFetch<any>(`/api/managers/${id}`, {
   credentials: 'include',
@@ -181,6 +219,12 @@ const { data: logsData, refresh: refreshLogs } = await useFetch<{ logs: any[] }>
 });
 const logs = ref<any[]>(logsData.value?.logs ?? []);
 const hasMoreLogs = ref((logsData.value?.logs?.length ?? 0) === 20);
+
+// Load persona
+try {
+  const personaData = await getManagerPersona(id);
+  personaMd.value = personaData.personaMd ?? '';
+} catch { /* ignore */ }
 
 // Polling: refresh manager (for doStatus) every 2s when running.
 // Reload logs+agents when `deciding` transitions true→false (decision just finished).
@@ -320,6 +364,26 @@ async function loadMoreLogs() {
   const newLogs = next.logs ?? [];
   logs.value.push(...newLogs);
   hasMoreLogs.value = newLogs.length === 20;
+}
+
+async function savePersona(md: string) {
+  personaSaving.value = true;
+  try {
+    await updateManagerPersona(id, md);
+    personaMd.value = md;
+  } finally {
+    personaSaving.value = false;
+  }
+}
+
+async function doResetPersona() {
+  personaSaving.value = true;
+  try {
+    const res = await resetManagerPersona(id);
+    personaMd.value = res.personaMd;
+  } finally {
+    personaSaving.value = false;
+  }
 }
 </script>
 
