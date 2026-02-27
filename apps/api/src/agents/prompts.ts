@@ -2,6 +2,8 @@
  * System prompts for each autonomy level.
  * These define the LLM's role and constraints when making trading decisions.
  */
+import { AgentBehaviorConfigSchema } from '@dex-agents/shared';
+import type { AgentBehaviorConfig } from '@dex-agents/shared';
 
 export const FULL_AUTONOMY_PROMPT = `You are an autonomous crypto trading agent operating on Base chain DEXes.
 You have full authority to:
@@ -78,8 +80,10 @@ export function buildAnalysisPrompt(params: {
     maxPositionSizePct: number;
     strategies: string[];
   };
+  behavior?: Partial<AgentBehaviorConfig>;
+  personaMd?: string | null;
 }): string {
-  const { portfolioState, marketData, lastDecisions, config } = params;
+  const { portfolioState, marketData, lastDecisions, config, behavior, personaMd } = params;
 
   return `## Portfolio State
 Balance: $${portfolioState.balance.toFixed(2)} USDC
@@ -115,5 +119,21 @@ Allowed pairs: ${config.pairs.join(', ')}
 Max position size: ${config.maxPositionSizePct}% of balance
 Active strategies: ${config.strategies.join(', ')}
 
+${behavior ? '\n\n' + buildBehaviorSection(behavior) : ''}${personaMd ? '\n\n## Your Persona\n' + personaMd : ''}
+
 Based on the above data, what is your trading decision?`;
+}
+
+/** Build a human-readable behavior section to inject into prompts */
+export function buildBehaviorSection(behavior: Partial<AgentBehaviorConfig>): string {
+  const b = AgentBehaviorConfigSchema.parse({ ...behavior });
+  return `## Your Behavior Profile
+- Risk Appetite: ${b.riskAppetite} | FOMO Prone: ${b.fomoProne}/100 | Panic Sell Threshold: ${b.panicSellThreshold}/100
+- Analysis Depth: ${b.analysisDepth} | Decision Speed: ${b.decisionSpeed} | Confidence Threshold: ${b.confidenceThreshold}%
+- Trading Style: ${b.style} | Entry Preference: ${b.entryPreference} | Exit Strategy: ${b.exitStrategy}
+- Market Bias: ${b.defaultBias} | Contrarian: ${b.contrarian}/100 | Adaptability: ${b.adaptability}/100
+- Average Down on losses: ${b.averageDown ? 'Yes' : 'No'} | Overthinker: ${b.overthinker ? 'Yes' : 'No'}
+- Preferred Conditions: ${b.preferredConditions} | Memory Weight: ${b.memoryWeight}
+
+Note: Your structured behavior config above defines parameter-level constraints. When in conflict with your persona text, these settings take precedence.`;
 }

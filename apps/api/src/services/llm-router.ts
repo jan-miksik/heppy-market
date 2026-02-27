@@ -1,7 +1,7 @@
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { TradeDecisionSchema } from '@dex-agents/shared';
-import type { TradeDecision } from '@dex-agents/shared';
+import type { TradeDecision, AgentBehaviorConfig } from '@dex-agents/shared';
 import { sleep } from '../lib/utils.js';
 import {
   FULL_AUTONOMY_PROMPT,
@@ -49,6 +49,8 @@ export interface TradeDecisionRequest {
     maxPositionSizePct: number;
     strategies: string[];
   };
+  behavior?: Partial<AgentBehaviorConfig>;
+  personaMd?: string | null;
 }
 
 const JSON_SCHEMA_INSTRUCTION = `

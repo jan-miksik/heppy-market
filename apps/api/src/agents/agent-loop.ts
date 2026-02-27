@@ -15,6 +15,7 @@ import { computeIndicators } from '../services/indicators.js';
 import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
+import type { AgentBehaviorConfig } from '@dex-agents/shared';
 
 /** Build a search query from a pair name.
  *  "WETH/USDC" → "WETH USDC"
@@ -94,6 +95,7 @@ export async function runAgentLoop(
     paperBalance: number;
     slippageSimulation: number;
     temperature?: number;
+    behavior?: Partial<AgentBehaviorConfig>;
   };
 
   // Use DB column as source of truth for model (avoids stale/missing config.llmModel)
@@ -398,6 +400,8 @@ export async function runAgentLoop(
           maxPositionSizePct: config.maxPositionSizePct,
           strategies: config.strategies,
         },
+        behavior: config.behavior,
+        personaMd: agentRow.personaMd,
       }
     );
   } catch (err) {
