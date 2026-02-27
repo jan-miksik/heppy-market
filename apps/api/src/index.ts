@@ -13,6 +13,7 @@ import { snapshotAllAgents } from './services/snapshot.js';
 import { listFreeModels } from './services/llm-router.js';
 import comparisonRoute from './routes/comparison.js';
 import managersRoute from './routes/managers.js';
+import profilesRoute from './routes/profiles.js';
 
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
@@ -58,12 +59,14 @@ app.use('/api/agents/*', authMiddleware as any);
 app.use('/api/trades/*', authMiddleware as any);
 app.use('/api/compare/*', authMiddleware as any);
 app.use('/api/managers/*', authMiddleware as any);
+app.use('/api/profiles/*', authMiddleware as any);
 
 // Protected routes
 app.route('/api/agents', agentsRoute);
 app.route('/api/trades', tradesRoute);
 app.route('/api/compare', comparisonRoute);
 app.route('/api/managers', managersRoute);
+app.route('/api/profiles', profilesRoute);
 
 /** GET /api/models — list available LLM models from OpenRouter */
 app.get('/api/models', async (c) => {

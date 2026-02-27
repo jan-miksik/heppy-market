@@ -4,7 +4,7 @@ import { eq, desc, or, isNull } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
-import { CreateAgentRequestSchema, UpdateAgentRequestSchema } from '@dex-agents/shared';
+import { CreateAgentRequestSchema, UpdateAgentRequestSchema, UpdatePersonaSchema, getAgentPersonaTemplate } from '@dex-agents/shared';
 import { validateBody, ValidationError } from '../lib/validation.js';
 import { generateId, nowIso, autonomyLevelToInt, intToAutonomyLevel } from '../lib/utils.js';
 
@@ -341,6 +341,42 @@ agentsRoute.get('/:id/status', async (c) => {
     nextAlarmAt: number | null;
   }>();
   return c.json(doStatus);
+});
+
+/** GET /api/agents/:id/persona */
+agentsRoute.get('/:id/persona', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  return c.json({ personaMd: agent.personaMd ?? null, profileId: agent.profileId ?? null });
+});
+
+/** PUT /api/agents/:id/persona */
+agentsRoute.put('/:id/persona', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const body = await validateBody(c, UpdatePersonaSchema);
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  await db.update(agents).set({ personaMd: body.personaMd, updatedAt: nowIso() }).where(eq(agents.id, id));
+  return c.json({ ok: true, personaMd: body.personaMd });
+});
+
+/** POST /api/agents/:id/persona/reset */
+agentsRoute.post('/:id/persona/reset', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  const config = JSON.parse(agent.config) as { profileId?: string };
+  const profileId = config.profileId ?? agent.profileId ?? 'the_bot';
+  const personaMd = getAgentPersonaTemplate(profileId, agent.name);
+  await db.update(agents).set({ personaMd, updatedAt: nowIso() }).where(eq(agents.id, id));
+  return c.json({ ok: true, personaMd });
 });
 
 // Error handler

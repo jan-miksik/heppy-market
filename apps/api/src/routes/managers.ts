@@ -4,7 +4,7 @@ import { eq, desc, inArray } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agentManagers, agentManagerLogs, agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
-import { CreateManagerRequestSchema, UpdateManagerRequestSchema } from '@dex-agents/shared';
+import { CreateManagerRequestSchema, UpdateManagerRequestSchema, UpdatePersonaSchema, getManagerPersonaTemplate } from '@dex-agents/shared';
 import { validateBody } from '../lib/validation.js';
 import { generateId, nowIso } from '../lib/utils.js';
 
@@ -293,6 +293,42 @@ managersRoute.get('/:id/agents', async (c) => {
       config: JSON.parse(r.config),
     })),
   });
+});
+
+/** GET /api/managers/:id/persona */
+managersRoute.get('/:id/persona', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const manager = await requireManagerOwnership(db, id, walletAddress);
+  if (!manager) return c.json({ error: 'Manager not found' }, 404);
+  return c.json({ personaMd: manager.personaMd ?? null, profileId: manager.profileId ?? null });
+});
+
+/** PUT /api/managers/:id/persona */
+managersRoute.put('/:id/persona', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const body = await validateBody(c, UpdatePersonaSchema);
+  const db = drizzle(c.env.DB);
+  const manager = await requireManagerOwnership(db, id, walletAddress);
+  if (!manager) return c.json({ error: 'Manager not found' }, 404);
+  await db.update(agentManagers).set({ personaMd: body.personaMd, updatedAt: nowIso() }).where(eq(agentManagers.id, id));
+  return c.json({ ok: true, personaMd: body.personaMd });
+});
+
+/** POST /api/managers/:id/persona/reset */
+managersRoute.post('/:id/persona/reset', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const manager = await requireManagerOwnership(db, id, walletAddress);
+  if (!manager) return c.json({ error: 'Manager not found' }, 404);
+  const config = JSON.parse(manager.config) as { profileId?: string };
+  const profileId = config.profileId ?? manager.profileId ?? 'passive_index';
+  const personaMd = getManagerPersonaTemplate(profileId, manager.name);
+  await db.update(agentManagers).set({ personaMd, updatedAt: nowIso() }).where(eq(agentManagers.id, id));
+  return c.json({ ok: true, personaMd });
 });
 
 export default managersRoute;
