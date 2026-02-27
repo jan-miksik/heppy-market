@@ -10,7 +10,10 @@
       "Bash(/dev/null:*)",
       "Bash(find:*)",
       "Bash(echo:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm install:*)",
+      "Bash(CI=true pnpm install:*)"
     ]
   }
 }

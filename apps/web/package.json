@@ -10,10 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dex-agents/shared": "*",
+    "@dex-agents/shared": "workspace:*",
     "@reown/appkit": "^1.8.18",
     "@reown/appkit-adapter-wagmi": "^1.8.18",
     "@tanstack/vue-query": "^5.92.9",
+    "@wagmi/core": "3.4.0",
     "@wagmi/vue": "^0.5.0",
     "chart.js": "^4.4.3",
     "nuxt": "^4.3.1",
