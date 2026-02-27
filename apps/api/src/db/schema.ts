@@ -25,6 +25,8 @@ export const agents = sqliteTable('agents', {
   llmModel: text('llm_model').notNull(),
   ownerAddress: text('owner_address'),
   managerId: text('manager_id'),
+  personaMd: text('persona_md'),
+  profileId: text('profile_id'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -87,6 +89,8 @@ export const agentManagers = sqliteTable('agent_managers', {
   ownerAddress: text('owner_address').notNull(),
   config: text('config').notNull(),
   status: text('status').notNull().default('stopped'),
+  personaMd: text('persona_md'),
+  profileId: text('profile_id'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -104,6 +108,22 @@ export const agentManagerLogs = sqliteTable('agent_manager_logs', {
   reasoning: text('reasoning').notNull(),
   result: text('result').notNull(),
   createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export const behaviorProfiles = sqliteTable('behavior_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  emoji: text('emoji').notNull().default('🤖'),
+  description: text('description'),
+  type: text('type').notNull(), // 'agent' | 'manager'
+  behaviorConfig: text('behavior_config').notNull(),
+  isPreset: integer('is_preset').notNull().default(0),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at')
     .notNull()
     .default(sql`(datetime('now'))`),
 });
