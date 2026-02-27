@@ -2,85 +2,109 @@
   <form @submit.prevent="handleSubmit">
     <div v-if="validationError" class="alert alert-error">{{ validationError }}</div>
 
-    <div class="form-group agent-name-row">
-      <div class="agent-name-label-row">
-        <label class="form-label">Manager Name</label>
-        <label class="sync-name-checkbox">
-          <input v-model="syncName" type="checkbox" />
-          <span>Sync with setup</span>
-        </label>
-      </div>
-      <input
-        v-model="form.name"
-        class="form-input"
-        type="text"
-        maxlength="50"
-        placeholder="Alpha Manager"
-        required
-        @input="syncName = false"
-      />
+    <!-- Tab navigation -->
+    <div class="form-tabs">
+      <button type="button" :class="['tab-btn', { active: activeTab === 'config' }]" @click="activeTab = 'config'">Config</button>
+      <button type="button" :class="['tab-btn', { active: activeTab === 'behavior' }]" @click="activeTab = 'behavior'">Behavior</button>
+      <button type="button" :class="['tab-btn', { active: activeTab === 'persona' }]" @click="activeTab = 'persona'">Persona</button>
     </div>
 
-    <div class="grid-2">
-      <div class="form-group">
-        <label class="form-label">LLM Model</label>
-        <select v-model="form.llmModel" class="form-select">
-          <optgroup label="Free models">
-            <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
-            <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
-            <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
-            <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
-          </optgroup>
-        </select>
+    <div v-show="activeTab === 'config'">
+      <div class="form-group agent-name-row">
+        <div class="agent-name-label-row">
+          <label class="form-label">Manager Name</label>
+          <label class="sync-name-checkbox">
+            <input v-model="syncName" type="checkbox" />
+            <span>Sync with setup</span>
+          </label>
+        </div>
+        <input
+          v-model="form.name"
+          class="form-input"
+          type="text"
+          maxlength="50"
+          placeholder="Alpha Manager"
+          required
+          @input="syncName = false"
+        />
       </div>
-      <div class="form-group">
-        <label class="form-label">Decision Interval</label>
-        <select v-model="form.decisionInterval" class="form-select">
-          <option value="1h">Every 1 hour</option>
-          <option value="4h">Every 4 hours</option>
-          <option value="1d">Every 24 hours</option>
-        </select>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">LLM Model</label>
+          <select v-model="form.llmModel" class="form-select">
+            <optgroup label="Free models">
+              <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
+              <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
+              <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
+              <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Decision Interval</label>
+          <select v-model="form.decisionInterval" class="form-select">
+            <option value="1h">Every 1 hour</option>
+            <option value="4h">Every 4 hours</option>
+            <option value="1d">Every 24 hours</option>
+          </select>
+        </div>
+      </div>
+
+      <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px;">
+        <legend style="font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 0 6px; text-transform: uppercase; letter-spacing: 0.05em;">Risk Parameters</legend>
+        <div class="grid-3">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">
+              Max Drawdown
+              <span style="color: var(--text-muted); font-weight: 400;">{{ (form.riskParams.maxTotalDrawdown * 100).toFixed(0) }}%</span>
+            </label>
+            <input
+              v-model.number="form.riskParams.maxTotalDrawdown"
+              class="form-range"
+              type="range" min="0.01" max="1" step="0.01"
+            />
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">
+              Max Agents
+              <span style="color: var(--text-muted); font-weight: 400;">{{ form.riskParams.maxAgents }}</span>
+            </label>
+            <input
+              v-model.number="form.riskParams.maxAgents"
+              class="form-range"
+              type="range" min="1" max="20" step="1"
+            />
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label">
+              Max Correlated
+              <span style="color: var(--text-muted); font-weight: 400;">{{ form.riskParams.maxCorrelatedPositions }}</span>
+            </label>
+            <input
+              v-model.number="form.riskParams.maxCorrelatedPositions"
+              class="form-range"
+              type="range" min="1" max="10" step="1"
+            />
+          </div>
+        </div>
+      </fieldset>
+    </div>
+
+    <div v-show="activeTab === 'behavior'">
+      <div style="margin-bottom: 16px;">
+        <div class="form-label" style="margin-bottom: 8px; font-size: 13px; color: var(--text-secondary, #888);">Choose a Preset Profile (optional)</div>
+        <BehaviorProfilePicker v-model="selectedProfileId" type="manager" @profile-selected="onProfileSelected" />
+      </div>
+      <div style="margin-top: 20px;">
+        <div class="form-label" style="margin-bottom: 8px; font-size: 13px; color: var(--text-secondary, #888);">Fine-tune Behavior</div>
+        <BehaviorSettingsForm v-model="behavior" type="manager" />
       </div>
     </div>
 
-    <fieldset style="border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px;">
-      <legend style="font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 0 6px; text-transform: uppercase; letter-spacing: 0.05em;">Risk Parameters</legend>
-      <div class="grid-3">
-        <div class="form-group" style="margin-bottom: 0;">
-          <label class="form-label">
-            Max Drawdown
-            <span style="color: var(--text-muted); font-weight: 400;">{{ (form.riskParams.maxTotalDrawdown * 100).toFixed(0) }}%</span>
-          </label>
-          <input
-            v-model.number="form.riskParams.maxTotalDrawdown"
-            class="form-range"
-            type="range" min="0.01" max="1" step="0.01"
-          />
-        </div>
-        <div class="form-group" style="margin-bottom: 0;">
-          <label class="form-label">
-            Max Agents
-            <span style="color: var(--text-muted); font-weight: 400;">{{ form.riskParams.maxAgents }}</span>
-          </label>
-          <input
-            v-model.number="form.riskParams.maxAgents"
-            class="form-range"
-            type="range" min="1" max="20" step="1"
-          />
-        </div>
-        <div class="form-group" style="margin-bottom: 0;">
-          <label class="form-label">
-            Max Correlated
-            <span style="color: var(--text-muted); font-weight: 400;">{{ form.riskParams.maxCorrelatedPositions }}</span>
-          </label>
-          <input
-            v-model.number="form.riskParams.maxCorrelatedPositions"
-            class="form-range"
-            type="range" min="1" max="10" step="1"
-          />
-        </div>
-      </div>
-    </fieldset>
+    <div v-show="activeTab === 'persona'">
+      <PersonaEditor v-model="personaMd" />
+    </div>
 
     <div class="modal-footer" style="padding: 0; margin-top: 8px;">
       <button v-if="onCancel" type="button" class="btn btn-ghost" @click="onCancel">Cancel</button>
@@ -93,6 +117,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from 'vue';
+import type { ProfileItem } from '~/composables/useProfiles';
 
 const props = defineProps<{
   initial?: {
@@ -101,6 +126,9 @@ const props = defineProps<{
     temperature?: number;
     decisionInterval?: string;
     riskParams?: { maxTotalDrawdown: number; maxAgents: number; maxCorrelatedPositions: number };
+    behavior?: Record<string, unknown>;
+    profileId?: string;
+    personaMd?: string;
   };
   isEdit?: boolean;
   onCancel?: () => void;
@@ -113,6 +141,8 @@ const emit = defineEmits<{
     temperature: number;
     decisionInterval: string;
     riskParams: { maxTotalDrawdown: number; maxAgents: number; maxCorrelatedPositions: number };
+    behavior: Record<string, unknown>;
+    profileId?: string;
   }): void;
 }>();
 
@@ -154,6 +184,25 @@ watch(syncName, (val) => {
 const submitting = ref(false);
 const validationError = ref('');
 
+// Tab state
+const activeTab = ref<'config' | 'behavior' | 'persona'>('config');
+const selectedProfileId = ref<string | null>(props.initial?.profileId ?? null);
+const behavior = ref<Record<string, unknown>>(props.initial?.behavior ?? {
+  managementStyle: 'balanced',
+  riskTolerance: 'moderate',
+  diversificationPreference: 'balanced',
+  performancePatience: 50,
+  creationAggressiveness: 50,
+  rebalanceFrequency: 'sometimes',
+  philosophyBias: 'mixed',
+});
+const personaMd = ref(props.initial?.personaMd ?? '');
+
+function onProfileSelected(profile: ProfileItem) {
+  selectedProfileId.value = profile.id;
+  behavior.value = { ...profile.behaviorConfig };
+}
+
 const form = reactive({
   name: props.initial?.name ?? '',
   llmModel: props.initial?.llmModel ?? 'nvidia/nemotron-3-nano-30b-a3b:free',
@@ -186,7 +235,12 @@ function handleSubmit() {
   }
   submitting.value = true;
   try {
-    emit('submit', { ...form, riskParams: { ...form.riskParams } });
+    emit('submit', {
+      ...form,
+      riskParams: { ...form.riskParams },
+      behavior: behavior.value,
+      profileId: selectedProfileId.value ?? undefined,
+    });
   } finally {
     submitting.value = false;
   }
@@ -194,6 +248,32 @@ function handleSubmit() {
 </script>
 
 <style scoped>
+.form-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  padding-bottom: 4px;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color 0.15s, background 0.15s;
+}
+.tab-btn:hover {
+  color: var(--text, #e0e0e0);
+}
+.tab-btn.active {
+  color: var(--accent, #7c6af7);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent, #7c6af7);
+}
+
 .form-range {
   width: 100%;
   accent-color: var(--accent);

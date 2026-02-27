@@ -39,6 +39,9 @@ export interface CreateAgentPayload {
   llmModel?: string;
   allowFallback?: boolean;
   temperature?: number;
+  behavior?: Record<string, unknown>;
+  profileId?: string;
+  personaMd?: string;
 }
 
 export function useAgents() {
