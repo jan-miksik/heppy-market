@@ -27,9 +27,11 @@ function selectProfile(p: ProfileItem) {
 </script>
 
 <template>
-  <div class="profile-picker">
-    <div v-if="loading" style="text-align:center;padding:24px;"><span class="spinner" /></div>
-    <div v-else class="profile-picker__grid">
+  <div class="picker">
+    <div v-if="loading" class="picker__loading">
+      <span class="spinner" style="width:16px;height:16px;" />
+    </div>
+    <div v-else class="picker__row">
       <BehaviorProfileCard
         v-for="p in profiles"
         :key="p.id"
@@ -42,9 +44,15 @@ function selectProfile(p: ProfileItem) {
 </template>
 
 <style scoped>
-.profile-picker__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
+.picker__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.picker__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

@@ -880,7 +880,7 @@ function formatLatency(ms: number): string {
     <!-- Edit Modal -->
     <Teleport to="body">
       <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal">
+        <div class="modal modal--wide">
           <div class="modal-header">
             <span class="modal-title">Edit Agent</span>
             <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>

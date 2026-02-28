@@ -461,6 +461,9 @@ tbody tr:last-child td {
   max-height: 90vh;
   overflow-y: auto;
 }
+.modal--wide {
+  max-width: min(920px, calc(100vw - 48px));
+}
 .modal-header {
   padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);

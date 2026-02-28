@@ -1,0 +1,14 @@
+---
+description: When user asks for a commit message (e.g. "commit", "cm", "commit msg"), generate one from staged changes
+alwaysApply: false
+---
+
+# Commit message from staged changes
+
+When the user says **"commit"**, **"cm"**, or **"commit msg"** (or similar), treat it as a request to:
+
+1. Inspect staged changes (`git diff --cached --stat` and, if needed, `git diff --cached` for key files).
+2. Propose a conventional-style commit message (e.g. feat/fix/docs with scope and short body, bullet list of changes).
+3. Optionally show the exact `git commit -m "..."` command they can run (with escaped quotes if needed).
+
+Do not stage or commit for them—only generate and suggest the message.

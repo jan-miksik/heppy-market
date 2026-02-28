@@ -18,7 +18,11 @@
       "Bash(npx wrangler:*)",
       "Bash(npx tsc:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git stash:*)",
+      "Bash(npx nuxi:*)",
+      "Bash(xargs cat:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

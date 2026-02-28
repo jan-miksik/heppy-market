@@ -7,55 +7,83 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ select: [profile: ProfileItem] }>();
-
-const keyTraits = computed(() => {
-  const b = props.profile.behaviorConfig;
-  const traits: string[] = [];
-  if (b.riskAppetite) traits.push(String(b.riskAppetite));
-  if (b.style) traits.push(String(b.style));
-  if (b.decisionSpeed) traits.push(String(b.decisionSpeed));
-  return traits.slice(0, 3);
-});
 </script>
 
 <template>
   <div
-    class="profile-card"
-    :class="{ 'profile-card--selected': selected }"
+    class="pcard"
+    :class="{ 'pcard--selected': selected }"
     @click="emit('select', profile)"
   >
-    <div class="profile-card__emoji">{{ profile.emoji }}</div>
-    <div class="profile-card__body">
-      <div class="profile-card__name">{{ profile.name }}</div>
-      <div class="profile-card__desc">{{ profile.description }}</div>
-      <div class="profile-card__traits">
-        <span v-for="trait in keyTraits" :key="trait" class="profile-card__trait">{{ trait }}</span>
-      </div>
-    </div>
-    <div v-if="selected" class="profile-card__check">✓</div>
+    <div class="pcard__emoji">{{ profile.emoji }}</div>
+    <div class="pcard__name">{{ profile.name }}</div>
+    <div class="pcard__desc">{{ profile.description }}</div>
+    <div v-if="selected" class="pcard__check">✓</div>
   </div>
 </template>
 
 <style scoped>
-.profile-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid var(--border, #2a2a2a);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  background: var(--card-bg, #111);
+.pcard {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 14px 10px 12px;
+  width: 140px;
+  min-height: 110px;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.1s;
+  background: var(--surface, #141414);
+  flex-shrink: 0;
+  text-align: center;
 }
-.profile-card:hover { border-color: var(--accent, #7c6af7); }
-.profile-card--selected { border-color: var(--accent, #7c6af7); background: color-mix(in srgb, var(--accent, #7c6af7) 10%, transparent); }
-.profile-card__emoji { font-size: 28px; flex-shrink: 0; }
-.profile-card__body { flex: 1; min-width: 0; }
-.profile-card__name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
-.profile-card__desc { font-size: 12px; color: var(--text-secondary, #888); line-height: 1.4; }
-.profile-card__traits { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.profile-card__trait { background: var(--tag-bg, #1e1e1e); border: 1px solid var(--border, #2a2a2a); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--text-secondary, #888); text-transform: capitalize; }
-.profile-card__check { color: var(--accent, #7c6af7); font-weight: 700; font-size: 18px; flex-shrink: 0; }
+.pcard:hover {
+  border-color: var(--accent, #7c6af7);
+  background: color-mix(in srgb, var(--accent, #7c6af7) 6%, var(--surface, #141414));
+  transform: translateY(-1px);
+}
+.pcard--selected {
+  border-color: var(--accent, #7c6af7);
+  background: color-mix(in srgb, var(--accent, #7c6af7) 12%, var(--surface, #141414));
+  box-shadow: 0 0 0 1px var(--accent, #7c6af7), 0 4px 16px color-mix(in srgb, var(--accent, #7c6af7) 20%, transparent);
+}
+.pcard__emoji {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.pcard__name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text, #e0e0e0);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+.pcard--selected .pcard__name {
+  color: var(--accent, #7c6af7);
+}
+.pcard__desc {
+  font-size: 10px;
+  color: var(--text-muted, #555);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.pcard--selected .pcard__desc {
+  color: color-mix(in srgb, var(--accent, #7c6af7) 70%, var(--text-muted, #555));
+}
+.pcard__check {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  color: var(--accent, #7c6af7);
+  font-weight: 700;
+}
 </style>

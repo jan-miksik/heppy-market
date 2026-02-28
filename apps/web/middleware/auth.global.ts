@@ -20,6 +20,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (!isAuthenticated.value) {
-    return navigateTo('/connect');
+    if (to.path !== '/connect') return navigateTo('/connect');
   }
 });

@@ -2,13 +2,17 @@
 const props = defineProps<{
   modelValue: string;
   loading?: boolean;
+  showActions?: boolean;  // default true — detail pages need Save/Reset
 }>();
 
 const emit = defineEmits<{
   'update:modelValue': [v: string];
   save: [v: string];
   reset: [];
+  edited: [];          // fired only on user input, not programmatic updates
 }>();
+
+const showActions = computed(() => props.showActions !== false);
 
 const showPreview = ref(false);
 const localValue = ref(props.modelValue);
@@ -22,6 +26,7 @@ function handleInput(e: Event) {
   const v = (e.target as HTMLTextAreaElement).value;
   localValue.value = v;
   emit('update:modelValue', v);
+  emit('edited');
 }
 
 function renderMd(md: string): string {
@@ -37,47 +42,72 @@ function renderMd(md: string): string {
 </script>
 
 <template>
-  <div class="persona-editor">
-    <div class="persona-editor__toolbar">
-      <div class="persona-editor__warning">
-        ⚠️ This markdown is injected directly into the agent's system prompt. Keep it focused on trading behavior.
-      </div>
-      <div class="persona-editor__actions">
-        <button class="btn btn-ghost btn-sm" type="button" @click="showPreview = !showPreview">
-          {{ showPreview ? 'Edit' : 'Preview' }}
-        </button>
+  <div class="pe">
+    <div class="pe__toolbar">
+      <button class="btn btn-ghost btn-sm" type="button" @click="showPreview = !showPreview">
+        {{ showPreview ? 'Edit' : 'Preview' }}
+      </button>
+      <template v-if="showActions">
         <button class="btn btn-ghost btn-sm" type="button" :disabled="loading" @click="emit('reset')">
           Reset to default
         </button>
         <button class="btn btn-primary btn-sm" type="button" :disabled="loading || isOverLimit" @click="emit('save', localValue)">
-          {{ loading ? 'Saving...' : 'Save Persona' }}
+          {{ loading ? 'Saving…' : 'Save Persona' }}
         </button>
-      </div>
+      </template>
     </div>
 
-    <div v-if="showPreview" class="persona-editor__preview" v-html="renderMd(localValue)" />
+    <div v-if="showPreview" class="pe__preview" v-html="renderMd(localValue)" />
     <textarea
       v-else
-      class="persona-editor__textarea"
+      class="pe__textarea"
       :value="localValue"
-      placeholder="Write your agent's persona here..."
+      placeholder="Write your agent's persona here…"
       @input="handleInput"
     />
 
-    <div class="persona-editor__footer">
-      <span :class="isOverLimit ? 'char-count--over' : 'char-count'">{{ charCount }}/4000 characters</span>
+    <div class="pe__footer">
+      <span :class="isOverLimit ? 'pe__chars--over' : 'pe__chars'">{{ charCount }}/4000</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.persona-editor { display: flex; flex-direction: column; gap: 8px; }
-.persona-editor__toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.persona-editor__warning { font-size: 12px; color: var(--warning, #f5a623); padding: 6px 10px; background: color-mix(in srgb, var(--warning, #f5a623) 10%, transparent); border-radius: 6px; border: 1px solid color-mix(in srgb, var(--warning, #f5a623) 30%, transparent); flex: 1; }
-.persona-editor__actions { display: flex; gap: 8px; flex-shrink: 0; }
-.persona-editor__textarea { width: 100%; min-height: 320px; font-family: monospace; font-size: 13px; background: var(--card-bg, #111); color: var(--text, #e0e0e0); border: 1px solid var(--border, #2a2a2a); border-radius: 8px; padding: 12px; resize: vertical; box-sizing: border-box; }
-.persona-editor__preview { min-height: 320px; padding: 16px; background: var(--card-bg, #111); border: 1px solid var(--border, #2a2a2a); border-radius: 8px; font-size: 13px; line-height: 1.6; }
-.persona-editor__footer { text-align: right; }
-.char-count { font-size: 12px; color: var(--text-secondary, #888); }
-.char-count--over { font-size: 12px; color: var(--danger, #f44336); font-weight: 600; }
+.pe { display: flex; flex-direction: column; gap: 8px; }
+.pe__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pe__textarea {
+  width: 100%;
+  min-height: 260px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--surface, #111);
+  color: var(--text, #e0e0e0);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 8px;
+  padding: 12px;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.6;
+  transition: border-color 0.15s;
+}
+.pe__textarea:focus {
+  outline: none;
+  border-color: var(--accent, #7c6af7);
+}
+.pe__preview {
+  min-height: 260px;
+  padding: 16px;
+  background: var(--surface, #111);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.pe__footer { text-align: right; }
+.pe__chars { font-size: 11px; color: var(--text-muted, #555); }
+.pe__chars--over { font-size: 11px; color: var(--red, #f44336); font-weight: 600; }
 </style>

@@ -14,7 +14,7 @@
       <div v-else-if="manager" class="card">
         <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
         <ManagerConfigForm
-          :initial="manager.config ? { name: manager.name, ...manager.config } : undefined"
+          :initial="manager ? { name: manager.name, ...manager.config, profileId: manager.profileId, personaMd: manager.personaMd } : undefined"
           :is-edit="true"
           :on-cancel="() => router.push(`/managers/${id}`)"
           @submit="handleSave"
