@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <div style="max-width: 560px;">
+    <div style="max-width: 630px;">
       <div v-if="pending" style="text-align: center; padding: 48px;">
         <span class="spinner" />
       </div>

@@ -7,6 +7,7 @@ import { agents, trades, agentDecisions, performanceSnapshots } from '../db/sche
 import { CreateAgentRequestSchema, UpdateAgentRequestSchema, UpdatePersonaSchema, getAgentPersonaTemplate } from '@dex-agents/shared';
 import { validateBody, ValidationError } from '../lib/validation.js';
 import { generateId, nowIso, autonomyLevelToInt, intToAutonomyLevel } from '../lib/utils.js';
+import { normalizePairsForDex } from '../lib/pairs.js';
 
 const agentsRoute = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -39,7 +40,10 @@ agentsRoute.post('/', async (c) => {
   const id = generateId('agent');
   const now = nowIso();
   const autonomyLevel = autonomyLevelToInt(body.autonomyLevel);
-  const config = { ...body };
+  const config = {
+    ...body,
+    pairs: normalizePairsForDex(body.pairs),
+  };
 
   await db.insert(agents).values({
     id,
@@ -92,7 +96,11 @@ agentsRoute.patch('/:id', async (c) => {
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
   const existingConfig = JSON.parse(existing.config);
-  const mergedConfig = { ...existingConfig, ...body };
+  const mergedConfig = {
+    ...existingConfig,
+    ...body,
+    ...(body.pairs !== undefined && { pairs: normalizePairsForDex(body.pairs) }),
+  };
 
   const updates: Partial<typeof agents.$inferInsert> = {
     config: JSON.stringify(mergedConfig),

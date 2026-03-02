@@ -13,8 +13,10 @@ import type { Env } from '../types/env.js';
 import { agents, trades, performanceSnapshots, agentManagers, agentManagerLogs } from '../db/schema.js';
 import { createDexDataService, getPriceUsd } from '../services/dex-data.js';
 import { createGeckoTerminalService } from '../services/gecko-terminal.js';
-import { generateId, nowIso } from '../lib/utils.js';
+import { generateId, nowIso, autonomyLevelToInt } from '../lib/utils.js';
+import { normalizePairsForDex } from '../lib/pairs.js';
 import type { ManagerConfig } from '@dex-agents/shared';
+import { getAgentPersonaTemplate } from '@dex-agents/shared';
 
 export type ManagerAction = 'create_agent' | 'start_agent' | 'pause_agent' | 'modify_agent' | 'terminate_agent' | 'hold';
 
@@ -77,6 +79,12 @@ export interface ManagedAgentSnapshot {
 }
 
 const VALID_ACTIONS: ManagerAction[] = ['create_agent', 'start_agent', 'pause_agent', 'modify_agent', 'terminate_agent', 'hold'];
+
+const VALID_AUTONOMY_LEVELS: ReadonlySet<string> = new Set(['full', 'guided', 'strict']);
+function parseAutonomyLevel(v: unknown): 'full' | 'guided' | 'strict' {
+  if (typeof v === 'string' && VALID_AUTONOMY_LEVELS.has(v)) return v as 'full' | 'guided' | 'strict';
+  return 'guided';
+}
 
 // Restrict manager-created agents to free OpenRouter models only, to avoid accidental paid usage.
 const FREE_AGENT_MODELS = new Set<string>([
@@ -215,10 +223,10 @@ Never propose or use any paid or other model IDs (no OpenAI, GPT-4, GPT-3.5, etc
 Evaluate each agent's performance and decide what actions to take this cycle.
 
 Valid actions:
-- "create_agent": spawn a new agent (provide params: { name, pairs, llmModel, temperature, analysisInterval, strategies, paperBalance })
+- "create_agent": spawn a new agent. Params: name, pairs, llmModel, temperature, analysisInterval, strategies, paperBalance; optional: autonomyLevel ("full"|"guided"|"strict"), personaMd (markdown persona text), stopLossPct, takeProfitPct, maxOpenPositions, maxDailyLossPct, cooldownAfterLossMinutes. If personaMd is omitted, the agent gets a default persona from the manager's profile.
 - "start_agent": start a stopped or paused agent (provide agentId)
 - "pause_agent": pause an underperforming agent (provide agentId)
-- "modify_agent": change agent parameters (provide agentId + params)
+- "modify_agent": change agent parameters (provide agentId + params). Params can include: name, pairs, llmModel, temperature, analysisInterval, strategies, paperBalance, autonomyLevel ("full"|"guided"|"strict"), stopLossPct, takeProfitPct, maxOpenPositions, personaMd (markdown), etc.
 - "terminate_agent": permanently stop an agent (provide agentId)
 - "hold": no action needed (provide agentId, or omit for portfolio-level hold)
 
@@ -298,58 +306,82 @@ export async function executeManagerAction(
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       if (!agent) return { success: false, error: `Agent ${agentId} not found` };
       const existingConfig = JSON.parse(agent.config);
-      const patch: Record<string, unknown> = { ...params };
+      const { personaMd: paramsPersona, autonomyLevel: paramsAutonomy, ...restParams } = params as Record<string, unknown> & { personaMd?: string; autonomyLevel?: string };
+      const patch: Record<string, unknown> = { ...restParams };
+      if (paramsAutonomy !== undefined) {
+        patch.autonomyLevel = parseAutonomyLevel(paramsAutonomy);
+      }
       if (typeof patch.llmModel === 'string') {
         patch.llmModel = normaliseAgentModel(patch.llmModel);
       }
+      if (patch.pairs != null && Array.isArray(patch.pairs)) {
+        patch.pairs = normalizePairsForDex(patch.pairs as string[]);
+      }
       const mergedConfig = { ...existingConfig, ...patch };
-      await db.update(agents).set({
+      const updates: Partial<typeof agents.$inferInsert> = {
         config: JSON.stringify(mergedConfig),
         llmModel: (mergedConfig.llmModel ?? agent.llmModel) || 'nvidia/nemotron-3-nano-30b-a3b:free',
         updatedAt: nowIso(),
-      }).where(eq(agents.id, agentId));
+      };
+      if (paramsPersona !== undefined) {
+        updates.personaMd = typeof paramsPersona === 'string' ? paramsPersona : null;
+      }
+      if (paramsAutonomy !== undefined) {
+        updates.autonomyLevel = autonomyLevelToInt(parseAutonomyLevel(paramsAutonomy));
+      }
+      await db.update(agents).set(updates).where(eq(agents.id, agentId));
       return { success: true, detail: `Agent ${agentId} modified` };
     }
 
     case 'create_agent': {
       if (!params) return { success: false, error: 'create_agent requires params' };
-      const id = generateId('agent');
-      const now = nowIso();
+      const [managerRow] = await db.select().from(agentManagers).where(eq(agentManagers.id, managerId));
+      const agentName = String(params.name ?? 'Manager-created Agent');
       const paperBalance = Number(params.paperBalance ?? 10000);
       const slippageSimulation = 0.3;
       const analysisInterval = String(params.analysisInterval ?? '1h');
       const llmModel = normaliseAgentModel(params.llmModel);
+      const profileId = (managerRow?.profileId as string | null) ?? 'the_professor';
+      const personaMd =
+        (typeof params.personaMd === 'string' && params.personaMd.trim())
+          ? params.personaMd.trim()
+          : getAgentPersonaTemplate(profileId, agentName);
+      const autonomyLevelStr = parseAutonomyLevel(params.autonomyLevel);
       const config = {
-        name: params.name ?? 'Manager-created Agent',
-        autonomyLevel: 'guided',
+        name: agentName,
+        autonomyLevel: autonomyLevelStr,
         llmModel,
         temperature: params.temperature ?? 0.7,
-        pairs: params.pairs ?? ['WETH/USDC'],
+        pairs: normalizePairsForDex((params.pairs as string[] | undefined) ?? ['WETH/USDC']),
         analysisInterval,
         strategies: params.strategies ?? ['combined'],
         paperBalance,
         maxPositionSizePct: params.maxPositionSizePct ?? 5,
-        maxOpenPositions: 3,
-        stopLossPct: 5,
-        takeProfitPct: 7,
+        maxOpenPositions: params.maxOpenPositions ?? 3,
+        stopLossPct: params.stopLossPct ?? 5,
+        takeProfitPct: params.takeProfitPct ?? 7,
         slippageSimulation,
-        maxDailyLossPct: 10,
-        cooldownAfterLossMinutes: 30,
+        maxDailyLossPct: params.maxDailyLossPct ?? 10,
+        cooldownAfterLossMinutes: params.cooldownAfterLossMinutes ?? 30,
         chain: 'base',
         dexes: ['aerodrome', 'uniswap-v3'],
         maxLlmCallsPerHour: 12,
         allowFallback: false,
         llmFallback: 'nvidia/nemotron-3-nano-30b-a3b:free',
       };
+      const id = generateId('agent');
+      const now = nowIso();
       await db.insert(agents).values({
         id,
-        name: String(params.name ?? 'Manager-created Agent'),
+        name: agentName,
         status: 'running',
-        autonomyLevel: 2,
+        autonomyLevel: autonomyLevelToInt(autonomyLevelStr),
         config: JSON.stringify(config),
         llmModel,
         ownerAddress,
         managerId,
+        personaMd,
+        profileId,
         createdAt: now,
         updatedAt: now,
       });

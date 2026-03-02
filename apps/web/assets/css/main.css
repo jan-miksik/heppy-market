@@ -86,6 +86,16 @@ a:hover {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* Next analysis "any moment…" — gentle breathing pulse */
+.next-analysis-imminent {
+  animation: next-analysis-pulse 1.8s ease-in-out infinite;
+}
+@keyframes next-analysis-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .navbar-nav {
   display: flex;
   gap: 4px;
@@ -457,7 +467,7 @@ tbody tr:last-child td {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 560px;
+  max-width: 790px;
   max-height: 90vh;
   overflow-y: auto;
 }

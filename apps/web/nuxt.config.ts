@@ -4,6 +4,13 @@ import { defineNuxtConfig } from 'nuxt/config';
 export default defineNuxtConfig({
   devtools: { enabled: false },
 
+  // Reown AppKit uses web components (w3m-*); tell Vue not to resolve them as Vue components
+  vue: {
+    compilerOptions: {
+      isCustomElement: (tag: string) => tag.startsWith('w3m-'),
+    },
+  },
+
   // SPA mode — all pages are client-rendered (API calls require browser context)
   ssr: false,
 

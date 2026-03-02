@@ -186,6 +186,14 @@ function formatCountdown(seconds: number | null): string {
   return `${s}s`;
 }
 
+/** True when countdown shows "any moment…" — used for animation */
+const isNextAnalysisImminent = computed(
+  () =>
+    agent.value?.status === 'running' &&
+    secondsUntilNextAction.value !== null &&
+    secondsUntilNextAction.value <= 0,
+);
+
 /** Group open trades by pair for merged display */
 const openTradesByPair = computed(() => {
   const map = new Map<string, Trade[]>();
@@ -523,7 +531,13 @@ function formatLatency(ms: number): string {
         </div>
         <div class="stat-card">
           <div class="stat-label">Next Analysis</div>
-          <div class="stat-value mono" :class="agent.status === 'running' ? 'positive' : 'neutral'">
+          <div
+            class="stat-value mono"
+            :class="[
+              agent.status === 'running' ? 'positive' : 'neutral',
+              { 'next-analysis-imminent': isNextAnalysisImminent },
+            ]"
+          >
             {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : '—' }}
           </div>
           <div class="stat-change">{{ openTrades.length }} of {{ agent.config.maxOpenPositions }} positions open</div>
@@ -555,7 +569,10 @@ function formatLatency(ms: number): string {
                   <span
                     class="mono"
                     style="font-size: 12px; font-weight: 600;"
-                    :class="agent.status === 'running' ? 'positive' : 'neutral'"
+                    :class="[
+                      agent.status === 'running' ? 'positive' : 'neutral',
+                      { 'next-analysis-imminent': isNextAnalysisImminent },
+                    ]"
                   >
                     {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : 'stopped' }}
                   </span>

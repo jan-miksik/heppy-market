@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <div style="max-width: 560px;">
+    <div style="max-width: 630px;">
       <div class="card">
         <div v-if="createError" class="alert alert-error">{{ createError }}</div>
         <ManagerConfigForm @submit="handleCreate" :on-cancel="() => $router.push('/managers')" />

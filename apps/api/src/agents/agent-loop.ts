@@ -15,6 +15,7 @@ import { computeIndicators } from '../services/indicators.js';
 import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
+import { normalizePairForDex } from '../lib/pairs.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
 
 /** Build a search query from a pair name.
@@ -161,7 +162,9 @@ export async function runAgentLoop(
     }
   }
 
-  console.log(`[agent-loop] ${agentId}: Starting analysis (${config.pairs.length} pairs, model=${effectiveLlmModel})`);
+  // Normalize pair names (e.g. ETH-USD → WETH/USDC) so GeckoTerminal/DexScreener can resolve them
+  const pairsToFetch = config.pairs.slice(0, 5).map(normalizePairForDex);
+  console.log(`[agent-loop] ${agentId}: Starting analysis (${pairsToFetch.length} pairs, model=${effectiveLlmModel})`);
 
   // 4. Fetch market data — GeckoTerminal primary (network-scoped + real OHLCV),
   //    DexScreener fallback (global search, filter to Base).
@@ -179,7 +182,7 @@ export async function runAgentLoop(
     indicators?: Record<string, unknown>;
   }> = [];
 
-  for (const pairName of config.pairs.slice(0, 5)) {
+  for (const pairName of pairsToFetch) {
     const query = pairToSearchQuery(pairName);
     let priceUsd = 0;
     let pairAddress = '';
@@ -328,13 +331,13 @@ export async function runAgentLoop(
   }
 
   if (marketData.length === 0) {
-    console.warn(`[agent-loop] ${agentId}: No market data available — DexScreener returned no Base chain pairs for configured pairs: ${config.pairs.join(', ')}`);
+    console.warn(`[agent-loop] ${agentId}: No market data available — DexScreener returned no Base chain pairs for configured pairs: ${pairsToFetch.join(', ')}`);
     await db.insert(agentDecisions).values({
       id: generateId('dec'),
       agentId,
       decision: 'hold',
       confidence: 0,
-      reasoning: `No market data available from GeckoTerminal or DexScreener for pairs: ${config.pairs.join(', ')}. Check that the pair names are correct (e.g. "WETH/USDC", "AERO/USDC") and that the internet is reachable from the Worker.`,
+      reasoning: `No market data available from GeckoTerminal or DexScreener for pairs: ${pairsToFetch.join(', ')}. Check that the pair names are correct (e.g. "WETH/USDC", "AERO/USDC") and that the internet is reachable from the Worker.`,
       llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
       marketDataSnapshot: '[]',
@@ -396,7 +399,7 @@ export async function runAgentLoop(
         marketData,
         lastDecisions: recentDecisions,
         config: {
-          pairs: config.pairs,
+          pairs: pairsToFetch,
           maxPositionSizePct: config.maxPositionSizePct,
           strategies: config.strategies,
         },
@@ -446,7 +449,7 @@ export async function runAgentLoop(
     decision.confidence >= minConfidence &&
     engine.openPositions.length < config.maxOpenPositions
   ) {
-    const targetPairName = decision.targetPair ?? config.pairs[0];
+    const targetPairName = normalizePairForDex(decision.targetPair ?? pairsToFetch[0]);
     const pairData = marketData.find((m) => m.pair === targetPairName);
     if (!pairData || pairData.priceUsd === 0) {
       console.warn(`[agent-loop] ${agentId}: No price data for ${targetPairName}`);
