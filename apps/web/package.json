@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "prebuild": "pnpm --filter @dex-agents/shared build",
     "dev": "nuxt dev --port 3000",
     "build": "nuxt build",
     "preview": "nuxt preview",
