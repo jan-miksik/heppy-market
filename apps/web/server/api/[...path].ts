@@ -3,7 +3,7 @@
  * When the API binding is present (production on Pages), requests stay internal.
  * When absent (local dev), falls back to the configured apiBase URL.
  */
-import { getRequestURL, getRequestHeaders, readRawBody, setResponseStatus, setResponseHeaders } from 'h3';
+import { createError, getRequestURL, getRequestHeaders, readRawBody, setResponseStatus, setResponseHeaders } from 'h3';
 
 /** Service binding: fetch(request) → response (Worker is not exposed publicly). */
 interface CloudflareEnv {
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   // event.path may or may not include /api prefix and may include query string.
   // Strip query from path (we extract it separately) and ensure /api prefix.
   const rawPath = event.path.split('?')[0];
-  const pathname = rawPath.startsWith('/api') ? rawPath : `/api${rawPath}`;
+  const pathname = rawPath?.startsWith('/api') ? rawPath : `/api${rawPath}`;
   const url = getRequestURL(event);
   const query = url.search || '';
 
@@ -46,12 +46,21 @@ export default defineEventHandler(async (event) => {
 
   if (api) {
     const workerUrl = `https://internal${pathname}${query}`;
-    const response = await api.fetch(workerUrl, {
-      method,
-      headers: new Headers(headers as Record<string, string>),
-      body: body ?? undefined,
-    });
-    return proxyResponse(event, response);
+    try {
+      const response = await api.fetch(workerUrl, {
+        method,
+        headers: new Headers(headers as Record<string, string>),
+        body: body ?? undefined,
+      });
+      return proxyResponse(event, response);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; statusMessage?: string; message?: string };
+      throw createError({
+        statusCode: e.statusCode ?? 502,
+        statusMessage: e.statusMessage ?? 'Bad Gateway',
+        message: e.message ?? 'API unavailable',
+      });
+    }
   }
 
   // Local dev: no binding — proxy to the configured upstream (e.g. http://localhost:8787)

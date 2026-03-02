@@ -132,9 +132,13 @@ agentsRoute.delete('/:id', async (c) => {
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
   if (existing.status === 'running' || existing.status === 'paused') {
-    const doId = c.env.TRADING_AGENT.idFromName(id);
-    const stub = c.env.TRADING_AGENT.get(doId);
-    await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
+    try {
+      const doId = c.env.TRADING_AGENT.idFromName(id);
+      const stub = c.env.TRADING_AGENT.get(doId);
+      await stub.fetch(new Request('http://do/stop', { method: 'POST' }));
+    } catch (err) {
+      console.error('[agents route] Failed to stop TRADING_AGENT DO before delete', err);
+    }
     await db.update(agents).set({ status: 'stopped', updatedAt: nowIso() }).where(eq(agents.id, id));
   }
 
