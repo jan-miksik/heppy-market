@@ -211,6 +211,14 @@ export class PaperEngine {
     return stoppedOut;
   }
 
+  /** Effective (slippage-adjusted) exit price if we closed now at `marketPrice`. */
+  private effectiveExitPrice(position: Position, marketPrice: number): number {
+    // Apply slippage on exit (inverse of entry)
+    return position.side === 'buy'
+      ? marketPrice * (1 - position.slippageSimulated)
+      : marketPrice * (1 + position.slippageSimulated);
+  }
+
   /** Check if a position should be stopped out */
   checkStopLoss(
     position: Position,
@@ -218,14 +226,15 @@ export class PaperEngine {
     stopLossPct: number
   ): boolean {
     const threshold = stopLossPct / 100;
+    const effectiveExit = this.effectiveExitPrice(position, currentPrice);
     if (position.side === 'buy') {
       const loss =
-        (position.effectiveEntryPrice - currentPrice) /
+        (position.effectiveEntryPrice - effectiveExit) /
         position.effectiveEntryPrice;
       return loss >= threshold;
     } else {
       const loss =
-        (currentPrice - position.effectiveEntryPrice) /
+        (effectiveExit - position.effectiveEntryPrice) /
         position.effectiveEntryPrice;
       return loss >= threshold;
     }
@@ -238,14 +247,15 @@ export class PaperEngine {
     takeProfitPct: number
   ): boolean {
     const threshold = takeProfitPct / 100;
+    const effectiveExit = this.effectiveExitPrice(position, currentPrice);
     if (position.side === 'buy') {
       const gain =
-        (currentPrice - position.effectiveEntryPrice) /
+        (effectiveExit - position.effectiveEntryPrice) /
         position.effectiveEntryPrice;
       return gain >= threshold;
     } else {
       const gain =
-        (position.effectiveEntryPrice - currentPrice) /
+        (position.effectiveEntryPrice - effectiveExit) /
         position.effectiveEntryPrice;
       return gain >= threshold;
     }

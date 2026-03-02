@@ -50,7 +50,8 @@ describe('Phase 1: Utilities', () => {
 });
 
 describe('Phase 1: Agent Config Validation', async () => {
-  const { AgentConfigSchema } = await import('/workspace/packages/shared/src/validation.ts');
+  // Import via relative path so tests work outside Docker/workspace mounts.
+  const { AgentConfigSchema } = await import('../../packages/shared/src/validation.ts');
 
   it('validates default config', () => {
     const result = AgentConfigSchema.safeParse({

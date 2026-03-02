@@ -187,7 +187,9 @@ function onLogoError(ev: Event, urls: string[]) {
   const el = ev.target as HTMLImageElement;
   const i = urls.findIndex((u) => el.src === u || el.src.startsWith(u));
   if (i >= 0 && i < urls.length - 1) {
-    el.src = urls[i + 1];
+    const next = urls[i + 1];
+    if (next) el.src = next;
+    else el.style.display = 'none';
   } else {
     el.style.display = 'none';
   }

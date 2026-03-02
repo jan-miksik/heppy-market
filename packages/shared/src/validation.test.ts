@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ManagerConfigSchema, CreateManagerRequestSchema } from './validation.js';
+import { filterSupportedBasePairs } from './pairs.js';
 
 describe('ManagerConfigSchema', () => {
   it('accepts valid config', () => {
@@ -49,5 +50,19 @@ describe('CreateManagerRequestSchema', () => {
       expect(result.data.name).toBe('My Manager');
       expect(result.data.temperature).toBe(0.7);
     }
+  });
+});
+
+describe('filterSupportedBasePairs', () => {
+  it('filters to allowlist, keeps order, and de-dupes', () => {
+    expect(
+      filterSupportedBasePairs([
+        'WETH/USDC',
+        'PEPE/USD',
+        'WETH/USDC',
+        'SOL/ETH',
+        'AERO/USDC',
+      ])
+    ).toEqual(['WETH/USDC', 'AERO/USDC']);
   });
 });

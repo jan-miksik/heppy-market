@@ -16,7 +16,7 @@ import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { generateId, nowIso, autonomyLevelToInt } from '../lib/utils.js';
 import { normalizePairsForDex } from '../lib/pairs.js';
 import type { ManagerConfig } from '@dex-agents/shared';
-import { getAgentPersonaTemplate, getDefaultAgentPersona, AGENT_PROFILES } from '@dex-agents/shared';
+import { filterSupportedBasePairs, SUPPORTED_BASE_PAIRS, getAgentPersonaTemplate, getDefaultAgentPersona, AGENT_PROFILES } from '@dex-agents/shared';
 
 export type ManagerAction = 'create_agent' | 'start_agent' | 'pause_agent' | 'modify_agent' | 'terminate_agent' | 'hold';
 
@@ -230,6 +230,10 @@ ${memorySummary}
 ## Risk Limits
 ${riskSummary}
 ${behaviorSection ? '\n' + behaviorSection : ''}
+## Allowed Trading Pairs
+When creating or modifying agents, you MUST choose pairs only from this allowlist:
+${SUPPORTED_BASE_PAIRS.map((p: string) => `- "${p}"`).join('\n')}
+
 ## Model Cost Constraints
 You must use only the following free OpenRouter models when creating or modifying agents:
 - "nvidia/nemotron-3-nano-30b-a3b:free"
@@ -339,7 +343,15 @@ export async function executeManagerAction(
         patch.llmModel = normaliseAgentModel(patch.llmModel);
       }
       if (patch.pairs != null && Array.isArray(patch.pairs)) {
-        patch.pairs = normalizePairsForDex(patch.pairs as string[]);
+        const normalized = normalizePairsForDex(patch.pairs as string[]);
+        const supported = filterSupportedBasePairs(normalized);
+        // Never allow the manager to set an empty/unsupported pair list.
+        // If the LLM suggested unsupported pairs only, keep existing pairs unchanged.
+        if (supported.length > 0) {
+          patch.pairs = supported;
+        } else {
+          delete (patch as any).pairs;
+        }
       }
       const mergedConfig = { ...existingConfig, ...patch };
       const updates: Partial<typeof agents.$inferInsert> = {
@@ -375,12 +387,14 @@ export async function executeManagerAction(
           ? getAgentPersonaTemplate(profileId, agentName)
           : getDefaultAgentPersona(agentName);
       const autonomyLevelStr = parseAutonomyLevel(params.autonomyLevel);
+      const normalizedPairs = normalizePairsForDex((params.pairs as string[] | undefined) ?? ['WETH/USDC']);
+      const supportedPairs = filterSupportedBasePairs(normalizedPairs);
       const config = {
         name: agentName,
         autonomyLevel: autonomyLevelStr,
         llmModel,
         temperature: params.temperature ?? 0.7,
-        pairs: normalizePairsForDex((params.pairs as string[] | undefined) ?? ['WETH/USDC']),
+        pairs: supportedPairs.length > 0 ? supportedPairs : ['WETH/USDC'],
         analysisInterval,
         strategies: params.strategies ?? ['combined'],
         paperBalance,

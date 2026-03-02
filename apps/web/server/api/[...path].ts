@@ -42,7 +42,9 @@ export default defineEventHandler(async (event) => {
 
   const method = event.method;
   const headers = getRequestHeaders(event);
-  const body = method !== 'GET' && method !== 'HEAD' ? await readRawBody(event) : undefined;
+  // Only parse body for methods that are expected to carry one.
+  // On Cloudflare Pages, awaiting body parsing for DELETE can hang for empty/chunked requests.
+  const body = ['POST', 'PUT', 'PATCH'].includes(method) ? await readRawBody(event) : undefined;
 
   if (api) {
     const workerUrl = `https://internal${pathname}${query}`;
