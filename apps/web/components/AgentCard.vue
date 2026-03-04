@@ -31,7 +31,7 @@ const personaEmoji = computed(() => {
       <div>
         <div class="agent-name"><span class="agent-persona-emoji">{{ personaEmoji }}</span> {{ agent.name }}</div>
         <div class="agent-meta">
-          {{ agent.autonomyLevel }} · {{ agent.config.analysisInterval }} interval
+          {{ agent.autonomyLevel }} · {{ formatInterval(agent.config.analysisInterval) }} interval
         </div>
       </div>
       <span

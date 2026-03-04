@@ -100,10 +100,28 @@ export async function runAgentLoop(
 
   let config: ReturnType<typeof AgentConfigSchema.parse>;
   try {
-    config = AgentConfigSchema.parse(JSON.parse(agentRow.config));
+    // Backfill `name` from the DB column — older configs may not have it in the JSON blob
+    const rawConfig = { name: agentRow.name, ...JSON.parse(agentRow.config) };
+
+    // Migrate legacy analysisInterval stored as seconds string (e.g. "300" → "5m")
+    const intervalMap: Record<string, string> = {
+      '60': '1m', '300': '5m', '900': '15m', '3600': '1h', '14400': '4h', '86400': '1d',
+    };
+    if (typeof rawConfig.analysisInterval === 'string' && intervalMap[rawConfig.analysisInterval]) {
+      rawConfig.analysisInterval = intervalMap[rawConfig.analysisInterval];
+    }
+
+    // Migrate legacy strategy values not in the current enum → "combined"
+    const validStrategies = new Set(['ema_crossover', 'rsi_oversold', 'macd_signal', 'bollinger_bounce', 'volume_breakout', 'llm_sentiment', 'combined']);
+    if (Array.isArray(rawConfig.strategies)) {
+      rawConfig.strategies = rawConfig.strategies.map((s: string) => validStrategies.has(s) ? s : 'combined');
+      if (rawConfig.strategies.length === 0) rawConfig.strategies = ['combined'];
+    }
+
+    config = AgentConfigSchema.parse(rawConfig);
   } catch (configErr) {
     console.error(`[agent-loop] ${agentId}: Invalid agent config in DB:`, configErr);
-    return; // Skip this tick rather than crash with a confusing error
+    throw configErr; // Bubble up so the DO handler returns a 500 visible to the user
   }
 
   // Use DB column as source of truth for model (avoids stale/missing config.llmModel)

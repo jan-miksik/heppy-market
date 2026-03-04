@@ -25,7 +25,11 @@
       "mcp__ide__getDiagnostics",
       "Bash(git checkout:*)",
       "Bash(npm run:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(node:*)",
+      "Bash(npx vitest:*)"
     ]
   }
 }

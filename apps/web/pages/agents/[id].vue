@@ -489,7 +489,7 @@ function formatLatency(ms: number): string {
             <span class="badge" :class="`badge-${agent.status}`">{{ agent.status }}</span>
           </div>
           <p class="page-subtitle">
-            {{ agent.autonomyLevel }} · {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ agent.config.analysisInterval }} interval · temp {{ (agent.config.temperature ?? 0.7).toFixed(1) }}
+            {{ agent.autonomyLevel }} · {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ formatInterval(agent.config.analysisInterval) }} interval · temp {{ (agent.config.temperature ?? 0.7).toFixed(1) }}
           </p>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
