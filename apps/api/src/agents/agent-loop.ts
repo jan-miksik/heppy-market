@@ -81,6 +81,20 @@ export async function runAgentLoop(
     return;
   }
 
+  // --- Drain any pending trade from a previous failed D1 write ---
+  const pendingTrade = await ctx.storage.get<Parameters<typeof persistTrade>[1]>('pendingTrade');
+  if (pendingTrade) {
+    try {
+      await persistTrade(db, pendingTrade);
+      await ctx.storage.delete('pendingTrade');
+      console.log(`[agent-loop] ${agentId}: Drained pending trade ${pendingTrade.id} to D1`);
+    } catch (drainErr) {
+      console.warn(`[agent-loop] ${agentId}: Failed to drain pending trade ${pendingTrade.id}:`, drainErr);
+      // Leave pendingTrade in storage — will retry next tick
+    }
+  }
+  // --- End drain ---
+
   const config = JSON.parse(agentRow.config) as {
     pairs: string[];
     dexes: string[];
@@ -136,24 +150,36 @@ export async function runAgentLoop(
     if (currentPrice === 0) continue;
 
     if (engine.checkStopLoss(position, currentPrice, config.stopLossPct)) {
-      const closed = engine.stopOutPosition(position.id, currentPrice);
-      await persistTrade(db, closed);
-      await ctx.storage.put('lastStopOutAt', Date.now());
-      console.log(
-        `[agent-loop] ${agentId}: Stop loss triggered for ${position.pair} at $${currentPrice}`
-      );
+      try {
+        const closed = engine.stopOutPosition(position.id, currentPrice);
+        await ctx.storage.put('pendingTrade', closed);
+        await persistTrade(db, closed);
+        await ctx.storage.delete('pendingTrade');
+        await ctx.storage.put('lastStopOutAt', Date.now());
+        console.log(
+          `[agent-loop] ${agentId}: Stop loss triggered for ${position.pair} at $${currentPrice}`
+        );
+      } catch (err) {
+        console.warn(`[agent-loop] ${agentId}: Failed to persist stop-loss for ${position.pair}:`, err);
+      }
       continue;
     }
 
     if (engine.checkTakeProfit(position, currentPrice, config.takeProfitPct)) {
-      const closed = engine.closePosition(position.id, {
-        price: currentPrice,
-        reason: 'Take profit triggered',
-      });
-      await persistTrade(db, closed);
-      console.log(
-        `[agent-loop] ${agentId}: Take profit triggered for ${position.pair} at $${currentPrice}`
-      );
+      try {
+        const closed = engine.closePosition(position.id, {
+          price: currentPrice,
+          reason: 'Take profit triggered',
+        });
+        await ctx.storage.put('pendingTrade', closed);
+        await persistTrade(db, closed);
+        await ctx.storage.delete('pendingTrade');
+        console.log(
+          `[agent-loop] ${agentId}: Take profit triggered for ${position.pair} at $${currentPrice}`
+        );
+      } catch (err) {
+        console.warn(`[agent-loop] ${agentId}: Failed to persist take-profit for ${position.pair}:`, err);
+      }
     }
   }
 
@@ -470,8 +496,10 @@ export async function runAgentLoop(
         strategyUsed: config.strategies[0] ?? 'combined',
         slippagePct: config.slippageSimulation,
       });
+      await ctx.storage.put('pendingTrade', position);
 
       await persistTrade(db, position);
+      await ctx.storage.delete('pendingTrade');
       console.log(
         `[agent-loop] ${agentId}: Opened ${decision.action} ${targetPairName} $${amountUsd.toFixed(2)} @ $${pairData.priceUsd}`
       );
@@ -488,7 +516,9 @@ export async function runAgentLoop(
           price: pairData.priceUsd,
           confidence: decision.confidence,
         });
+        await ctx.storage.put('pendingTrade', closed);
         await persistTrade(db, closed);
+        await ctx.storage.delete('pendingTrade');
         console.log(
           `[agent-loop] ${agentId}: Closed ${position.pair} PnL=${closed.pnlPct?.toFixed(2)}%`
         );
