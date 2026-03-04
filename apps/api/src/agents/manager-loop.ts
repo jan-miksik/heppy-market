@@ -18,6 +18,8 @@ import { normalizePairsForDex } from '../lib/pairs.js';
 import type { ManagerConfig } from '@dex-agents/shared';
 import { filterSupportedBasePairs, SUPPORTED_BASE_PAIRS, getAgentPersonaTemplate, getDefaultAgentPersona, AGENT_PROFILES } from '@dex-agents/shared';
 
+const MANAGER_LLM_TIMEOUT_MS = 60_000; // 60s — generous for manager's larger prompt
+
 export type ManagerAction = 'create_agent' | 'start_agent' | 'pause_agent' | 'modify_agent' | 'terminate_agent' | 'hold';
 
 export interface ManagerDecision {
@@ -574,12 +576,21 @@ export async function runManagerLoop(
   } else {
     try {
       const openrouter = createOpenRouter({ apiKey: env.OPENROUTER_API_KEY });
-      const result = await generateText({
-        model: openrouter(config.llmModel),
-        messages: [{ role: 'user', content: prompt }],
-        temperature: config.temperature,
-        maxOutputTokens: 2048,
-      });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Manager LLM timed out after ${MANAGER_LLM_TIMEOUT_MS / 1000}s`)),
+          MANAGER_LLM_TIMEOUT_MS
+        )
+      );
+      const result = await Promise.race([
+        generateText({
+          model: openrouter(config.llmModel),
+          messages: [{ role: 'user', content: prompt }],
+          temperature: config.temperature,
+          maxOutputTokens: 2048,
+        }),
+        timeoutPromise,
+      ]);
       rawResponse = result.text;
       console.log('[manager-loop] === RAW LLM RESPONSE ===');
       console.log(rawResponse);
