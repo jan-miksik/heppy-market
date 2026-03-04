@@ -18,6 +18,7 @@ import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
 import { normalizePairForDex } from '../lib/pairs.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
+import { AgentConfigSchema } from '@dex-agents/shared';
 
 /** Build a search query from a pair name.
  *  "WETH/USDC" → "WETH USDC"
@@ -81,26 +82,13 @@ export async function runAgentLoop(
     return;
   }
 
-  const config = JSON.parse(agentRow.config) as {
-    pairs: string[];
-    dexes: string[];
-    llmModel?: string;
-    llmFallback?: string;
-    allowFallback?: boolean;
-    autonomyLevel: string;
-    maxPositionSizePct: number;
-    maxOpenPositions: number;
-    stopLossPct: number;
-    takeProfitPct: number;
-    maxDailyLossPct: number;
-    cooldownAfterLossMinutes: number;
-    maxLlmCallsPerHour: number;
-    strategies: string[];
-    paperBalance: number;
-    slippageSimulation: number;
-    temperature?: number;
-    behavior?: Partial<AgentBehaviorConfig>;
-  };
+  let config: ReturnType<typeof AgentConfigSchema.parse>;
+  try {
+    config = AgentConfigSchema.parse(JSON.parse(agentRow.config));
+  } catch (configErr) {
+    console.error(`[agent-loop] ${agentId}: Invalid agent config in DB:`, configErr);
+    return; // Skip this tick rather than crash with a confusing error
+  }
 
   // Use DB column as source of truth for model (avoids stale/missing config.llmModel)
   const effectiveLlmModel = agentRow.llmModel?.trim() || config.llmModel || 'nvidia/nemotron-3-nano-30b-a3b:free';
