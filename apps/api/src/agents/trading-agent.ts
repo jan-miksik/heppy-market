@@ -23,6 +23,16 @@ function intervalToMs(interval: string): number {
 }
 
 /**
+ * Apply ±15% random jitter to a millisecond interval.
+ * Prevents thundering herd when many agents share the same analysis interval.
+ */
+function addJitter(ms: number): number {
+  const jitterFraction = 0.15;
+  const jitter = ms * jitterFraction * (Math.random() * 2 - 1); // -15% to +15%
+  return Math.round(ms + jitter);
+}
+
+/**
  * TradingAgentDO — Durable Object managing a single trading agent instance.
  *
  * Persistent state (via ctx.storage):
@@ -267,7 +277,7 @@ export class TradingAgentDO extends DurableObject<Env> {
         const currentStatus = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
         if (currentStatus === 'running') {
           const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
-          const nextAlarmAt = Date.now() + intervalToMs(interval);
+          const nextAlarmAt = Date.now() + addJitter(intervalToMs(interval));
           await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
           await this.ctx.storage.setAlarm(nextAlarmAt);
         }
@@ -283,7 +293,7 @@ export class TradingAgentDO extends DurableObject<Env> {
       const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
       if (status === 'running') {
         const interval = (await this.ctx.storage.get<string>('analysisInterval')) ?? '1h';
-        const nextAlarmAt = Date.now() + intervalToMs(interval);
+        const nextAlarmAt = Date.now() + addJitter(intervalToMs(interval));
         await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
         await this.ctx.storage.setAlarm(nextAlarmAt);
       }
