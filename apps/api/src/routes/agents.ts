@@ -95,6 +95,15 @@ agentsRoute.patch('/:id', async (c) => {
   const existing = await requireOwnership(db, id, walletAddress);
   if (!existing) return c.json({ error: 'Agent not found' }, 404);
 
+  // Optional optimistic lock: client passes the updatedAt it last saw
+  const clientVersion = typeof (body as any)._version === 'string' ? (body as any)._version : null;
+  if (clientVersion && existing.updatedAt !== clientVersion) {
+    return c.json(
+      { error: 'Conflict: agent was modified by another request. Reload and retry.', code: 'VERSION_CONFLICT' },
+      409
+    );
+  }
+
   const existingConfig = JSON.parse(existing.config);
   const mergedConfig = {
     ...existingConfig,
