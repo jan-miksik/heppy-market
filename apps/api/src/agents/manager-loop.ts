@@ -6,7 +6,7 @@
  *       execute actions → log to D1 → update memory
  */
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { Env } from '../types/env.js';
@@ -466,48 +466,71 @@ export async function runManagerLoop(
   // 2. Load all managed agents
   const managedRows = await db.select().from(agents).where(eq(agents.managerId, managerId));
 
-  // 3. Build agent snapshots with perf + recent trades
+  // 3. Build agent snapshots — batch queries instead of N+1
   const agentSnapshots: ManagedAgentSnapshot[] = [];
-  for (const row of managedRows) {
-    const agentConfig = JSON.parse(row.config) as ManagedAgentSnapshot['config'];
 
-    const [perfRow] = await db
+  if (managedRows.length > 0) {
+    const agentIds = managedRows.map((r) => r.id);
+
+    // Batch: fetch all snapshots for managed agents, sorted newest-first
+    const allSnapshots = await db
       .select()
       .from(performanceSnapshots)
-      .where(eq(performanceSnapshots.agentId, row.id))
-      .orderBy(desc(performanceSnapshots.snapshotAt))
-      .limit(1);
+      .where(inArray(performanceSnapshots.agentId, agentIds))
+      .orderBy(desc(performanceSnapshots.snapshotAt));
 
-    const recentTrades = await db
-      .select({ pair: trades.pair, side: trades.side, pnlPct: trades.pnlPct, openedAt: trades.openedAt, closedAt: trades.closedAt })
+    // Keep only the most recent snapshot per agent
+    const latestSnapshotByAgent = new Map<string, typeof allSnapshots[number]>();
+    for (const snap of allSnapshots) {
+      if (!latestSnapshotByAgent.has(snap.agentId)) {
+        latestSnapshotByAgent.set(snap.agentId, snap);
+      }
+    }
+
+    // Batch: fetch recent trades for all managed agents, sorted newest-first
+    const allRecentTrades = await db
+      .select({ agentId: trades.agentId, pair: trades.pair, side: trades.side, pnlPct: trades.pnlPct, openedAt: trades.openedAt, closedAt: trades.closedAt })
       .from(trades)
-      .where(eq(trades.agentId, row.id))
-      .orderBy(desc(trades.openedAt))
-      .limit(10);
+      .where(inArray(trades.agentId, agentIds))
+      .orderBy(desc(trades.openedAt));
 
-    agentSnapshots.push({
-      id: row.id,
-      name: row.name,
-      status: row.status,
-      llmModel: row.llmModel,
-      config: {
-        pairs: agentConfig.pairs ?? [],
-        strategies: agentConfig.strategies ?? [],
-        maxPositionSizePct: agentConfig.maxPositionSizePct ?? 5,
-        analysisInterval: agentConfig.analysisInterval ?? '1h',
-        paperBalance: agentConfig.paperBalance ?? 10000,
-        temperature: agentConfig.temperature ?? 0.7,
-      },
-      performance: {
-        balance: perfRow?.balance ?? agentConfig.paperBalance ?? 10000,
-        totalPnlPct: perfRow?.totalPnlPct ?? 0,
-        winRate: perfRow?.winRate ?? 0,
-        totalTrades: perfRow?.totalTrades ?? 0,
-        sharpeRatio: perfRow?.sharpeRatio ?? null,
-        maxDrawdown: perfRow?.maxDrawdown ?? null,
-      },
-      recentTrades,
-    });
+    // Group by agentId, keep top 10 per agent
+    const tradesByAgent = new Map<string, typeof allRecentTrades>();
+    for (const trade of allRecentTrades) {
+      const existing = tradesByAgent.get(trade.agentId) ?? [];
+      if (existing.length < 10) existing.push(trade);
+      tradesByAgent.set(trade.agentId, existing);
+    }
+
+    for (const row of managedRows) {
+      const agentConfig = JSON.parse(row.config) as ManagedAgentSnapshot['config'];
+      const perfRow = latestSnapshotByAgent.get(row.id);
+      const recentTrades = tradesByAgent.get(row.id) ?? [];
+
+      agentSnapshots.push({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        llmModel: row.llmModel,
+        config: {
+          pairs: agentConfig.pairs ?? [],
+          strategies: agentConfig.strategies ?? [],
+          maxPositionSizePct: agentConfig.maxPositionSizePct ?? 5,
+          analysisInterval: agentConfig.analysisInterval ?? '1h',
+          paperBalance: agentConfig.paperBalance ?? 10000,
+          temperature: agentConfig.temperature ?? 0.7,
+        },
+        performance: {
+          balance: perfRow?.balance ?? agentConfig.paperBalance ?? 10000,
+          totalPnlPct: perfRow?.totalPnlPct ?? 0,
+          winRate: perfRow?.winRate ?? 0,
+          totalTrades: perfRow?.totalTrades ?? 0,
+          sharpeRatio: perfRow?.sharpeRatio ?? null,
+          maxDrawdown: perfRow?.maxDrawdown ?? null,
+        },
+        recentTrades,
+      });
+    }
   }
 
   // 4. Gather all unique pairs across managed agents
