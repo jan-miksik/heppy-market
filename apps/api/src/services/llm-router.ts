@@ -80,6 +80,8 @@ function extractJson(text: string): string {
 }
 
 const DEFAULT_LLM_TIMEOUT_MS = 90_000;
+/** Shorter timeout used for emergency fallback models (lower quality bar, faster fail) */
+const EMERGENCY_MODEL_TIMEOUT_MS = 30_000;
 
 /**
  * Get a structured trade decision from the LLM.
@@ -117,15 +119,18 @@ export async function getTradeDecision(
     'google/gemma-3n-e2b-it:free',
   ];
 
-  const modelsToTry: string[] = [config.model];
+  const primaryModels: string[] = [config.model];
   if (config.allowFallback && config.fallbackModel && config.fallbackModel !== config.model) {
-    modelsToTry.push(config.fallbackModel);
+    primaryModels.push(config.fallbackModel);
   }
+  const emergencyModels: string[] = [];
   if (config.allowFallback) {
     for (const m of EMERGENCY_FREE_MODELS) {
-      if (!modelsToTry.includes(m)) modelsToTry.push(m);
+      if (!primaryModels.includes(m)) emergencyModels.push(m);
     }
   }
+  const modelsToTry = [...primaryModels, ...emergencyModels];
+  const primaryModelSet = new Set(primaryModels);
 
   let lastError: unknown;
 
@@ -142,10 +147,11 @@ export async function getTradeDecision(
 
   for (const modelId of modelsToTry) {
     try {
+      const effectiveTimeout = primaryModelSet.has(modelId) ? timeoutMs : EMERGENCY_MODEL_TIMEOUT_MS;
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Model request timed out after ${timeoutMs / 1000}s`)),
-          timeoutMs
+          () => reject(new Error(`Model request timed out after ${effectiveTimeout / 1000}s`)),
+          effectiveTimeout
         )
       );
 
