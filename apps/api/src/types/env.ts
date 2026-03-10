@@ -11,4 +11,6 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   /** Optional comma-separated origins for CORS (e.g. production Pages URL). Merged with default allowlist. */
   CORS_ORIGINS?: string;
+  /** Optional Base RPC URL for ERC-1271/ERC-6492 smart account signature verification. Falls back to public Base RPC. */
+  BASE_RPC_URL?: string;
 }

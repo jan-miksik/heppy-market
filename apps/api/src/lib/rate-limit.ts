@@ -1,6 +1,9 @@
+import type { Context, MiddlewareHandler } from 'hono';
+
 /**
- * Simple rate limiter backed by Cloudflare KV.
- * Uses a sliding window (token-bucket approximation) stored as a JSON counter.
+ * Simple fixed-window rate limiter backed by Cloudflare KV.
+ * NOTE: Cloudflare KV operations are not atomic, so this provides
+ *       best-effort limiting under concurrency, not a strict guarantee.
  */
 
 export interface RateLimitConfig {
@@ -50,10 +53,17 @@ export async function checkRateLimit(
  * Rate limit middleware for Hono routes.
  * Returns a 429 response if the limit is exceeded.
  */
-export function createRateLimitMiddleware(config: Omit<RateLimitConfig, 'key'>) {
-  return async (c: { env: { CACHE: KVNamespace }; req: { header: (h: string) => string | undefined } }, next: () => Promise<void>) => {
-    // Use IP or a global key
-    const ip = c.req.header('CF-Connecting-IP') ?? 'global';
+export function createRateLimitMiddleware<E extends { Bindings: { CACHE: KVNamespace } }>(
+  config: Omit<RateLimitConfig, 'key'>
+): MiddlewareHandler<E> {
+  return (async (c: Context<E>, next) => {
+    // Derive a best-effort client identifier:
+    // - Prefer Cloudflare's CF-Connecting-IP header in production (not user-controllable)
+    // - Fall back to X-Forwarded-For for local/dev proxies
+    const forwardedFor = c.req.header('X-Forwarded-For');
+    const firstForwarded = forwardedFor?.split(',')[0]?.trim();
+    const ip = c.req.header('CF-Connecting-IP') ?? firstForwarded ?? 'global';
+
     const result = await checkRateLimit(c.env.CACHE, {
       ...config,
       key: `ip:${ip}`,
@@ -78,6 +88,6 @@ export function createRateLimitMiddleware(config: Omit<RateLimitConfig, 'key'>) 
     (c as any).header?.('X-RateLimit-Remaining', String(result.remaining));
     (c as any).header?.('X-RateLimit-Reset', String(result.resetAt));
 
-    await next();
-  };
+    return next();
+  }) as MiddlewareHandler<E>;
 }

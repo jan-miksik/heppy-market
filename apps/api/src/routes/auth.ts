@@ -59,6 +59,7 @@ authRoute.post('/verify', async (c) => {
       signature: body.signature,
       db: c.env.DB,
       cache: c.env.CACHE,
+      rpcUrl: c.env.BASE_RPC_URL,
       email: body.email,
       displayName: body.displayName,
       authProvider: body.authProvider,

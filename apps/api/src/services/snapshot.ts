@@ -63,49 +63,58 @@ export function computeMetrics(
 export async function snapshotAllAgents(env: Env): Promise<void> {
   const db = drizzle(env.DB);
 
-  const allAgents = await db.select().from(agents);
-  if (allAgents.length === 0) return;
+  const PAGE_SIZE = 50;
+  let offset = 0;
+  let totalProcessed = 0;
 
-  for (const agent of allAgents) {
-    try {
-      const config = JSON.parse(agent.config) as { paperBalance: number };
-      const agentTrades = await db
-        .select({
-          pnlPct: trades.pnlPct,
-          pnlUsd: trades.pnlUsd,
-          status: trades.status,
-        })
-        .from(trades)
-        .where(eq(trades.agentId, agent.id));
+  for (;;) {
+    const batch = await db.select().from(agents).limit(PAGE_SIZE).offset(offset);
+    if (batch.length === 0) break;
 
-      const closed = agentTrades.filter(
-        (t) => t.status === 'closed' || t.status === 'stopped_out'
-      );
-      const openPnl = agentTrades
-        .filter((t) => t.status === 'open')
-        .reduce((acc, t) => acc + (t.pnlUsd ?? 0), 0);
+    for (const agent of batch) {
+      try {
+        const config = JSON.parse(agent.config) as { paperBalance: number };
+        const agentTrades = await db
+          .select({
+            pnlPct: trades.pnlPct,
+            pnlUsd: trades.pnlUsd,
+            status: trades.status,
+          })
+          .from(trades)
+          .where(eq(trades.agentId, agent.id));
 
-      // Approximate current balance from initial + closed P&L + open P&L
-      const closedPnl = closed.reduce((acc, t) => acc + (t.pnlUsd ?? 0), 0);
-      const currentBalance = config.paperBalance + closedPnl + openPnl;
+        const closed = agentTrades.filter(
+          (t) => t.status === 'closed' || t.status === 'stopped_out'
+        );
+        const openPnl = agentTrades
+          .filter((t) => t.status === 'open')
+          .reduce((acc, t) => acc + (t.pnlUsd ?? 0), 0);
 
-      const metrics = computeMetrics(closed, config.paperBalance, currentBalance);
+        // Approximate current balance from initial + closed P&L + open P&L
+        const closedPnl = closed.reduce((acc, t) => acc + (t.pnlUsd ?? 0), 0);
+        const currentBalance = config.paperBalance + closedPnl + openPnl;
 
-      await db.insert(performanceSnapshots).values({
-        id: generateId('snap'),
-        agentId: agent.id,
-        balance: metrics.balance,
-        totalPnlPct: metrics.totalPnlPct,
-        winRate: metrics.winRate,
-        totalTrades: metrics.totalTrades,
-        sharpeRatio: metrics.sharpeRatio,
-        maxDrawdown: metrics.maxDrawdown,
-        snapshotAt: nowIso(),
-      });
-    } catch (err) {
-      console.error(`[snapshot] Failed for agent ${agent.id}:`, err);
+        const metrics = computeMetrics(closed, config.paperBalance, currentBalance);
+
+        await db.insert(performanceSnapshots).values({
+          id: generateId('snap'),
+          agentId: agent.id,
+          balance: metrics.balance,
+          totalPnlPct: metrics.totalPnlPct,
+          winRate: metrics.winRate,
+          totalTrades: metrics.totalTrades,
+          sharpeRatio: metrics.sharpeRatio,
+          maxDrawdown: metrics.maxDrawdown,
+          snapshotAt: nowIso(),
+        });
+      } catch (err) {
+        console.error(`[snapshot] Failed for agent ${agent.id}:`, err);
+      }
     }
+
+    totalProcessed += batch.length;
+    offset += PAGE_SIZE;
   }
 
-  console.log(`[snapshot] Saved snapshots for ${allAgents.length} agents`);
+  console.log(`[snapshot] Saved snapshots for ${totalProcessed} agents`);
 }

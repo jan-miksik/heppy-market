@@ -136,14 +136,14 @@ export async function getTradeDecision(
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
-  console.log('[llm-router] === FULL PROMPT SENT TO LLM ===');
-  console.log('[llm-router] Model(s) to try:', modelsToTry);
-  console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
-  console.log('[llm-router] --- SYSTEM PROMPT ---');
-  console.log(systemPrompt);
-  console.log('[llm-router] --- USER PROMPT ---');
-  console.log(userPrompt);
-  console.log('[llm-router] === END PROMPT ===');
+  // Debug flag for verbose prompt logging. By default this is disabled in
+  // production (NODE_ENV === 'production'). You can enable it in other
+  // environments by setting a global flag (e.g. via test harness).
+  const DEBUG_LLM_PROMPTS =
+    (typeof process !== 'undefined' &&
+      typeof process.env !== 'undefined' &&
+      process.env.NODE_ENV !== 'production') ||
+    (globalThis as any).HEPPY_LLM_DEBUG === true;
 
   for (const modelId of modelsToTry) {
     try {
@@ -166,10 +166,16 @@ export async function getTradeDecision(
         timeoutPromise,
       ]);
 
-      console.log('[llm-router] === RAW LLM RESPONSE ===');
-      console.log('[llm-router] Model used:', modelId);
-      console.log('[llm-router] Raw text:', result.text);
-      console.log('[llm-router] === END RESPONSE ===');
+      if (DEBUG_LLM_PROMPTS) {
+        console.log('[llm-router] === FULL PROMPT SENT TO LLM ===');
+        console.log('[llm-router] Model(s) to try:', modelsToTry);
+        console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
+        console.log('[llm-router] --- SYSTEM PROMPT ---');
+        console.log(systemPrompt);
+        console.log('[llm-router] --- USER PROMPT ---');
+        console.log(userPrompt);
+        console.log('[llm-router] === END PROMPT ===');
+      }
 
       const json = extractJson(result.text ?? '');
       if (!json.trim()) {

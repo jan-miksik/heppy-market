@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useAppKit } from '@reown/appkit/vue';
+import { useAccount } from '@wagmi/vue';
 
 // Feature flag — set to false to remove the beta badge sitewide
 const IS_BETA = true;
 
 const { user, isAuthenticated } = useAuth();
 const { open: openAppKit } = useAppKit();
+const { isConnected, address } = useAccount();
 
 useHead({
   htmlAttrs: { lang: 'en' },
@@ -50,7 +52,22 @@ function truncate(addr: string): string {
           </button>
         </template>
         <template v-else>
-          <NuxtLink to="/connect" class="btn btn-primary btn-sm">Connect</NuxtLink>
+          <button
+            type="button"
+            class="wallet-trigger"
+            @click="openAppKit(isConnected ? { view: 'Account' } : undefined)"
+          >
+            <span
+              class="wallet-dot"
+              :class="{ 'wallet-dot--disconnected': !isConnected }"
+            />
+            <span v-if="isConnected && address">
+              {{ truncate(address) }}
+            </span>
+            <span v-else>
+              Connect
+            </span>
+          </button>
         </template>
       </div>
     </nav>
@@ -153,6 +170,10 @@ function truncate(addr: string): string {
   border-radius: 50%;
   background: var(--success, #22c55e);
   flex-shrink: 0;
+}
+
+.wallet-dot--disconnected {
+  background: var(--text-dim);
 }
 
 .provider-badge {

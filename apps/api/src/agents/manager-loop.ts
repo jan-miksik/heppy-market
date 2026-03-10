@@ -205,16 +205,7 @@ export function buildManagerPrompt(ctx: {
 - Risk Tolerance: ${b.riskTolerance} | Management Style: ${b.managementStyle}
 - Creation Aggressiveness: ${b.creationAggressiveness}/100 | Performance Patience: ${b.performancePatience}/100
 - Diversification: ${b.diversificationPreference} | Rebalance Frequency: ${b.rebalanceFrequency}
-- Philosophy: ${b.philosophyBias}
-
-When creating agents, match your risk tolerance: ${
-    b.riskTolerance === 'aggressive'
-      ? 'Use bold, high-risk agents with larger positions (maxPositionSizePct 10-20), wider stops (stopLossPct 10-15), and higher take-profits (takeProfitPct 20-30). Set temperature 0.9-1.0 for creative decisions. Prefer personaMd styled after degen, momentum, or contrarian traders.'
-      : b.riskTolerance === 'conservative'
-      ? 'Use cautious agents with small positions (maxPositionSizePct 2-5), tight stops (stopLossPct 3-5), modest take-profits (takeProfitPct 5-10). Prefer personaMd styled after patient, data-driven traders.'
-      : 'Use balanced agents with moderate positions (maxPositionSizePct 5-10), reasonable stops (stopLossPct 5-8), and decent take-profits (takeProfitPct 10-15).'
-}`
-    : '';
+- Philosophy: ${b.philosophyBias}` : '';
 
   const personaSection = managerPersonaMd ? `## Your Persona\n${managerPersonaMd}\n` : '';
 

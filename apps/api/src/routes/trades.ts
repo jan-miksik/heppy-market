@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, inArray } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agents, trades } from '../db/schema.js';
@@ -21,7 +21,7 @@ async function requireAgentOwnership(
   return agent;
 }
 
-/** GET /api/trades — all trades across agents */
+/** GET /api/trades — trades scoped to the authenticated user's agents */
 tradesRoute.get('/', async (c) => {
   const query = validateQuery(
     c,
@@ -32,9 +32,27 @@ tradesRoute.get('/', async (c) => {
     })
   );
 
+  const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
-  let baseQuery = db.select().from(trades).$dynamic();
+  // Look up the caller's agents and scope trades to those IDs to avoid
+  // leaking other users' trade history in multi-tenant deployments.
+  const ownedAgents = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(eq(agents.ownerAddress, walletAddress));
+
+  if (ownedAgents.length === 0) {
+    return c.json({ trades: [], count: 0 });
+  }
+
+  const agentIds = ownedAgents.map((a) => a.id);
+
+  let baseQuery = db
+    .select()
+    .from(trades)
+    .where(inArray(trades.agentId, agentIds))
+    .$dynamic();
 
   if (query.status) {
     baseQuery = baseQuery.where(eq(trades.status, query.status));

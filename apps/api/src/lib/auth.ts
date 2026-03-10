@@ -2,7 +2,8 @@
  * Auth library — session management + SIWE verification + Hono middleware.
  * Sessions are stored in KV with a 7-day TTL (no JWT needed).
  */
-import { verifyMessage } from 'viem';
+import { createPublicClient, http } from 'viem';
+import { base, baseSepolia } from 'viem/chains';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { users } from '../db/schema.js';
@@ -122,6 +123,8 @@ export interface VerifySiweOptions {
   signature: string;
   db: D1Database;
   cache: KVNamespace;
+  /** RPC URL for on-chain ERC-1271/ERC-6492 (smart account) signature verification */
+  rpcUrl?: string;
   /** Optional profile fields from email/social logins */
   email?: string;
   displayName?: string;
@@ -152,15 +155,25 @@ export async function verifySiweAndCreateSession(
   const nonceRaw = await cache.get(`nonce:${parsed.nonce}`, 'text');
   if (!nonceRaw) throw new Error('Invalid or expired nonce');
 
-  // Verify EIP-191 signature using viem (works in CF Workers via WebCrypto)
+  // Use publicClient.verifyMessage() which handles EOA (ECDSA), deployed smart
+  // accounts (ERC-1271), and counterfactual smart accounts (ERC-6492).
+  // Standalone verifyMessage() only does ECDSA and will throw on Safe/AA wallets.
+  const chain = parsed.chainId === 84532 ? baseSepolia : base;
+  const rpcUrl = opts.rpcUrl ?? (parsed.chainId === 84532
+    ? 'https://sepolia.base.org'
+    : 'https://mainnet.base.org');
+
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+
   let isValid = false;
   try {
-    isValid = await verifyMessage({
+    isValid = await publicClient.verifyMessage({
       address: parsed.address as `0x${string}`,
       message,
       signature: signature as `0x${string}`,
     });
-  } catch {
+  } catch (err) {
+    console.error('[auth] verifyMessage error:', (err as Error)?.message);
     throw new Error('Signature verification failed');
   }
   if (!isValid) throw new Error('Invalid signature');

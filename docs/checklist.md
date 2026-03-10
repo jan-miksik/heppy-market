@@ -5,33 +5,21 @@ This is your most critical layer.
 ✅ Things To Check
 
  Is every state transition explicit?
-
  Is there a defined state machine for trade execution?
-
  Are all writes inside try/catch?
-
  Is restart safety guaranteed?
-
  Can duplicate alarms happen?
-
  Can two requests race inside same DO?
-
  Is any external call made before state is persisted?
-
  Is there idempotency key for execution?
 
 🧪 Practical Tasks
 
 Simulate DO crash mid execution (throw manually)
-
 Simulate duplicate alarm
-
 Simulate rapid start/stop spam
-
 Force timeout in LLM call
-
 Then inspect state consistency.
-
 If state can be corrupted → redesign.
 
 🧠 2. Alarm & Scheduling Hardening
@@ -41,13 +29,9 @@ You currently have potential thundering herd risk.
 ✅ Check
 
  Are alarms jittered?
-
  Is next alarm scheduled before or after execution?
-
  What happens if execution exceeds interval?
-
  Is alarm re-entrant safe?
-
  Can alarm fire twice due to retry?
 
 🧪 Exercise

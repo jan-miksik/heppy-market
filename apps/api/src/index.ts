@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import type { Env } from './types/env.js';
 import type { AuthVariables } from './lib/auth.js';
 import { createAuthMiddleware } from './lib/auth.js';
+import { createRateLimitMiddleware } from './lib/rate-limit.js';
 import healthRoute from './routes/health.js';
 import pairsRoute from './routes/pairs.js';
 import agentsRoute from './routes/agents.js';
@@ -19,7 +20,70 @@ import profilesRoute from './routes/profiles.js';
 export { TradingAgentDO } from './agents/trading-agent.js';
 export { AgentManagerDO } from './agents/agent-manager.js';
 
+function cronToMs(cron: string): number | null {
+  switch (cron) {
+    case '*/5 * * * *':
+      return 5 * 60_000;
+    case '*/15 * * * *':
+      return 15 * 60_000;
+    case '0 * * * *':
+      return 60 * 60_000;
+    case '0 */4 * * *':
+      return 4 * 60 * 60_000;
+    case '0 0 * * *':
+      return 24 * 60 * 60_000;
+    default:
+      return null;
+  }
+}
+
+async function shouldRunCron(cron: string, env: Env): Promise<boolean> {
+  const key = `cron:last:${cron}`;
+  const now = Date.now();
+
+  let lastRun = 0;
+  try {
+    const stored = await env.CACHE.get(key);
+    if (stored) {
+      const parsed = Number(stored);
+      if (!Number.isNaN(parsed)) lastRun = parsed;
+    }
+  } catch {
+    // If KV is unavailable for any reason, fall back to always running the cron.
+    return true;
+  }
+
+  const intervalMs = cronToMs(cron);
+  if (lastRun && intervalMs && now - lastRun < intervalMs * 0.8) {
+    console.log(
+      `[cron] Skipping duplicate run for ${cron}. lastRun=${new Date(
+        lastRun
+      ).toISOString()} now=${new Date(now).toISOString()}`
+    );
+    return false;
+  }
+
+  try {
+    await env.CACHE.put(key, String(now), { expirationTtl: 24 * 60 * 60 });
+  } catch {
+    // Non-fatal; cron can still proceed even if we fail to record the timestamp.
+  }
+
+  return true;
+}
+
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+
+// Global per-IP rate limiting for all API routes.
+// This is a fixed-window limiter backed by KV and is best-effort under high concurrency.
+app.use(
+  '/api/*',
+  createRateLimitMiddleware<{ Bindings: Env; Variables: AuthVariables }>({
+    // Allow up to 60 requests per IP per 60s window across all API endpoints.
+    limit: 60,
+    windowSecs: 60,
+  })
+);
 
 // Middleware — allow CORS from local dev and Cloudflare Pages; optional CORS_ORIGINS env for production
 const defaultOrigins = [
@@ -150,6 +214,10 @@ app.onError((err, c) => {
 const scheduled: ExportedHandlerScheduledHandler<Env> = async (event, env, ctx) => {
   const cron = event.cron;
   console.log(`[cron] Triggered: ${cron}`);
+
+  if (!(await shouldRunCron(cron, env))) {
+    return;
+  }
 
   if (cron === '0 * * * *') {
     ctx.waitUntil(snapshotAllAgents(env));
