@@ -7,7 +7,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc, sql } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
-import { agents, trades, agentDecisions } from '../db/schema.js';
+import { agents, trades, agentDecisions, users } from '../db/schema.js';
 import { createDexDataService, getPriceUsd } from '../services/dex-data.js';
 import type { DexPair } from '../services/dex-data.js';
 import { createGeckoTerminalService } from '../services/gecko-terminal.js';
@@ -16,6 +16,7 @@ import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
 import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
+import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
 import { AgentConfigSchema } from '@dex-agents/shared';
@@ -405,32 +406,96 @@ export async function runAgentLoop(
     .limit(10);
 
   // 6. Call LLM for trade decision
-  if (!env.OPENROUTER_API_KEY) {
-    console.error(`[agent-loop] ${agentId}: OPENROUTER_API_KEY is not set. Cannot call LLM. Add it to .dev.vars (local) or Cloudflare secrets (production).`);
-    await db.insert(agentDecisions).values({
-      id: generateId('dec'),
-      agentId,
-      decision: 'hold',
-      confidence: 0,
-      reasoning: 'OPENROUTER_API_KEY is not configured. Please set it in .dev.vars (local) or Cloudflare secrets (production) — get a free key at openrouter.ai',
-      llmModel: effectiveLlmModel,
-      llmLatencyMs: 0,
-      marketDataSnapshot: JSON.stringify(marketData),
-      createdAt: nowIso(),
-    });
-    return;
+  const isAnthropicModel = effectiveLlmModel.startsWith('claude-');
+  console.log(`[agent-loop] ${agentId}: LLM routing — model=${effectiveLlmModel} isAnthropic=${isAnthropicModel} hasAnthropicKey=${!!env.ANTHROPIC_API_KEY}`);
+
+  let llmApiKey: string | undefined;
+  let llmProvider: 'openrouter' | 'anthropic' = 'openrouter';
+
+  if (isAnthropicModel) {
+    if (!env.ANTHROPIC_API_KEY) {
+      console.error(`[agent-loop] ${agentId}: ANTHROPIC_API_KEY is not set. Cannot use Claude model.`);
+      await db.insert(agentDecisions).values({
+        id: generateId('dec'),
+        agentId,
+        decision: 'hold',
+        confidence: 0,
+        reasoning: 'ANTHROPIC_API_KEY is not configured. Add it to .dev.vars (local) or Cloudflare secrets (production).',
+        llmModel: effectiveLlmModel,
+        llmLatencyMs: 0,
+        marketDataSnapshot: JSON.stringify(marketData),
+        createdAt: nowIso(),
+      });
+      return;
+    }
+    // Only tester-role users may use Anthropic models
+    const ownerAddress = agentRow.ownerAddress?.toLowerCase();
+    if (ownerAddress) {
+      const [ownerUser] = await db.select({ role: users.role }).from(users).where(eq(users.walletAddress, ownerAddress));
+      if (ownerUser?.role !== 'tester') {
+        console.warn(`[agent-loop] ${agentId}: owner ${ownerAddress} is not a tester. Anthropic models restricted.`);
+        await db.insert(agentDecisions).values({
+          id: generateId('dec'),
+          agentId,
+          decision: 'hold',
+          confidence: 0,
+          reasoning: 'Claude models are restricted to tester accounts. Contact the admin to enable access.',
+          llmModel: effectiveLlmModel,
+          llmLatencyMs: 0,
+          marketDataSnapshot: JSON.stringify(marketData),
+          createdAt: nowIso(),
+        });
+        return;
+      }
+    }
+    llmApiKey = env.ANTHROPIC_API_KEY;
+    llmProvider = 'anthropic';
+  } else {
+    if (!env.OPENROUTER_API_KEY) {
+      console.error(`[agent-loop] ${agentId}: OPENROUTER_API_KEY is not set. Cannot call LLM. Add it to .dev.vars (local) or Cloudflare secrets (production).`);
+      await db.insert(agentDecisions).values({
+        id: generateId('dec'),
+        agentId,
+        decision: 'hold',
+        confidence: 0,
+        reasoning: 'OPENROUTER_API_KEY is not configured. Please set it in .dev.vars (local) or Cloudflare secrets (production) — get a free key at openrouter.ai',
+        llmModel: effectiveLlmModel,
+        llmLatencyMs: 0,
+        marketDataSnapshot: JSON.stringify(marketData),
+        createdAt: nowIso(),
+      });
+      return;
+    }
+    // Prefer owner's personal OR key; fall back to server key
+    let resolvedKey = env.OPENROUTER_API_KEY;
+    const ownerAddr = agentRow.ownerAddress?.toLowerCase();
+    if (ownerAddr) {
+      const [ownerUser] = await db
+        .select({ openRouterKey: users.openRouterKey })
+        .from(users)
+        .where(eq(users.walletAddress, ownerAddr));
+      if (ownerUser?.openRouterKey) {
+        try {
+          resolvedKey = await decryptKey(ownerUser.openRouterKey, env.KEY_ENCRYPTION_SECRET);
+        } catch {
+          console.warn(`[agent-loop] ${agentId}: failed to decrypt user OR key, using server fallback`);
+        }
+      }
+    }
+    llmApiKey = resolvedKey;
   }
 
   let decision: Awaited<ReturnType<typeof getTradeDecision>>;
   try {
     decision = await getTradeDecision(
       {
-        apiKey: env.OPENROUTER_API_KEY,
+        apiKey: llmApiKey,
         model: effectiveLlmModel,
         fallbackModel: effectiveLlmFallback,
         allowFallback,
         temperature: config.temperature,
         timeoutMs: 90_000,
+        provider: llmProvider,
       },
       {
         autonomyLevel,
@@ -478,6 +543,8 @@ export async function runAgentLoop(
     llmModel: decision.modelUsed,
     llmLatencyMs: decision.latencyMs,
     llmTokensUsed: decision.tokensUsed,
+    llmPromptTokens: decision.tokensIn ?? null,
+    llmCompletionTokens: decision.tokensOut ?? null,
     marketDataSnapshot: JSON.stringify(marketData),
     createdAt: nowIso(),
   });

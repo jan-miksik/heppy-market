@@ -10,7 +10,8 @@ import { eq, desc, inArray, sql } from 'drizzle-orm';
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { Env } from '../types/env.js';
-import { agents, trades, performanceSnapshots, agentManagers, agentManagerLogs } from '../db/schema.js';
+import { agents, trades, performanceSnapshots, agentManagers, agentManagerLogs, users } from '../db/schema.js';
+import { decryptKey } from '../lib/crypto.js';
 import { createDexDataService, getPriceUsd } from '../services/dex-data.js';
 import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { generateId, nowIso, autonomyLevelToInt } from '../lib/utils.js';
@@ -586,12 +587,28 @@ export async function runManagerLoop(
   console.log('[manager-loop] === END PROMPT ===');
 
   let rawResponse = '';
+  let usage: { promptTokens?: number; completionTokens?: number } = {};
   if (!env.OPENROUTER_API_KEY) {
     console.warn(`[manager-loop] ${managerId}: OPENROUTER_API_KEY not set — holding`);
     rawResponse = JSON.stringify([{ action: 'hold', reasoning: 'No API key configured' }]);
   } else {
     try {
-      const openrouter = createOpenRouter({ apiKey: env.OPENROUTER_API_KEY });
+      let orApiKey = env.OPENROUTER_API_KEY;
+      const ownerAddr = managerRow.ownerAddress?.toLowerCase();
+      if (ownerAddr) {
+        const [ownerUser] = await db
+          .select({ openRouterKey: users.openRouterKey })
+          .from(users)
+          .where(eq(users.walletAddress, ownerAddr));
+        if (ownerUser?.openRouterKey) {
+          try {
+            orApiKey = await decryptKey(ownerUser.openRouterKey, env.KEY_ENCRYPTION_SECRET);
+          } catch {
+            console.warn('[manager-loop] failed to decrypt user OR key, using server fallback');
+          }
+        }
+      }
+      const openrouter = createOpenRouter({ apiKey: orApiKey });
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`Manager LLM timed out after ${MANAGER_LLM_TIMEOUT_MS / 1000}s`)),
@@ -608,6 +625,7 @@ export async function runManagerLoop(
         timeoutPromise,
       ]);
       rawResponse = result.text;
+      usage = (result as any).usage ?? {};
       console.log('[manager-loop] === RAW LLM RESPONSE ===');
       console.log(rawResponse);
       console.log('[manager-loop] === END RESPONSE ===');
@@ -638,6 +656,8 @@ export async function runManagerLoop(
       action: decision.action,
       reasoning: decision.reasoning,
       result: JSON.stringify(result),
+      llmPromptTokens: usage.promptTokens ?? null,
+      llmCompletionTokens: usage.completionTokens ?? null,
       createdAt: nowIso(),
     });
     console.log(`[manager-loop] ${managerId}: ${decision.action} → ${JSON.stringify(result)}`);
