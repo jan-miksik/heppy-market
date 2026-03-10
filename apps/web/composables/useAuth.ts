@@ -24,7 +24,9 @@ export interface AuthUser {
   displayName: string | null;
   authProvider: string;
   avatarUrl: string | null;
+  role: string;
   createdAt: string;
+  openRouterKeySet: boolean;
 }
 
 const authUser = ref<AuthUser | null>(null);
