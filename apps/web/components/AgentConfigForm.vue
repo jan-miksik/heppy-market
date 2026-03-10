@@ -2,6 +2,25 @@
 import { getAgentPersonaTemplate } from '@dex-agents/shared';
 import type { CreateAgentPayload } from '~/composables/useAgents';
 import type { ProfileItem } from '~/composables/useProfiles';
+import { useAuth } from '~/composables/useAuth';
+
+const { user } = useAuth();
+const isTester = computed(() => user.value?.role === 'tester');
+
+const PAID_MODELS = [
+  { id: 'google/gemini-3.1-pro-preview',  label: 'Gemini 3.1 Pro',        ctx: '2M',   price: '$2/$12' },
+  { id: 'anthropic/claude-sonnet-4.6',    label: 'Claude Sonnet 4.6',     ctx: '1M',   price: '$3/$15' },
+  { id: 'google/gemini-3.1-flash-lite',   label: 'Gemini 3.1 Flash Lite', ctx: '1M',   price: '$0.25/$1.50' },
+  { id: 'openai/gpt-5.4',                 label: 'GPT-5.4',               ctx: '1M',   price: '$2.50/$20' },
+  { id: 'deepseek/deepseek-v3.2',         label: 'DeepSeek V3.2',         ctx: '128K', price: '$0.25/$0.38' },
+  { id: 'anthropic/claude-opus-4.6',      label: 'Claude Opus 4.6',       ctx: '200K', price: '$5/$25' },
+] as const;
+
+const hasOwnKey = computed(() => !!user.value?.openRouterKeySet);
+const customModel = ref('');
+watch(customModel, (val) => {
+  if (val.trim()) form.llmModel = val.trim();
+});
 
 const props = defineProps<{
   initialValues?: Partial<CreateAgentPayload & { pairs: string[] }>;
@@ -145,11 +164,16 @@ function togglePair(p: string) {
 }
 
 function shortModelName(m: string): string {
+  const PAID_MODEL_NAMES = Object.fromEntries(PAID_MODELS.map((p) => [p.id, p.label]));
   const n: Record<string, string> = {
     'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
     'stepfun/step-3.5-flash:free': 'Step-3.5',
     'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
     'arcee-ai/trinity-large-preview:free': 'Trinity-Large',
+    'xiaomi/mimo-v2-flash:free': 'MiMo Flash',
+    'claude-sonnet-4-5': 'Claude Sonnet',
+    'claude-haiku-4-5': 'Claude Haiku',
+    ...PAID_MODEL_NAMES,
   };
   return n[m] ?? m.split('/').pop()?.split(':')[0] ?? 'Agent';
 }
@@ -333,13 +357,40 @@ async function handleSubmit() {
           <div class="form-group">
             <label class="form-label">LLM Model</label>
             <select v-model="form.llmModel" class="form-select">
-              <optgroup label="Free models">
+              <optgroup label="Free models (OpenRouter)">
                 <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
-                <option value="stepfun/step-3.5-flash:free">Step-3.5 (free)</option>
+                <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
                 <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
                 <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
+                <option value="xiaomi/mimo-v2-flash:free">MiMo Flash · 256K (free)</option>
+              </optgroup>
+              <optgroup v-if="hasOwnKey" label="Paid (your OpenRouter key)">
+                <option v-for="m in PAID_MODELS" :key="m.id" :value="m.id">
+                  {{ m.label }} · {{ m.ctx }} · {{ m.price }}
+                </option>
+              </optgroup>
+              <optgroup v-if="isTester" label="Anthropic direct (tester)">
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
               </optgroup>
             </select>
+            <template v-if="hasOwnKey">
+              <input
+                v-model="customModel"
+                class="form-input"
+                style="margin-top: 8px"
+                placeholder="Or type any model ID…"
+              />
+              <a
+                href="https://openrouter.ai/models"
+                target="_blank"
+                rel="noopener"
+                class="model-browse-link"
+              >Browse all models at openrouter.ai/models ↗</a>
+            </template>
+            <p v-else class="model-nudge">
+              <NuxtLink to="/settings">Connect your OpenRouter key</NuxtLink> to unlock paid models.
+            </p>
           </div>
 
           <div class="grid-2">
@@ -588,4 +639,19 @@ async function handleSubmit() {
   gap: 8px;
   padding-top: 4px;
 }
+
+.model-browse-link {
+  display: block;
+  font-size: 12px;
+  color: var(--accent, #7c6af7);
+  margin-top: 4px;
+  text-decoration: none;
+}
+.model-browse-link:hover { text-decoration: underline; }
+.model-nudge {
+  font-size: 12px;
+  color: var(--text-muted, #555);
+  margin-top: 6px;
+}
+.model-nudge a { color: var(--accent, #7c6af7); }
 </style>
