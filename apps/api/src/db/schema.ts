@@ -8,6 +8,10 @@ export const users = sqliteTable('users', {
   displayName: text('display_name'),
   authProvider: text('auth_provider').notNull().default('wallet'),
   avatarUrl: text('avatar_url'),
+  /** User role: 'user' (default) | 'tester' (can use Anthropic models via server ANTHROPIC_API_KEY) */
+  role: text('role').notNull().default('user'),
+  /** AES-GCM encrypted OpenRouter key. null = not connected; agents fall back to server OPENROUTER_API_KEY. */
+  openRouterKey: text('openrouter_key'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -67,6 +71,8 @@ export const agentDecisions = sqliteTable('agent_decisions', {
   llmModel: text('llm_model').notNull(),
   llmLatencyMs: integer('llm_latency_ms').notNull(),
   llmTokensUsed: integer('llm_tokens_used'),
+  llmPromptTokens: integer('llm_prompt_tokens'),
+  llmCompletionTokens: integer('llm_completion_tokens'),
   marketDataSnapshot: text('market_data_snapshot').notNull(),
   createdAt: text('created_at').notNull(),
 });
@@ -107,6 +113,8 @@ export const agentManagerLogs = sqliteTable('agent_manager_logs', {
   action: text('action').notNull(),
   reasoning: text('reasoning').notNull(),
   result: text('result').notNull(),
+  llmPromptTokens: integer('llm_prompt_tokens'),
+  llmCompletionTokens: integer('llm_completion_tokens'),
   createdAt: text('created_at')
     .notNull()
     .default(sql`(datetime('now'))`),
