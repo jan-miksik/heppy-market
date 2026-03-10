@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ middleware: 'auth' });
 const { user, fetchMe } = useAuth();
 const { initConnect, disconnect } = useOpenRouter();
 
