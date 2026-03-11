@@ -587,7 +587,7 @@ export async function runManagerLoop(
   console.log('[manager-loop] === END PROMPT ===');
 
   let rawResponse = '';
-  let usage: { promptTokens?: number; completionTokens?: number } = {};
+  let usage: { inputTokens?: number; outputTokens?: number } = {};
   if (!env.OPENROUTER_API_KEY) {
     console.warn(`[manager-loop] ${managerId}: OPENROUTER_API_KEY not set — holding`);
     rawResponse = JSON.stringify([{ action: 'hold', reasoning: 'No API key configured' }]);
@@ -656,8 +656,8 @@ export async function runManagerLoop(
       action: decision.action,
       reasoning: decision.reasoning,
       result: JSON.stringify(result),
-      llmPromptTokens: usage.promptTokens ?? null,
-      llmCompletionTokens: usage.completionTokens ?? null,
+      llmPromptTokens: usage.inputTokens ?? null,
+      llmCompletionTokens: usage.outputTokens ?? null,
       createdAt: nowIso(),
     });
     console.log(`[manager-loop] ${managerId}: ${decision.action} → ${JSON.stringify(result)}`);

@@ -100,6 +100,9 @@ export interface AgentDecision {
   llmModel: string;
   llmLatencyMs: number;
   llmTokensUsed?: number;
+   /** Prompt tokens (input) and completion tokens (output), when available */
+  llmPromptTokens?: number;
+  llmCompletionTokens?: number;
   marketDataSnapshot: string;
   createdAt: string;
 }

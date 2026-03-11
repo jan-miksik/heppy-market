@@ -44,6 +44,9 @@ interface AgentDecision {
   reasoning: string;
   llmModel: string;
   llmLatencyMs: number;
+  llmTokensUsed?: number;
+  llmPromptTokens?: number;
+  llmCompletionTokens?: number;
   marketDataSnapshot?: string;
   createdAt: string;
 }
@@ -164,10 +167,16 @@ const winRate = computed(() => {
   const wins = closedTrades.value.filter((t) => (t.pnlPct ?? 0) > 0).length;
   return (wins / closedTrades.value.length) * 100;
 });
-const totalPnlUsd = computed(() =>
-  closedTrades.value.reduce((acc, t) => acc + (t.pnlUsd ?? 0), 0)
-);
+const totalPnlUsd = computed(() => {
+  const current = latestSnapshot.value?.balance ?? agent.value?.config.paperBalance ?? 0;
+  const initial = agent.value?.config.paperBalance ?? 0;
+  return current - initial;
+});
 const latestSnapshot = computed(() => snapshots.value[0] ?? null);
+
+const totalTokensUsed = computed(() =>
+  decisions.value.reduce((sum, d) => sum + (d.llmTokensUsed ?? 0), 0),
+);
 
 /** Seconds until next agent analysis cycle */
 const secondsUntilNextAction = computed(() => {
@@ -309,12 +318,19 @@ async function handleAnalyze() {
     trades.value = t;
     decisions.value = d.decisions;
     await refreshDoStatus();
+    // Log the latest decision so silent failures are visible in the browser console
+    const latest = decisions.value[0];
+    if (latest) {
+      const level = latest.confidence === 0 ? 'warn' : 'log';
+      console[level](`[analyze] decision=${latest.decision} confidence=${latest.confidence} model=${latest.llmModel}\n${latest.reasoning}`);
+    }
   } catch (err: unknown) {
     const msg =
       (err as { data?: { error?: string }; message?: string })?.data?.error ??
       (err as { message?: string })?.message ??
       'Analysis failed — check that OPENROUTER_API_KEY is configured.';
     analyzeError.value = msg;
+    console.error('[analyze] failed:', msg, err);
   } finally {
     isAnalyzing.value = false;
   }
@@ -345,7 +361,7 @@ async function doResetPersona() {
   }
 }
 
-const VALID_ANALYSIS_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+const VALID_ANALYSIS_INTERVALS = ['15m', '1h', '4h', '1d'] as const;
 const VALID_STRATEGIES = ['ema_crossover', 'rsi_oversold', 'macd_signal', 'bollinger_bounce', 'volume_breakout', 'llm_sentiment', 'combined'] as const;
 
 /** Build a PATCH body that matches UpdateAgentRequestSchema (partial, valid enums and types). */
@@ -539,7 +555,7 @@ function formatLatency(ms: number): string {
       </div>
 
       <!-- Stats row -->
-      <div class="stats-grid" style="margin-bottom: 24px;">
+      <div class="stats-grid" style="margin-bottom: 24px; grid-template-columns: repeat(5, minmax(0, 1fr));">
         <div class="stat-card">
           <div class="stat-label">Balance</div>
           <div class="stat-value">${{ (latestSnapshot?.balance ?? agent.config.paperBalance).toLocaleString('en', { maximumFractionDigits: 0 }) }}</div>
@@ -573,6 +589,13 @@ function formatLatency(ms: number): string {
             {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : '—' }}
           </div>
           <div class="stat-change">{{ openTrades.length }} of {{ agent.config.maxOpenPositions }} positions open</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">LLM Tokens Used</div>
+          <div class="stat-value mono">
+            {{ totalTokensUsed.toLocaleString('en') }}
+          </div>
+          <div class="stat-change">All analysis cycles</div>
         </div>
       </div>
 
@@ -811,12 +834,13 @@ function formatLatency(ms: number): string {
                 <th>Confidence</th>
                 <th>Model</th>
                 <th>Latency</th>
+                <th style="white-space: nowrap;">Tokens (IN / OUT)</th>
                 <th>Reasoning</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="decisions.length === 0">
-                <td colspan="7" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                <td colspan="8" style="text-align: center; padding: 32px; color: var(--text-muted);">
                   No decisions yet — click <strong style="color: var(--text-primary);">⚡ Run Analysis</strong> to fetch market data, compute indicators, and get the LLM's reasoning
                 </td>
               </tr>
@@ -836,13 +860,19 @@ function formatLatency(ms: number): string {
                   </td>
                   <td style="font-size: 11px; color: var(--text-muted);">{{ dec.llmModel.split('/').pop() }}</td>
                   <td class="mono" style="color: var(--text-muted);">{{ formatLatency(dec.llmLatencyMs) }}</td>
+                  <td class="mono" style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">
+                    <span v-if="dec.llmPromptTokens != null || dec.llmCompletionTokens != null">
+                      {{ dec.llmPromptTokens ?? '—' }} / {{ dec.llmCompletionTokens ?? '—' }}
+                    </span>
+                    <span v-else>—</span>
+                  </td>
                   <td style="font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">
                     {{ dec.reasoning }}
                   </td>
                 </tr>
                 <!-- Expanded row -->
                 <tr v-if="expandedDecisions.has(dec.id)">
-                  <td colspan="7" style="background: var(--bg-secondary, #1a1a2e); padding: 16px;">
+                  <td colspan="8" style="background: var(--bg-secondary, #1a1a2e); padding: 16px;">
                     <!-- Full reasoning -->
                     <div style="margin-bottom: 14px;">
                       <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;">Reasoning</div>

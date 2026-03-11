@@ -40,7 +40,7 @@
       </div>
 
       <!-- Stats -->
-      <div class="stats-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 24px;">
+      <div class="stats-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom: 24px;">
         <div class="stat-card">
           <div class="stat-label">Model</div>
           <div class="stat-value" style="font-size: 13px; font-family: inherit;">{{ shortModel }}</div>
@@ -61,6 +61,12 @@
           <div class="stat-label">Max Agents</div>
           <div class="stat-value" style="font-size: 16px;">{{ manager.config?.riskParams?.maxAgents ?? '—' }}</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">LLM Tokens Used</div>
+          <div class="stat-value" style="font-size: 16px; font-family: 'JetBrains Mono', monospace;">
+            {{ totalTokensUsed.toLocaleString('en') }}
+          </div>
+        </div>
       </div>
 
       <!-- Two-column layout: Decision Log (left) + Agents (right) -->
@@ -77,6 +83,13 @@
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                 <span class="badge" :class="actionBadgeClass(log.action)" style="font-size: 11px;">{{ log.action }}</span>
                 <span style="font-size: 12px; color: var(--text-muted);">{{ new Date(log.createdAt).toLocaleString() }}</span>
+                <span
+                  v-if="log.llmPromptTokens != null || log.llmCompletionTokens != null"
+                  class="mono"
+                  style="margin-left: auto; font-size: 11px; color: var(--text-muted); white-space: nowrap;"
+                >
+                  {{ log.llmPromptTokens ?? '—' }} / {{ log.llmCompletionTokens ?? '—' }} tokens
+                </span>
               </div>
               <p style="font-size: 13px; color: var(--text-dim);">{{ log.reasoning }}</p>
               <p v-if="log.result?.detail" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">{{ log.result.detail }}</p>
@@ -193,6 +206,11 @@ const { data: logsData, refresh: refreshLogs } = await useFetch<{ logs: any[] }>
 });
 const logs = ref<any[]>(logsData.value?.logs ?? []);
 const hasMoreLogs = ref((logsData.value?.logs?.length ?? 0) === 20);
+
+const { data: tokenUsageData } = await useFetch<{ totalTokens: number }>(`/api/managers/${id}/token-usage`, {
+  credentials: 'include',
+});
+const totalTokensUsed = computed(() => tokenUsageData.value?.totalTokens ?? 0);
 
 const LOG_PAGE_SIZE = 10;
 const logPage = ref(1);

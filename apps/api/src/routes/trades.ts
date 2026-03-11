@@ -119,10 +119,10 @@ tradesRoute.get('/stats', async (c) => {
     .select({
       totalTrades: sql<number>`count(*)`,
       openTrades: sql<number>`sum(case when status = 'open' then 1 else 0 end)`,
-      closedTrades: sql<number>`sum(case when status = 'closed' then 1 else 0 end)`,
-      winningTrades: sql<number>`sum(case when pnl_pct > 0 then 1 else 0 end)`,
-      totalPnlUsd: sql<number>`sum(coalesce(pnl_usd, 0))`,
-      avgPnlPct: sql<number>`avg(pnl_pct)`,
+      closedTrades: sql<number>`sum(case when status in ('closed', 'stopped_out') then 1 else 0 end)`,
+      winningTrades: sql<number>`sum(case when status in ('closed', 'stopped_out') and pnl_pct > 0 then 1 else 0 end)`,
+      totalPnlUsd: sql<number>`sum(case when status in ('closed', 'stopped_out') then coalesce(pnl_usd, 0) else 0 end)`,
+      avgPnlPct: sql<number>`avg(case when status in ('closed', 'stopped_out') then pnl_pct else null end)`,
     })
     .from(trades)
     .where(inArray(trades.agentId, agentIds));

@@ -38,9 +38,9 @@ function truncate(addr: string): string {
       <div class="navbar-auth">
         <template v-if="isAuthenticated && user">
           <NuxtLink to="/settings" class="settings-icon-btn" title="Settings">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M12.03 8.91a4.87 4.87 0 0 0 .04-.41c0-.14-.01-.28-.04-.41l.9-.7a.22.22 0 0 0 .05-.28l-.85-1.47a.22.22 0 0 0-.27-.1l-1.06.43a4.6 4.6 0 0 0-.7-.41l-.16-1.12a.21.21 0 0 0-.22-.19H8.3a.21.21 0 0 0-.22.19l-.16 1.12a4.6 4.6 0 0 0-.7.41l-1.06-.43a.22.22 0 0 0-.27.1L5.04 7.11a.22.22 0 0 0 .05.28l.9.7c-.03.13-.04.27-.04.41s.01.28.04.41l-.9.7a.22.22 0 0 0-.05.28l.85 1.47c.06.1.18.14.27.1l1.06-.43c.22.15.46.29.7.41l.16 1.12c.03.11.12.19.22.19h1.72c.1 0 .19-.08.22-.19l.16-1.12c.24-.12.48-.26.7-.41l1.06.43c.1.04.21 0 .27-.1l.85-1.47a.22.22 0 0 0-.05-.28l-.9-.7Z" stroke="currentColor" stroke-width="1.3"/>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+              <circle cx="12" cy="12" r="3"/>
             </svg>
           </NuxtLink>
           <button
@@ -218,6 +218,8 @@ function truncate(addr: string): string {
   border: 1px solid var(--border);
   color: var(--text-dim);
   margin-right: 8px;
+  text-decoration: none;
+  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .settings-icon-btn:hover {

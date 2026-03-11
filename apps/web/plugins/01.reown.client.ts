@@ -68,8 +68,8 @@ export default defineNuxtPlugin((nuxtApp) => {
   watchConnection(wagmiAdapter.wagmiConfig, {
     onChange(connection) {
       if (!connection.isConnected) {
-        handleWalletDisconnect().then(() => {
-          if (import.meta.client) {
+        handleWalletDisconnect().then((wasSignedIn) => {
+          if (import.meta.client && wasSignedIn) {
             navigateTo('/connect');
           }
         });

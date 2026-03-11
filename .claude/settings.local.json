@@ -30,7 +30,11 @@
       "Bash(git log:*)",
       "Bash(node:*)",
       "Bash(npx vitest:*)",
-      "Bash(node -e \"require\\('viem/chains'\\)\" 2>&1 | head -5 || echo \"checking package...\"\nls apps/api/node_modules/viem/chains 2>/dev/null | head -5 || ls node_modules/viem/chains 2>/dev/null | head -5)"
+      "Bash(node -e \"require\\('viem/chains'\\)\" 2>&1 | head -5 || echo \"checking package...\"\nls apps/api/node_modules/viem/chains 2>/dev/null | head -5 || ls node_modules/viem/chains 2>/dev/null | head -5)",
+      "Bash(npm install:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(npm test:*)"
     ]
   }
 }

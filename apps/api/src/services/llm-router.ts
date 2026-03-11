@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { TradeDecisionSchema } from '@dex-agents/shared';
 import type { TradeDecision, AgentBehaviorConfig } from '@dex-agents/shared';
 import { sleep } from '../lib/utils.js';
@@ -16,6 +17,8 @@ export interface LLMRouterConfig {
   temperature?: number;
   /** Request timeout in ms; prevents analysis from hanging (default 90_000). */
   timeoutMs?: number;
+  /** Override the provider. Defaults to 'openrouter'. Use 'anthropic' for Claude models with a sk-ant-* key. */
+  provider?: 'openrouter' | 'anthropic';
 }
 
 export interface TradeDecisionRequest {
@@ -93,8 +96,18 @@ const EMERGENCY_MODEL_TIMEOUT_MS = 30_000;
 export async function getTradeDecision(
   config: LLMRouterConfig,
   request: TradeDecisionRequest
-): Promise<TradeDecision & { latencyMs: number; tokensUsed?: number; modelUsed: string }> {
-  const openrouter = createOpenRouter({ apiKey: config.apiKey });
+): Promise<
+  TradeDecision & {
+    latencyMs: number;
+    tokensUsed?: number;
+    tokensIn?: number;
+    tokensOut?: number;
+    modelUsed: string;
+  }
+> {
+  const isAnthropic = config.provider === 'anthropic';
+  const openrouter = isAnthropic ? null : createOpenRouter({ apiKey: config.apiKey });
+  const anthropic = isAnthropic ? createAnthropic({ apiKey: config.apiKey }) : null;
   const systemPrompt = BASE_AGENT_PROMPT + JSON_SCHEMA_INSTRUCTION;
   const userPrompt = buildAnalysisPrompt({
     portfolioState: request.portfolioState,
@@ -123,8 +136,9 @@ export async function getTradeDecision(
   if (config.allowFallback && config.fallbackModel && config.fallbackModel !== config.model) {
     primaryModels.push(config.fallbackModel);
   }
+  // Anthropic provider: no free emergency fallbacks (paid key, no OpenRouter fallback)
   const emergencyModels: string[] = [];
-  if (config.allowFallback) {
+  if (config.allowFallback && !isAnthropic) {
     for (const m of EMERGENCY_FREE_MODELS) {
       if (!primaryModels.includes(m)) emergencyModels.push(m);
     }
@@ -136,15 +150,6 @@ export async function getTradeDecision(
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
-  // Debug flag for verbose prompt logging. By default this is disabled in
-  // production (NODE_ENV === 'production'). You can enable it in other
-  // environments by setting a global flag (e.g. via test harness).
-  const DEBUG_LLM_PROMPTS =
-    (typeof process !== 'undefined' &&
-      typeof process.env !== 'undefined' &&
-      process.env.NODE_ENV !== 'production') ||
-    (globalThis as any).HEPPY_LLM_DEBUG === true;
-
   for (const modelId of modelsToTry) {
     try {
       const effectiveTimeout = primaryModelSet.has(modelId) ? timeoutMs : EMERGENCY_MODEL_TIMEOUT_MS;
@@ -155,27 +160,28 @@ export async function getTradeDecision(
         )
       );
 
+      const modelInstance = isAnthropic
+        ? anthropic!(modelId)
+        : openrouter!(modelId);
+
+      console.log('[llm-router] === PROMPT SENT TO LLM ===');
+      console.log('[llm-router] Model:', modelId);
+      console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
+      console.log('[llm-router] --- USER PROMPT ---');
+      console.log(userPrompt);
+      console.log('[llm-router] === END PROMPT ===');
+
       const result = await Promise.race([
         generateText({
-          model: openrouter(modelId),
-          // Merge system into prompt — some models (e.g. Gemma) reject the system role
+          model: modelInstance,
+          // Merge system into prompt — some models (e.g. Gemma) reject the system role.
+          // Anthropic also handles a flat prompt just fine.
           prompt: fullPrompt,
           ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
           maxRetries: 0,
         }),
         timeoutPromise,
       ]);
-
-      if (DEBUG_LLM_PROMPTS) {
-        console.log('[llm-router] === FULL PROMPT SENT TO LLM ===');
-        console.log('[llm-router] Model(s) to try:', modelsToTry);
-        console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
-        console.log('[llm-router] --- SYSTEM PROMPT ---');
-        console.log(systemPrompt);
-        console.log('[llm-router] --- USER PROMPT ---');
-        console.log(userPrompt);
-        console.log('[llm-router] === END PROMPT ===');
-      }
 
       const json = extractJson(result.text ?? '');
       if (!json.trim()) {
@@ -191,11 +197,14 @@ export async function getTradeDecision(
       }
       const object = TradeDecisionSchema.parse(parsed);
       const latencyMs = Date.now() - startTime;
+      const usage = (result as any).usage ?? {};
 
       return {
         ...object,
         latencyMs,
-        tokensUsed: result.usage?.totalTokens,
+        tokensUsed: usage.totalTokens,
+        tokensIn: usage.inputTokens,
+        tokensOut: usage.outputTokens,
         modelUsed: modelId,
       };
     } catch (err) {

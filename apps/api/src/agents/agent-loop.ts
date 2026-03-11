@@ -111,12 +111,37 @@ export async function runAgentLoop(
     if (typeof rawConfig.analysisInterval === 'string' && intervalMap[rawConfig.analysisInterval]) {
       rawConfig.analysisInterval = intervalMap[rawConfig.analysisInterval];
     }
+    // Migrate removed short intervals to minimum supported interval
+    if (rawConfig.analysisInterval === '1m' || rawConfig.analysisInterval === '5m') {
+      console.warn(`[agent-loop] ${agentId}: analysisInterval "${rawConfig.analysisInterval}" is no longer supported → upgrading to "15m"`);
+      rawConfig.analysisInterval = '15m';
+    }
+    // Clamp analysisInterval to valid enum — any unrecognized value (e.g. "30m" from manager LLM) → "15m"
+    const validIntervals = new Set(['15m', '1h', '4h', '1d']);
+    if (typeof rawConfig.analysisInterval === 'string' && !validIntervals.has(rawConfig.analysisInterval)) {
+      console.warn(`[agent-loop] ${agentId}: Unknown analysisInterval "${rawConfig.analysisInterval}" → defaulting to "15m"`);
+      rawConfig.analysisInterval = '15m';
+    }
 
     // Migrate legacy strategy values not in the current enum → "combined"
     const validStrategies = new Set(['ema_crossover', 'rsi_oversold', 'macd_signal', 'bollinger_bounce', 'volume_breakout', 'llm_sentiment', 'combined']);
     if (Array.isArray(rawConfig.strategies)) {
       rawConfig.strategies = rawConfig.strategies.map((s: string) => validStrategies.has(s) ? s : 'combined');
       if (rawConfig.strategies.length === 0) rawConfig.strategies = ['combined'];
+    }
+
+    // Clamp numeric fields to schema bounds to tolerate LLM-generated out-of-range values
+    if (typeof rawConfig.stopLossPct === 'number')        rawConfig.stopLossPct        = Math.min(50,  Math.max(0.5, rawConfig.stopLossPct));
+    if (typeof rawConfig.takeProfitPct === 'number')      rawConfig.takeProfitPct      = Math.min(100, Math.max(0.5, rawConfig.takeProfitPct));
+    if (typeof rawConfig.maxPositionSizePct === 'number') rawConfig.maxPositionSizePct = Math.min(100, Math.max(1,   rawConfig.maxPositionSizePct));
+    if (typeof rawConfig.maxOpenPositions === 'number')   rawConfig.maxOpenPositions   = Math.min(10,  Math.max(1,   Math.round(rawConfig.maxOpenPositions)));
+    if (typeof rawConfig.maxDailyLossPct === 'number')    rawConfig.maxDailyLossPct    = Math.min(50,  Math.max(1,   rawConfig.maxDailyLossPct));
+    if (typeof rawConfig.paperBalance === 'number')       rawConfig.paperBalance       = Math.min(1_000_000, Math.max(100, rawConfig.paperBalance));
+    if (typeof rawConfig.temperature === 'number')        rawConfig.temperature        = Math.min(2,   Math.max(0,   rawConfig.temperature));
+
+    // Backfill autonomyLevel if missing from config JSON (read from DB column)
+    if (!rawConfig.autonomyLevel) {
+      rawConfig.autonomyLevel = intToAutonomyLevel(agentRow.autonomyLevel) || 'guided';
     }
 
     config = AgentConfigSchema.parse(rawConfig);

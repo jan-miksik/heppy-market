@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, sql } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agentManagers, agentManagerLogs, agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
@@ -293,6 +293,31 @@ managersRoute.get('/:id/agents', async (c) => {
       config: JSON.parse(r.config),
     })),
   });
+});
+
+/** GET /api/managers/:id/token-usage — aggregate LLM tokens used by all managed agents */
+managersRoute.get('/:id/token-usage', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+
+  const manager = await requireManagerOwnership(db, id, walletAddress);
+  if (!manager) return c.json({ error: 'Manager not found' }, 404);
+
+  const managedAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.managerId, id));
+  if (managedAgents.length === 0) {
+    return c.json({ totalTokens: 0 });
+  }
+
+  const agentIds = managedAgents.map((a) => a.id);
+  const [row] = await db
+    .select({
+      totalTokens: sql<number>`COALESCE(SUM(${agentDecisions.llmTokensUsed}), 0)`,
+    })
+    .from(agentDecisions)
+    .where(inArray(agentDecisions.agentId, agentIds));
+
+  return c.json({ totalTokens: row?.totalTokens ?? 0 });
 });
 
 /** GET /api/managers/:id/persona */

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-definePageMeta({ middleware: 'auth' });
 const { user, fetchMe } = useAuth();
 const { initConnect, disconnect } = useOpenRouter();
 
@@ -33,7 +32,6 @@ async function handleConnect() {
       <h2 class="settings-section-title">OpenRouter</h2>
       <p class="settings-section-desc">
         Connect your OpenRouter account to use paid models (GPT-5, Claude, Gemini, DeepSeek…).
-        Your key is AES-256 encrypted at rest.
       </p>
       <div class="settings-row">
         <template v-if="user?.openRouterKeySet">

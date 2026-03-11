@@ -37,14 +37,15 @@ let fetchMePromise: Promise<void> | null = null;
 // Called by the reown plugin when wagmi reports the wallet has disconnected.
 // Signs out from the backend without calling disconnect() again (already done).
 
-export async function handleWalletDisconnect(): Promise<void> {
-  if (!authUser.value) return; // nothing to sign out of
+export async function handleWalletDisconnect(): Promise<boolean> {
+  if (!authUser.value) return false; // nothing to sign out of
   authUser.value = null;
   try {
     await $fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   } catch {
     // Session already gone — that's fine
   }
+  return true;
 }
 
 // ─── Composable ───────────────────────────────────────────────────────────────
