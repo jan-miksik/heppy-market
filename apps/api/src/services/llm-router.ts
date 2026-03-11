@@ -103,6 +103,8 @@ export async function getTradeDecision(
     tokensIn?: number;
     tokensOut?: number;
     modelUsed: string;
+    llmPromptText: string;
+    llmRawResponse: string;
   }
 > {
   const isAnthropic = config.provider === 'anthropic';
@@ -206,6 +208,8 @@ export async function getTradeDecision(
         tokensIn: usage.inputTokens,
         tokensOut: usage.outputTokens,
         modelUsed: modelId,
+        llmPromptText: fullPrompt,
+        llmRawResponse: result.text ?? '',
       };
     } catch (err) {
       lastError = err;

@@ -48,6 +48,8 @@ interface AgentDecision {
   llmPromptTokens?: number;
   llmCompletionTokens?: number;
   marketDataSnapshot?: string;
+  llmPromptText?: string;
+  llmRawResponse?: string;
   createdAt: string;
 }
 
@@ -80,9 +82,9 @@ const isAnalyzing = ref(false);
 const showEditModal = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const activeTab = ref<'trades' | 'decisions'>('trades');
 const expandedDecisions = ref<Set<string>>(new Set());
 const expandedTrades = ref<Set<string>>(new Set());
+const decisionDetailTab = ref<Record<string, 'prompt' | 'response' | 'market'>>({});
 const analyzeError = ref<string | null>(null);
 const personaMd = ref('');
 const personaSaving = ref(false);
@@ -443,8 +445,21 @@ const editInitialValues = computed(() => {
 function toggleDecision(decId: string) {
   if (expandedDecisions.value.has(decId)) {
     expandedDecisions.value.delete(decId);
+    const next = { ...decisionDetailTab.value };
+    delete next[decId];
+    decisionDetailTab.value = next;
   } else {
     expandedDecisions.value.add(decId);
+  }
+}
+
+function setDecisionTab(decId: string, tab: 'prompt' | 'response' | 'market') {
+  if (decisionDetailTab.value[decId] === tab) {
+    const next = { ...decisionDetailTab.value };
+    delete next[decId];
+    decisionDetailTab.value = next;
+  } else {
+    decisionDetailTab.value = { ...decisionDetailTab.value, [decId]: tab };
   }
 }
 
@@ -613,6 +628,117 @@ function formatLatency(ms: number): string {
         </div>
       </div>
 
+      <!-- ── Decisions Log ───────────────────────────────────────────── -->
+      <div class="dec-section">
+        <div class="dec-section-header">
+          <span class="dec-section-title">Decision Log</span>
+          <span class="dec-section-count">{{ decisions.length }}</span>
+        </div>
+
+        <div v-if="decisions.length === 0" class="dec-empty">
+          No decisions yet — click <strong>⚡ Run Analysis</strong> to fetch market data and get the LLM's reasoning
+        </div>
+
+        <div v-else class="dec-feed">
+          <div
+            v-for="dec in decisions"
+            :key="dec.id"
+            class="dec-card"
+            :class="`dec-card--${dec.decision}`"
+          >
+            <!-- ── Meta row ── -->
+            <div class="dec-meta" @click="toggleDecision(dec.id)" style="cursor: pointer;">
+              <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+
+              <div class="dec-conf">
+                <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
+                <div class="dec-conf-track">
+                  <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
+                </div>
+              </div>
+
+              <span class="dec-meta-sep" />
+              <span class="dec-time">{{ timeAgo(dec.createdAt) }}</span>
+              <span class="dec-meta-dot">·</span>
+              <span class="dec-model" :title="dec.llmModel">{{ dec.llmModel.split('/').pop() }}</span>
+              <span class="dec-meta-dot">·</span>
+              <span class="dec-latency">{{ formatLatency(dec.llmLatencyMs) }}</span>
+              <template v-if="dec.llmPromptTokens != null || dec.llmCompletionTokens != null">
+                <span class="dec-meta-dot">·</span>
+                <span class="dec-tokens">{{ (dec.llmPromptTokens ?? 0).toLocaleString() }}↑ {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓</span>
+              </template>
+              <span class="dec-chevron" :class="{ 'dec-chevron--open': expandedDecisions.has(dec.id) }">›</span>
+            </div>
+
+            <!-- ── Reasoning — the hero ── -->
+            <div
+              class="dec-reasoning"
+              :class="{ 'dec-reasoning--clamped': !expandedDecisions.has(dec.id) }"
+              @click="toggleDecision(dec.id)"
+              style="cursor: pointer;"
+            >{{ dec.reasoning }}</div>
+
+            <!-- ── Detail tabs (only when expanded) ── -->
+            <template v-if="expandedDecisions.has(dec.id)">
+              <div class="dec-detail-tabs">
+                <button
+                  v-if="parseSnapshot(dec.marketDataSnapshot).length > 0"
+                  class="dec-detail-tab"
+                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'market' }"
+                  @click="setDecisionTab(dec.id, 'market')"
+                >Market Data</button>
+                <button
+                  v-if="dec.llmPromptText"
+                  class="dec-detail-tab"
+                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'prompt' }"
+                  @click="setDecisionTab(dec.id, 'prompt')"
+                >Prompt</button>
+                <button
+                  v-if="dec.llmRawResponse"
+                  class="dec-detail-tab"
+                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'response' }"
+                  @click="setDecisionTab(dec.id, 'response')"
+                >Response</button>
+              </div>
+
+              <!-- Market data panel -->
+              <div v-if="decisionDetailTab[dec.id] === 'market'" class="dec-detail-panel">
+                <div class="dec-market-grid">
+                  <div
+                    v-for="entry in parseSnapshot(dec.marketDataSnapshot)"
+                    :key="entry.pair"
+                    class="dec-market-card"
+                  >
+                    <div class="dec-market-pair">{{ entry.pair }}</div>
+                    <div class="dec-market-price">${{ formatPrice(entry.priceUsd) }}</div>
+                    <div v-if="entry.priceChange" class="dec-market-changes">
+                      <span v-if="entry.priceChange.h1 !== undefined" :class="(entry.priceChange.h1 ?? 0) >= 0 ? 'positive' : 'negative'">1h {{ (entry.priceChange.h1 ?? 0).toFixed(2) }}%</span>
+                      <span v-if="entry.priceChange.h24 !== undefined" :class="(entry.priceChange.h24 ?? 0) >= 0 ? 'positive' : 'negative'">24h {{ (entry.priceChange.h24 ?? 0).toFixed(2) }}%</span>
+                    </div>
+                    <div v-if="entry.indicators" class="dec-market-indicators">
+                      <span v-if="entry.indicators.rsi">RSI <strong>{{ entry.indicators.rsi }}</strong></span>
+                      <span v-if="entry.indicators.emaTrend" :class="entry.indicators.emaTrend === 'bullish' ? 'positive' : 'negative'">EMA {{ entry.indicators.emaTrend }}</span>
+                      <span v-if="entry.indicators.macdHistogram">MACD <strong>{{ entry.indicators.macdHistogram }}</strong></span>
+                    </div>
+                    <a v-if="entry.dexScreenerUrl" :href="entry.dexScreenerUrl" target="_blank" rel="noopener" class="dec-market-link">DexScreener ↗</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Prompt panel -->
+              <div v-if="decisionDetailTab[dec.id] === 'prompt'" class="dec-detail-panel">
+                <pre class="dec-code-block">{{ dec.llmPromptText }}</pre>
+              </div>
+
+              <!-- Response panel -->
+              <div v-if="decisionDetailTab[dec.id] === 'response'" class="dec-detail-panel">
+                <pre class="dec-code-block">{{ dec.llmRawResponse }}</pre>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <!-- Open Positions section — full width, grouped by pair -->
       <div v-if="openTrades.length > 0" style="margin-bottom: 24px;">
         <h2 style="font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">
@@ -764,18 +890,9 @@ function formatLatency(ms: number): string {
         <PnLChart :snapshots="snapshots" :initialBalance="agent.config.paperBalance" />
       </div>
 
-      <!-- Tabs -->
-      <div class="tabs">
-        <div class="tab" :class="{ active: activeTab === 'trades' }" @click="activeTab = 'trades'">
-          Trades ({{ trades.length }})
-        </div>
-        <div class="tab" :class="{ active: activeTab === 'decisions' }" @click="activeTab = 'decisions'">
-          Decisions ({{ decisions.length }})
-        </div>
-      </div>
-
-      <!-- Trades tab -->
-      <div v-if="activeTab === 'trades'" class="card">
+      <!-- Trades -->
+      <div class="card">
+        <div class="card-header">Trades</div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -836,96 +953,6 @@ function formatLatency(ms: number): string {
         </div>
       </div>
 
-      <!-- Decisions tab -->
-      <div v-if="activeTab === 'decisions'" class="card">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th>Time</th>
-                <th>Decision</th>
-                <th>Confidence</th>
-                <th>Model</th>
-                <th>Latency</th>
-                <th style="white-space: nowrap;">Tokens (IN / OUT)</th>
-                <th>Reasoning</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="decisions.length === 0">
-                <td colspan="8" style="text-align: center; padding: 32px; color: var(--text-muted);">
-                  No decisions yet — click <strong style="color: var(--text-primary);">⚡ Run Analysis</strong> to fetch market data, compute indicators, and get the LLM's reasoning
-                </td>
-              </tr>
-              <template v-for="dec in decisions" :key="dec.id">
-                <tr style="cursor: pointer;" @click="toggleDecision(dec.id)">
-                  <td style="color: var(--text-muted); font-size: 11px; width: 16px;">
-                    {{ expandedDecisions.has(dec.id) ? '▼' : '▶' }}
-                  </td>
-                  <td style="font-size: 12px; color: var(--text-muted);">{{ formatDate(dec.createdAt) }}</td>
-                  <td>
-                    <span class="badge" :class="dec.decision === 'buy' ? 'badge-buy' : dec.decision === 'sell' ? 'badge-sell' : 'badge-stopped'">
-                      {{ dec.decision }}
-                    </span>
-                  </td>
-                  <td class="mono" :class="dec.confidence >= 0.7 ? 'positive' : 'neutral'">
-                    {{ (dec.confidence * 100).toFixed(0) }}%
-                  </td>
-                  <td style="font-size: 11px; color: var(--text-muted);">{{ dec.llmModel.split('/').pop() }}</td>
-                  <td class="mono" style="color: var(--text-muted);">{{ formatLatency(dec.llmLatencyMs) }}</td>
-                  <td class="mono" style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">
-                    <span v-if="dec.llmPromptTokens != null || dec.llmCompletionTokens != null">
-                      {{ dec.llmPromptTokens ?? '—' }} / {{ dec.llmCompletionTokens ?? '—' }}
-                    </span>
-                    <span v-else>—</span>
-                  </td>
-                  <td style="font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted);">
-                    {{ dec.reasoning }}
-                  </td>
-                </tr>
-                <!-- Expanded row -->
-                <tr v-if="expandedDecisions.has(dec.id)">
-                  <td colspan="8" style="background: var(--bg-secondary, #1a1a2e); padding: 16px;">
-                    <!-- Full reasoning -->
-                    <div style="margin-bottom: 14px;">
-                      <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;">Reasoning</div>
-                      <div style="font-size: 13px; line-height: 1.7; white-space: pre-wrap; color: var(--text-primary);">{{ dec.reasoning }}</div>
-                    </div>
-                    <!-- Market data snapshot -->
-                    <template v-if="parseSnapshot(dec.marketDataSnapshot).length > 0">
-                      <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px;">Market Snapshot</div>
-                      <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                        <div
-                          v-for="entry in parseSnapshot(dec.marketDataSnapshot)"
-                          :key="entry.pair"
-                          style="background: var(--bg-primary, #0f0f1a); border: 1px solid var(--border-color, #2a2a3e); border-radius: 6px; padding: 10px 14px; min-width: 180px;"
-                        >
-                          <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">{{ entry.pair }}</div>
-                          <div class="mono" style="font-size: 13px; margin-bottom: 4px;">${{ formatPrice(entry.priceUsd) }}</div>
-                          <div v-if="entry.priceChange" style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">
-                            <span v-if="entry.priceChange.h1 !== undefined">1h: <span :class="(entry.priceChange.h1 ?? 0) >= 0 ? 'positive' : 'negative'">{{ (entry.priceChange.h1 ?? 0).toFixed(2) }}%</span></span>
-                            <span v-if="entry.priceChange.h24 !== undefined" style="margin-left: 8px;">24h: <span :class="(entry.priceChange.h24 ?? 0) >= 0 ? 'positive' : 'negative'">{{ (entry.priceChange.h24 ?? 0).toFixed(2) }}%</span></span>
-                          </div>
-                          <div v-if="entry.indicators" style="font-size: 11px; color: var(--text-muted);">
-                            <div v-if="entry.indicators.rsi">RSI: <span class="mono">{{ entry.indicators.rsi }}</span></div>
-                            <div v-if="entry.indicators.emaTrend">EMA: <span :class="entry.indicators.emaTrend === 'bullish' ? 'positive' : 'negative'">{{ entry.indicators.emaTrend }}</span></div>
-                            <div v-if="entry.indicators.macdHistogram">MACD hist: <span class="mono">{{ entry.indicators.macdHistogram }}</span></div>
-                            <div v-if="entry.indicators.bollingerPB">BB %B: <span class="mono">{{ entry.indicators.bollingerPB }}</span></div>
-                          </div>
-                          <div v-if="entry.dexScreenerUrl" style="margin-top: 8px;">
-                            <a :href="entry.dexScreenerUrl" target="_blank" rel="noopener" style="font-size: 11px; color: var(--accent, #6366f1); text-decoration: none;">View on DexScreener ↗</a>
-                          </div>
-                        </div>
-                      </div>
-                    </template>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-      </div>
 
     </template>
 

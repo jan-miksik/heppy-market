@@ -74,6 +74,8 @@ export const agentDecisions = sqliteTable('agent_decisions', {
   llmPromptTokens: integer('llm_prompt_tokens'),
   llmCompletionTokens: integer('llm_completion_tokens'),
   marketDataSnapshot: text('market_data_snapshot').notNull(),
+  llmPromptText: text('llm_prompt_text'),
+  llmRawResponse: text('llm_raw_response'),
   createdAt: text('created_at').notNull(),
 });
 

@@ -572,6 +572,8 @@ export async function runAgentLoop(
     llmPromptTokens: decision.tokensIn ?? null,
     llmCompletionTokens: decision.tokensOut ?? null,
     marketDataSnapshot: JSON.stringify(marketData),
+    llmPromptText: decision.llmPromptText ?? null,
+    llmRawResponse: decision.llmRawResponse ?? null,
     createdAt: nowIso(),
   });
 
