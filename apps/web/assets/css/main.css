@@ -190,69 +190,81 @@ a:hover {
   margin-top: 3px;
 }
 
-/* Cards */
+/* ── Cards ────────────────────────────────────────────────────── */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: var(--space-md);
 }
 .card-header {
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-sm);
 }
 .card-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text);
 }
 
-/* Stats grid */
+/* ── Stats ────────────────────────────────────────────────────── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-lg);
 }
 .stat-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 16px 20px;
+  padding: var(--space-md) var(--space-lg);
 }
 .stat-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-xs);
 }
 .stat-value {
-  font-size: 24px;
+  font-family: var(--font-mono);
+  font-size: 28px;
   font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
   color: var(--text);
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 .stat-value.positive { color: var(--green); }
 .stat-value.negative { color: var(--red); }
+.stat-change {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
 
 .tokens-summary-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 24px;
+  margin-bottom: var(--space-lg);
 }
 
 .tokens-summary-label {
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -264,44 +276,45 @@ a:hover {
 }
 
 .tokens-summary-total {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 
 .tokens-summary-split {
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 .tokens-summary-scope {
-  opacity: 0.7;
-}
-.stat-change {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
+  opacity: 0.6;
 }
 
-/* Badges */
+/* ── Badges ───────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .badge-running {
   background: var(--green-dim);
   color: var(--green);
+  border: 1px solid var(--green-dim);
 }
 .badge-stopped {
-  background: #1a1a2e;
+  background: transparent;
   color: var(--text-muted);
+  border: 1px solid var(--border-light);
 }
 .badge-paused {
   background: var(--yellow-dim);
   color: var(--yellow);
+  border: 1px solid var(--yellow-dim);
 }
 .badge-buy {
   background: var(--green-dim);
