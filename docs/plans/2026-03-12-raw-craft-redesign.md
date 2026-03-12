@@ -1,3 +1,98 @@
+# Raw Craft Redesign Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Rewrite `main.css` with the raw-craft design system — material surfaces, structural borders, intentional typography, amber accent — so all pages inherit the new look without touching Vue components.
+
+**Architecture:** Single-file CSS token swap. All existing class names stay identical; only the token values and structural rules change. New Google Fonts import (Space Mono + IBM Plex Sans) replaces Inter. Backward-compat var aliases ensure components that reference old var names still work.
+
+**Tech Stack:** Plain CSS custom properties, Google Fonts CDN, SVG noise texture (inline data URI)
+
+---
+
+## Design Decisions (locked)
+
+| Decision | Choice | Why |
+|---|---|---|
+| Palette | Dark Workshop + amber | Trading gold, not corporate blue |
+| Accent | `#FFB800` | Signal, not decoration |
+| Display/data font | Space Mono | Terminal editorial; fallback Menlo/Consolas |
+| Body font | IBM Plex Sans | Clean but not sterile; fallback system-ui |
+| Container radius | `0px` | Structural, not soft |
+| Button/badge radius | `2px` | Touch target, not personality |
+| Shadows | Hover-only, directional | Earn their presence |
+| Borders | 1-3px structural, vary by hierarchy | Weight = importance |
+| Noise texture | SVG inline, 3-4% opacity | Material surface |
+
+## Token Mapping (old → new values)
+
+```css
+/* OLD → NEW */
+--bg:           #0a0d14  →  #0A0A0A   (Dark Workshop surface)
+--bg-card:      #111520  →  #161616   (surface-alt)
+--bg-hover:     #1a2035  →  #1E1E1E   (surface hover)
+--border:       #1e2a42  →  #2A2A2A   (structural 1px)
+--border-light: #2a3a56  →  #3A3A3A   (structural subtle)
+--text:         #e2e8f0  →  #E8E4DF   (warm white)
+--text-muted:   #64748b  →  #8A8580   (muted warm)
+--text-dim:     #94a3b8  →  #B0ABA5   (dim warm)
+--accent:       #3b82f6  →  #FFB800   (amber)
+--accent-hover: #2563eb  →  #E5A600   (amber dark)
+--accent-dim:   #1e3a6e  →  #2A2200   (amber bg)
+--green:        #10b981  →  #6BCB77   (ok)
+--green-dim:    #064e3b  →  #0D2E10   (ok bg)
+--red:          #ef4444  →  #FF6B6B   (error)
+--red-dim:      #450a0a  →  #2E0D0D   (error bg)
+--yellow:       #f59e0b  →  #FFB800   (reuse amber)
+--yellow-dim:   #451a03  →  #2A2200   (reuse amber dim)
+--radius:       8px      →  2px       (small interactive)
+--radius-lg:    12px     →  0px       (containers sharp)
+```
+
+---
+
+### Task 1: Update font import in Nuxt config or app.vue
+
+**Files:**
+- Check: `apps/web/app.vue` — does it load fonts via `useHead`?
+- Check: `apps/web/nuxt.config.ts` — look for `link` head entries
+- Modify whichever loads fonts
+
+**Step 1: Find current font loading**
+
+```bash
+grep -r "Inter\|font" apps/web/nuxt.config.ts apps/web/app.vue 2>/dev/null | head -20
+```
+
+**Step 2: Replace font import**
+
+Replace any existing Google Fonts `<link>` with:
+
+```html
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+```
+
+**Step 3: Verify in browser**
+Run `npm run dev:web`, open browser, confirm Space Mono is rendering in the navbar brand.
+
+**Step 4: Commit**
+```bash
+git add apps/web/nuxt.config.ts apps/web/app.vue
+git commit -m "style: swap fonts to Space Mono + IBM Plex Sans"
+```
+
+---
+
+### Task 2: Rewrite CSS custom properties + global reset
+
+**Files:**
+- Modify: `apps/web/assets/css/main.css` (lines 1–40)
+
+**Step 1: Replace `:root` block**
+
+```css
 :root {
   /* ── Surfaces ─────────────────────────────────────────────── */
   --bg:           #0A0A0A;
@@ -32,8 +127,8 @@
   --radius-lg: 0px;
 
   /* ── Typography ───────────────────────────────────────────── */
-  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-mono: 'Space Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-body:    'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono:    'Space Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 
   /* ── Spacing ──────────────────────────────────────────────── */
   --space-xs:  4px;
@@ -52,7 +147,11 @@
   --shadow-interactive: 3px 3px 0px var(--text);
   --shadow-accent:      3px 3px 0px rgba(var(--accent-rgb), 0.25);
 }
+```
 
+**Step 2: Replace global reset + body**
+
+```css
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -70,6 +169,7 @@ body {
   font-family: var(--font-body);
   line-height: 1.6;
   min-height: 100vh;
+  /* Material surface — subtle noise */
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
 }
 
@@ -81,7 +181,21 @@ a:hover {
   color: var(--accent-hover);
   text-decoration: underline;
 }
+```
 
+**Step 3: Verify in browser**
+Confirm dark charcoal bg with warm white text and Space Mono in monospace elements.
+
+---
+
+### Task 3: Rewrite layout, navbar, page primitives
+
+**Files:**
+- Modify: `apps/web/assets/css/main.css` — Layout / Nav / Page sections
+
+**Step 1: Replace Layout + Nav + Page**
+
+```css
 /* ── Layout ───────────────────────────────────────────────────── */
 .container {
   max-width: 1280px;
@@ -104,13 +218,13 @@ a:hover {
 }
 .navbar-brand {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 .navbar-brand .dot {
@@ -124,16 +238,6 @@ a:hover {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
-
-/* Next analysis "any moment…" — gentle breathing pulse */
-.next-analysis-imminent {
-  animation: next-analysis-pulse 1.8s ease-in-out infinite;
-}
-@keyframes next-analysis-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
 .navbar-nav {
   display: flex;
   gap: 2px;
@@ -144,7 +248,7 @@ a:hover {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 400;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid transparent;
   transition: color var(--t-snap), border-color var(--t-snap);
@@ -190,6 +294,29 @@ a:hover {
   margin-top: 3px;
 }
 
+/* ── Next analysis pulse ──────────────────────────────────────── */
+.next-analysis-imminent {
+  animation: next-analysis-pulse 1.8s ease-in-out infinite;
+}
+@keyframes next-analysis-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+```
+
+**Step 2: Verify in browser**
+Nav should render in Space Mono uppercase, with amber active state and structural 2px bottom border.
+
+---
+
+### Task 4: Rewrite cards, stats, badges
+
+**Files:**
+- Modify: `apps/web/assets/css/main.css` — Cards / Stats / Badges sections
+
+**Step 1: Replace Cards**
+
+```css
 /* ── Cards ────────────────────────────────────────────────────── */
 .card {
   background: var(--bg-card);
@@ -212,13 +339,17 @@ a:hover {
   font-weight: 700;
   color: var(--text);
 }
+```
 
+**Step 2: Replace Stats grid**
+
+```css
 /* ── Stats ────────────────────────────────────────────────────── */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1px;
-  background: var(--border);
+  gap: 1px;          /* 1px gap = seams between cells */
+  background: var(--border);  /* gap color = border lines */
   border: 1px solid var(--border);
   margin-bottom: var(--space-lg);
 }
@@ -251,43 +382,11 @@ a:hover {
   color: var(--text-muted);
   margin-top: 5px;
 }
+```
 
-.tokens-summary-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: var(--space-lg);
-}
+**Step 3: Replace Badges**
 
-.tokens-summary-label {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.tokens-summary-values {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tokens-summary-total {
-  font-weight: 700;
-  color: var(--text);
-}
-
-.tokens-summary-split {
-  opacity: 0.8;
-}
-
-.tokens-summary-scope {
-  opacity: 0.6;
-}
-
+```css
 /* ── Badges ───────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
@@ -324,41 +423,18 @@ a:hover {
   background: var(--red-dim);
   color: var(--red);
 }
+```
 
-/* ── Table ────────────────────────────────────────────────────── */
-.table-wrap { overflow-x: auto; }
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-thead th {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  padding: 6px 12px;
-  text-align: left;
-  border-bottom: 2px solid var(--border);
-  background: var(--bg-card);
-}
-tbody td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--text-dim);
-}
-tbody tr:hover td {
-  background: var(--bg-hover);
-  cursor: pointer;
-}
-tbody tr:last-child td { border-bottom: none; }
-.mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
+---
 
+### Task 5: Rewrite buttons and forms
+
+**Files:**
+- Modify: `apps/web/assets/css/main.css` — Buttons / Form sections
+
+**Step 1: Replace Buttons**
+
+```css
 /* ── Buttons ──────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -382,6 +458,7 @@ tbody tr:last-child td { border-bottom: none; }
 .btn:active:not(:disabled) {
   transform: translate(1px, 1px);
 }
+
 .btn-primary {
   background: var(--accent);
   color: #000;
@@ -389,7 +466,9 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  box-shadow: var(--shadow-accent);
 }
+
 .btn-ghost {
   background: transparent;
   color: var(--text-dim);
@@ -398,7 +477,9 @@ tbody tr:last-child td { border-bottom: none; }
 .btn-ghost:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--text-muted);
+  box-shadow: var(--shadow-interactive);
 }
+
 .btn-danger {
   background: var(--red-dim);
   color: var(--red);
@@ -406,7 +487,9 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .btn-danger:hover:not(:disabled) {
   border-color: var(--red);
+  box-shadow: 3px 3px 0px var(--red);
 }
+
 .btn-success {
   background: var(--green-dim);
   color: var(--green);
@@ -414,12 +497,18 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .btn-success:hover:not(:disabled) {
   border-color: var(--green);
+  box-shadow: 3px 3px 0px var(--green);
 }
+
 .btn-sm {
   padding: 4px 10px;
   font-size: 10px;
 }
+```
 
+**Step 2: Replace Forms**
+
+```css
 /* ── Forms ────────────────────────────────────────────────────── */
 .form-group {
   margin-bottom: var(--space-md);
@@ -456,20 +545,63 @@ tbody tr:last-child td { border-bottom: none; }
   color: var(--text-muted);
   margin-top: 4px;
 }
+```
 
-/* ── Grids ────────────────────────────────────────────────────── */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
-.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-md); }
+---
 
-/* ── Agents grid ──────────────────────────────────────────────── */
+### Task 6: Rewrite tables, agent cards, modals, tabs
+
+**Files:**
+- Modify: `apps/web/assets/css/main.css` — Table / Agent card / Modal / Tabs sections
+
+**Step 1: Replace Table**
+
+```css
+/* ── Table ────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+thead th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-card);
+}
+tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+tbody tr:hover td {
+  background: var(--bg-hover);
+  cursor: pointer;
+}
+tbody tr:last-child td { border-bottom: none; }
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+```
+
+**Step 2: Replace Agent cards**
+
+```css
+/* ── Agent cards ──────────────────────────────────────────────── */
 .agents-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1px;
   background: var(--border);
 }
-
-/* ── Agent card ───────────────────────────────────────────────── */
 .agent-card {
   background: var(--bg-card);
   padding: var(--space-md);
@@ -510,7 +642,7 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .agent-stats > * {
   background: var(--bg-card);
-  padding: var(--space-sm);
+  padding: var(--space-sm) var(--space-sm);
 }
 .agent-stat-label {
   font-family: var(--font-mono);
@@ -525,41 +657,11 @@ tbody tr:last-child td { border-bottom: none; }
   font-weight: 700;
   margin-top: 2px;
 }
+```
 
-/* ── PnL colors ───────────────────────────────────────────────── */
-.positive { color: var(--green); }
-.negative { color: var(--red); }
-.neutral  { color: var(--text-dim); }
+**Step 3: Replace Modals**
 
-/* ── Empty state ──────────────────────────────────────────────── */
-.empty-state {
-  text-align: center;
-  padding: var(--space-2xl) var(--space-lg);
-  color: var(--text-muted);
-}
-.empty-icon { font-size: 32px; margin-bottom: var(--space-sm); }
-.empty-title {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-}
-
-/* ── Loading ──────────────────────────────────────────────────── */
-.spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border-light);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  display: inline-block;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
+```css
 /* ── Modal ────────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
@@ -596,8 +698,7 @@ tbody tr:last-child td { border-bottom: none; }
   letter-spacing: 0.04em;
 }
 .modal-header-warning {
-  flex: 1;
-  min-width: 0;
+  flex: 1; min-width: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--yellow);
@@ -623,7 +724,11 @@ tbody tr:last-child td { border-bottom: none; }
   justify-content: flex-end;
   border-top: 1px solid var(--border);
 }
+```
 
+**Step 4: Replace Tabs**
+
+```css
 /* ── Tabs ─────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
@@ -649,66 +754,20 @@ tbody tr:last-child td { border-bottom: none; }
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
+```
 
-/* ── Alerts ───────────────────────────────────────────────────── */
-.alert {
-  padding: var(--space-sm) var(--space-md);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  margin-bottom: var(--space-md);
-  border-left: 3px solid;
-}
-.alert-error {
-  background: var(--red-dim);
-  color: var(--red);
-  border-left-color: var(--red);
-}
-.alert-success {
-  background: var(--green-dim);
-  color: var(--green);
-  border-left-color: var(--green);
-}
+---
 
-/* ── Chart container ──────────────────────────────────────────── */
-.chart-container { position: relative; height: 200px; }
+### Task 7: Rewrite decision log, alerts, loading states
 
-/* ── API error banner ─────────────────────────────────────────── */
-.api-error-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px var(--space-md);
-  margin-bottom: var(--space-md);
-  background: var(--red-dim);
-  border-left: 3px solid var(--red);
-  color: var(--red);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.api-error-banner .error-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  background: var(--red);
-  color: var(--bg);
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.api-error-banner .btn { margin-left: auto; flex-shrink: 0; }
+**Files:**
+- Modify: `apps/web/assets/css/main.css` — Decision log / Alert / Loading / System transparency sections
 
-/* ── Skeleton — mono pulse, not shimmer ───────────────────────── */
-.skeleton {
-  background: var(--bg-hover);
-  animation: sk-pulse 1.4s ease-in-out infinite;
-}
-@keyframes sk-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
-}
+**Step 1: Decision log tokens**
 
+Decision log keeps most of its structure. Key changes: sharp corners, amber hold color, mono throughout, structural left borders.
+
+```css
 /* ── Decision Log ─────────────────────────────────────────────── */
 .dec-section { margin-bottom: var(--space-lg); }
 .dec-section-header {
@@ -755,14 +814,11 @@ tbody tr:last-child td { border-bottom: none; }
   border-left: 3px solid var(--border);
   overflow: hidden;
   transition: border-left-color var(--t-snap);
-  min-height: fit-content;
 }
 .dec-card--buy   { border-left-color: var(--green); }
 .dec-card--sell  { border-left-color: var(--red); }
 .dec-card--hold  { border-left-color: var(--border-light); }
 .dec-card--close { border-left-color: var(--accent); }
-
-/* Meta row */
 .dec-meta {
   display: flex;
   align-items: center;
@@ -813,8 +869,6 @@ tbody tr:last-child td { border-bottom: none; }
 .dec-tokens  { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .dec-chevron { font-size: 16px; color: var(--text-muted); line-height: 1; transition: transform 0.2s ease; flex-shrink: 0; }
 .dec-chevron--open { transform: rotate(90deg); }
-
-/* Reasoning */
 .dec-reasoning {
   font-family: var(--font-body);
   font-size: 13px;
@@ -833,8 +887,6 @@ tbody tr:last-child td { border-bottom: none; }
   overflow: hidden;
   white-space: normal;
 }
-
-/* Detail tabs */
 .dec-detail-tabs {
   display: flex;
   gap: 4px;
@@ -860,14 +912,10 @@ tbody tr:last-child td { border-bottom: none; }
   border-color: var(--accent);
   color: var(--accent);
 }
-
-/* Detail panel */
 .dec-detail-panel {
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
-
-/* Code block */
 .dec-code-block {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -879,8 +927,6 @@ tbody tr:last-child td { border-bottom: none; }
   max-height: 400px;
   overflow-y: auto;
 }
-
-/* Market data grid */
 .dec-market-grid { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); padding: 1px; }
 .dec-market-card {
   background: var(--bg-card);
@@ -895,6 +941,100 @@ tbody tr:last-child td { border-bottom: none; }
 .dec-market-indicators strong { color: var(--text-dim); }
 .dec-market-link { font-family: var(--font-mono); font-size: 10px; color: var(--accent); text-decoration: none; display: block; margin-top: 6px; }
 .dec-market-link:hover { text-decoration: underline; }
+```
+
+**Step 2: Alerts, loading, misc**
+
+```css
+/* ── PnL colors ───────────────────────────────────────────────── */
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+.neutral  { color: var(--text-dim); }
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: var(--space-2xl) var(--space-lg);
+  color: var(--text-muted);
+}
+.empty-icon { font-size: 32px; margin-bottom: var(--space-sm); }
+.empty-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+/* ── Loading ──────────────────────────────────────────────────── */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Skeleton — mono block pulses, not shimmer ────────────────── */
+.skeleton {
+  background: var(--bg-hover);
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+@keyframes sk-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Alerts ───────────────────────────────────────────────────── */
+.alert {
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-bottom: var(--space-md);
+  border-left: 3px solid;
+}
+.alert-error {
+  background: var(--red-dim);
+  color: var(--red);
+  border-left-color: var(--red);
+}
+.alert-success {
+  background: var(--green-dim);
+  color: var(--green);
+  border-left-color: var(--green);
+}
+
+/* ── API error banner ─────────────────────────────────────────── */
+.api-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px var(--space-md);
+  margin-bottom: var(--space-md);
+  background: var(--red-dim);
+  border-left: 3px solid var(--red);
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.api-error-banner .error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.api-error-banner .btn { margin-left: auto; flex-shrink: 0; }
 
 /* ── System transparency bar ──────────────────────────────────── */
 .system-bar {
@@ -910,3 +1050,75 @@ tbody tr:last-child td { border-bottom: none; }
   align-items: center;
 }
 .system-bar--stale { color: var(--red); }
+
+/* ── Misc grids ───────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-md); }
+.chart-container { position: relative; height: 200px; }
+
+/* ── Tokens summary ───────────────────────────────────────────── */
+.tokens-summary-row {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  margin-bottom: var(--space-lg);
+}
+.tokens-summary-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.tokens-summary-values { display: flex; flex-wrap: wrap; gap: 6px; }
+.tokens-summary-total { font-weight: 700; color: var(--text); }
+.tokens-summary-split { opacity: 0.8; }
+.tokens-summary-scope { opacity: 0.6; }
+```
+
+**Step 3: Verify full app**
+Open `npm run dev:web`, check: dashboard, agents list, agent detail, trades, settings. Look for broken layouts or invisible text.
+
+**Step 4: Commit**
+```bash
+git add apps/web/assets/css/main.css
+git commit -m "style: raw-craft redesign — dark workshop palette, Space Mono, structural borders"
+```
+
+---
+
+### Task 8: Update app.vue nav styles
+
+**Files:**
+- Modify: `apps/web/app.vue` `<style>` block
+
+The `<style>` block in `app.vue` overrides some navbar styles with `Inter` and rounded corners. Update to match.
+
+**Step 1: Replace scoped navbar styles in app.vue**
+
+Key changes in the `<style>` block:
+- `.navbar-brand`: add `font-family: var(--font-mono)`, `font-size: 12px`, `text-transform: uppercase`, `letter-spacing: 0.04em`
+- `.navbar-nav a`: add `font-family: var(--font-mono)`, `font-size: 11px`, `text-transform: uppercase`, remove `border-radius`
+- `.wallet-trigger`: add `font-family: var(--font-mono)`, `border-radius: var(--radius)`, `font-size: 11px`
+- `.beta-badge`: `border-radius: var(--radius)`, `font-family: var(--font-mono)`
+- `.settings-icon-btn`: `border-radius: var(--radius)`
+- `.provider-badge`: `font-family: var(--font-mono)`, `border-radius: var(--radius)`
+
+**Step 2: Verify navbar in browser**
+Navbar should be all Space Mono, uppercase nav links, amber active state.
+
+**Step 3: Commit**
+```bash
+git add apps/web/app.vue
+git commit -m "style: update app.vue navbar to raw-craft system"
+```
+
+---
+
+## Visual QA Checklist
+
+After all tasks, verify each page:
+
+- [ ] **Navbar** — Space Mono uppercase, amber active link, structural 2px border-bottom
+- [ ] **Dashboard** — stats grid with 1px seams, large mono stat values, no blue anywhere
+- [ ] **Agents list** — seam-grid layout, amber left-border on hover, sharp corners
+- [ ] **Agent detail** — decision log with colored left borders, mono badges, amber tabs
+- [ ] **Trades table** — 2px header border, mono column labels, no rounded rows
+- [ ] **Settings** — forms with mono labels, amber focus ring
+- [ ] **Modals** — 2px border, sharp corners, mono titles uppercase
+- [ ] **Buttons** — directional shadow on hover, amber primary, no rounded containers
+- [ ] **No Inter** — zero Inter font anywhere, confirmed in DevTools
+- [ ] **No blue accent** — no `#3b82f6` or old blue anywhere

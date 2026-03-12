@@ -45,7 +45,9 @@
       "Bash(mkdir -p ~/.claude/plugins/cache/local/raw-craft-workspace && cp /Users/janmiksik/Downloads/eval_set.json ~/.claude/plugins/cache/local/raw-craft-workspace/trigger-eval.json)",
       "Bash(cd ~/.claude/plugins/cache/claude-plugins-official/skill-creator/b36fd4b75301/skills/skill-creator && python -m scripts.run_loop \\\\\n  --eval-set ~/.claude/plugins/cache/local/raw-craft-workspace/trigger-eval.json \\\\\n  --skill-path ~/.claude/plugins/cache/local/raw-craft/1.0.0/skills/raw-craft \\\\\n  --model claude-sonnet-4-6 \\\\\n  --max-iterations 5 \\\\\n  --verbose 2>&1 | tail -5)",
       "Bash(pip install:*)",
-      "Bash(mkdir -p /Users/janmiksik/.claude/plugins/cache/local/raw-craft-workspace && cp /Users/janmiksik/Downloads/eval_set.json /Users/janmiksik/.claude/plugins/cache/local/raw-craft-workspace/trigger-eval.json && echo \"workspace ready\")"
+      "Bash(mkdir -p /Users/janmiksik/.claude/plugins/cache/local/raw-craft-workspace && cp /Users/janmiksik/Downloads/eval_set.json /Users/janmiksik/.claude/plugins/cache/local/raw-craft-workspace/trigger-eval.json && echo \"workspace ready\")",
+      "Bash(npx skills:*)",
+      "Bash(cp -r /Users/janmiksik/.claude/plugins/cache/local/raw-craft/1.0.0/skills/raw-craft /Users/janmiksik/.claude/skills/raw-craft)"
     ]
   }
 }

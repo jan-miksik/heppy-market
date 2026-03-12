@@ -118,6 +118,13 @@ export class TradingAgentDO extends DurableObject<Env> {
 
       if (!agentId) return Response.json({ error: 'Agent not initialized. Start the agent first.' }, { status: 400 });
 
+      // Prevent concurrent loop runs (e.g. manual trigger racing with scheduled alarm)
+      const isLoopRunning = await this.ctx.storage.get<boolean>('isLoopRunning');
+      if (isLoopRunning) {
+        return Response.json({ error: 'Analysis already in progress' }, { status: 409 });
+      }
+      await this.ctx.storage.put('isLoopRunning', true);
+
       const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
       const engine = engineState
         ? PaperEngine.deserialize(engineState)
@@ -131,9 +138,12 @@ export class TradingAgentDO extends DurableObject<Env> {
         console.error(`[TradingAgentDO] manual analyze error for ${agentId}:`, err);
         // Still persist engine state and reschedule alarm before returning error
         try { await this.ctx.storage.put('engineState', engine.serialize()); } catch { /* ignore */ }
+        await this.ctx.storage.delete('isLoopRunning');
         await this.rescheduleAlarmIfRunning();
         return Response.json({ error: String(err) }, { status: 500 });
       }
+
+      await this.ctx.storage.delete('isLoopRunning');
 
       try {
         await this.ctx.storage.put('engineState', engine.serialize());
@@ -233,6 +243,15 @@ export class TradingAgentDO extends DurableObject<Env> {
     const agentId = await this.ctx.storage.get<string>('agentId');
     if (!agentId) return;
 
+    // Skip if a manual analyze is already running
+    const isLoopRunning = await this.ctx.storage.get<boolean>('isLoopRunning');
+    if (isLoopRunning) {
+      console.warn(`[TradingAgentDO] ${agentId}: Loop already running, skipping alarm tick`);
+      await this.rescheduleAlarmIfRunning();
+      return;
+    }
+    await this.ctx.storage.put('isLoopRunning', true);
+
     try {
       // Restore or init engine
       const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
@@ -264,6 +283,7 @@ export class TradingAgentDO extends DurableObject<Env> {
     } catch (err) {
       console.error(`[TradingAgentDO] unexpected alarm error for ${agentId}:`, err);
     } finally {
+      await this.ctx.storage.delete('isLoopRunning');
       // ALWAYS reschedule the alarm if the agent is still running.
       // This must be in a finally block so timeouts / serialization errors
       // cannot leave the agent stuck in "running" with no future alarm.
@@ -305,7 +325,15 @@ export class TradingAgentDO extends DurableObject<Env> {
       const closed = engine.closedPositions;
       const totalTrades = closed.length;
       const winRate = engine.getWinRate();
-      const totalPnlPct = engine.getTotalPnlPct();
+      // Use realized P&L only for the snapshot — engine.balance deducts locked capital
+      // for open positions which makes P&L look negative when it isn't.
+      const realizedPnlUsd = closed.reduce((sum, p) => sum + (p.pnlUsd ?? 0), 0);
+      const serialized = engine.serialize();
+      const initialBalance = serialized.initialBalance;
+      // Balance = cash + open positions at cost (= initial + realized P&L)
+      const openAtCost = serialized.positions.reduce((sum, p) => sum + p.amountUsd, 0);
+      const balanceAtCost = serialized.balance + openAtCost;
+      const totalPnlPct = initialBalance > 0 ? (realizedPnlUsd / initialBalance) * 100 : 0;
 
       // Simplified Sharpe (assume 0% risk-free, using stddev of pnl pcts)
       let sharpeRatio: number | null = null;
@@ -336,7 +364,7 @@ export class TradingAgentDO extends DurableObject<Env> {
       await db.insert(performanceSnapshots).values({
         id: generateId('snap'),
         agentId,
-        balance: engine.balance,
+        balance: balanceAtCost,
         totalPnlPct,
         winRate,
         totalTrades,

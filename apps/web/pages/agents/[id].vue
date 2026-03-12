@@ -169,10 +169,20 @@ const winRate = computed(() => {
   const wins = closedTrades.value.filter((t) => (t.pnlPct ?? 0) > 0).length;
   return (wins / closedTrades.value.length) * 100;
 });
-const totalPnlUsd = computed(() => {
-  const current = latestSnapshot.value?.balance ?? agent.value?.config.paperBalance ?? 0;
+const realizedPnlUsd = computed(() =>
+  closedTrades.value.reduce((sum, t) => sum + (t.pnlUsd ?? 0), 0)
+);
+const unrealizedPnlUsd = computed(() =>
+  openTrades.value.reduce((sum, t) => {
+    const pnl = getUnrealizedPnl(t);
+    return pnl ? sum + (pnl.pnlPct / 100) * t.amountUsd : sum;
+  }, 0)
+);
+const totalPnlUsd = computed(() => realizedPnlUsd.value + unrealizedPnlUsd.value);
+const totalPnlPct = computed(() => {
   const initial = agent.value?.config.paperBalance ?? 0;
-  return current - initial;
+  if (!initial) return 0;
+  return (totalPnlUsd.value / initial) * 100;
 });
 const latestSnapshot = computed(() => snapshots.value[0] ?? null);
 
@@ -585,7 +595,10 @@ function formatLatency(ms: number): string {
             {{ totalPnlUsd >= 0 ? '+' : '' }}${{ totalPnlUsd.toFixed(0) }}
           </div>
           <div class="stat-change">
-            {{ latestSnapshot ? (latestSnapshot.totalPnlPct >= 0 ? '+' : '') + latestSnapshot.totalPnlPct.toFixed(2) + '%' : '—' }}
+            {{ (totalPnlPct >= 0 ? '+' : '') + totalPnlPct.toFixed(2) + '%' }}
+            <template v-if="openTrades.length > 0">
+              · <span :class="realizedPnlUsd >= 0 ? 'positive' : 'negative'">{{ realizedPnlUsd >= 0 ? '+' : '' }}${{ realizedPnlUsd.toFixed(0) }} realized</span>
+            </template>
           </div>
         </div>
         <div class="stat-card">
