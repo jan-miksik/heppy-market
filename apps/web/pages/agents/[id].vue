@@ -693,115 +693,116 @@ function formatLatency(ms: number): string {
         </div>
       </div>
 
-      <!-- ── Decisions Log ───────────────────────────────────────────── -->
+      <!-- ── Analysis Log ───────────────────────────────────────────── -->
       <div class="dec-section">
         <div class="dec-section-header">
-          <span class="dec-section-title">Decision Log</span>
+          <span class="dec-section-title">Analysis Log</span>
           <span class="dec-section-count">{{ decisions.length }}</span>
         </div>
 
         <div v-if="decisions.length === 0" class="dec-empty">
-          No decisions yet — click <strong>⚡ Run Analysis</strong> to fetch market data and get the LLM's reasoning
+          No decisions yet — click <strong>⚡ Run Analysis</strong> to fetch market data and get the LLM&apos;s reasoning
         </div>
 
-        <div v-else class="dec-feed">
-          <div
-            v-for="dec in decisions"
-            :key="dec.id"
-            class="dec-card"
-            :class="`dec-card--${dec.decision}`"
-          >
-            <!-- ── Meta row ── -->
-            <div class="dec-meta" @click="toggleDecision(dec.id)" style="cursor: pointer;">
-              <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+        <div v-else class="chat-feed">
+          <!-- ── Past decisions ── -->
+          <div v-for="(dec, idx) in decisions" :key="dec.id" class="chat-row">
 
-              <div class="dec-conf">
-                <span class="dec-conf-label">Confidence</span>
-                <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
-                <div class="dec-conf-track">
-                  <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
+            <!-- LEFT: Prompt bubble -->
+            <div class="chat-bubble chat-bubble--prompt">
+              <div class="chat-bubble-label">PROMPT →</div>
+
+              <div class="prompt-pills">
+                <!-- SYSTEM -->
+                <button class="prompt-pill prompt-pill--system" @click="toggleSection(dec.id, 'system')">
+                  <span>[SYSTEM · {{ countTokens(parsePromptSections(dec.llmPromptText).system) }}]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('system') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('system')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).system }}</pre>
+                </div>
+
+                <!-- MARKET DATA -->
+                <button class="prompt-pill prompt-pill--market" @click="toggleSection(dec.id, 'market')">
+                  <span>[MARKET DATA · {{ countTokens(parsePromptSections(dec.llmPromptText).marketData) }}]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('market') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('market')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).marketData }}</pre>
+                </div>
+
+                <!-- EDITABLE SETUP -->
+                <button
+                  class="prompt-pill prompt-pill--setup"
+                  @click="toggleSection(dec.id, 'setup')"
+                >
+                  <span>[EDITABLE SETUP · {{ countTokens(parsePromptSections(dec.llmPromptText).editableSetup) }}]</span>
+                  <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">edited</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('setup') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('setup')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).editableSetup }}</pre>
                 </div>
               </div>
 
-              <div class="dec-meta-right">
-                <span class="dec-time">{{ timeAgo(dec.createdAt) }}</span>
-                <span class="dec-meta-dot">·</span>
-                <span class="dec-model" :title="dec.llmModel">{{ dec.llmModel.split('/').pop() }}</span>
-                <span class="dec-meta-dot">·</span>
-                <span class="dec-latency">{{ formatLatency(dec.llmLatencyMs) }}</span>
-                <template v-if="dec.llmPromptTokens != null || dec.llmCompletionTokens != null">
-                  <span class="dec-meta-dot">·</span>
-                  <span class="dec-tokens">{{ (dec.llmPromptTokens ?? 0).toLocaleString() }}↑ {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓</span>
-                </template>
-                <span class="dec-chevron" :class="{ 'dec-chevron--open': expandedDecisions.has(dec.id) }">›</span>
+              <div class="chat-bubble-meta">
+                total: {{ (dec.llmPromptTokens ?? countTokens(dec.llmPromptText ?? '')).toLocaleString() }}↑
               </div>
             </div>
 
-            <!-- ── Reasoning — the hero ── -->
-            <div
-              class="dec-reasoning"
-              :class="{ 'dec-reasoning--clamped': !expandedDecisions.has(dec.id) }"
-              @click="toggleDecision(dec.id)"
-              style="cursor: pointer;"
-            >{{ dec.reasoning }}</div>
+            <!-- RIGHT: LLM response bubble -->
+            <div class="chat-bubble chat-bubble--response">
+              <div class="chat-bubble-label">← LLM</div>
 
-            <!-- ── Detail tabs (only when expanded) ── -->
-            <template v-if="expandedDecisions.has(dec.id)">
-              <div class="dec-detail-tabs">
-                <button
-                  v-if="parseSnapshot(dec.marketDataSnapshot).length > 0"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'market' }"
-                  @click="setDecisionTab(dec.id, 'market')"
-                >Market Data</button>
-                <button
-                  v-if="dec.llmPromptText"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'prompt' }"
-                  @click="setDecisionTab(dec.id, 'prompt')"
-                >Prompt</button>
-                <button
-                  v-if="dec.llmRawResponse"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'response' }"
-                  @click="setDecisionTab(dec.id, 'response')"
-                >Response</button>
-              </div>
-
-              <!-- Market data panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'market'" class="dec-detail-panel">
-                <div class="dec-market-grid">
-                  <div
-                    v-for="entry in parseSnapshot(dec.marketDataSnapshot)"
-                    :key="entry.pair"
-                    class="dec-market-card"
-                  >
-                    <div class="dec-market-pair">{{ entry.pair }}</div>
-                    <div class="dec-market-price">${{ formatPrice(entry.priceUsd) }}</div>
-                    <div v-if="entry.priceChange" class="dec-market-changes">
-                      <span v-if="entry.priceChange.h1 !== undefined" :class="(entry.priceChange.h1 ?? 0) >= 0 ? 'positive' : 'negative'">1h {{ (entry.priceChange.h1 ?? 0).toFixed(2) }}%</span>
-                      <span v-if="entry.priceChange.h24 !== undefined" :class="(entry.priceChange.h24 ?? 0) >= 0 ? 'positive' : 'negative'">24h {{ (entry.priceChange.h24 ?? 0).toFixed(2) }}%</span>
-                    </div>
-                    <div v-if="entry.indicators" class="dec-market-indicators">
-                      <span v-if="entry.indicators.rsi">RSI <strong>{{ entry.indicators.rsi }}</strong></span>
-                      <span v-if="entry.indicators.emaTrend" :class="entry.indicators.emaTrend === 'bullish' ? 'positive' : 'negative'">EMA {{ entry.indicators.emaTrend }}</span>
-                      <span v-if="entry.indicators.macdHistogram">MACD <strong>{{ entry.indicators.macdHistogram }}</strong></span>
-                    </div>
-                    <a v-if="entry.dexScreenerUrl" :href="entry.dexScreenerUrl" target="_blank" rel="noopener" class="dec-market-link">DexScreener ↗</a>
+              <div class="chat-decision-header">
+                <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+                <div class="dec-conf">
+                  <span class="dec-conf-label">conf</span>
+                  <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
+                  <div class="dec-conf-track">
+                    <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
                   </div>
                 </div>
               </div>
 
-              <!-- Prompt panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'prompt'" class="dec-detail-panel">
-                <pre class="dec-code-block">{{ dec.llmPromptText }}</pre>
-              </div>
+              <div class="chat-reasoning">{{ dec.reasoning }}</div>
 
-              <!-- Response panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'response'" class="dec-detail-panel">
-                <pre class="dec-code-block">{{ dec.llmRawResponse }}</pre>
+              <template v-if="dec.llmRawResponse">
+                <button class="prompt-pill prompt-pill--llm-response" @click="toggleSection(dec.id, 'response')">
+                  <span>[RESPONSE]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('response') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('response')" class="pill-content">
+                  <pre class="dec-code-block">{{ dec.llmRawResponse }}</pre>
+                </div>
+              </template>
+
+              <div class="chat-bubble-meta">
+                {{ dec.llmModel.split('/').pop() }} · {{ formatLatency(dec.llmLatencyMs) }} · {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓ · {{ timeAgo(dec.createdAt) }}
               </div>
-            </template>
+            </div>
+          </div>
+
+          <!-- ── Ghost: next analysis preview ── -->
+          <div class="chat-row chat-row--ghost">
+            <div class="chat-bubble chat-bubble--prompt">
+              <div class="chat-bubble-label">PROMPT →</div>
+              <div class="prompt-pills">
+                <span class="prompt-pill prompt-pill--system">[SYSTEM]</span>
+                <span class="prompt-pill prompt-pill--market">[MARKET DATA]</span>
+                <span class="prompt-pill prompt-pill--setup">[EDITABLE SETUP]</span>
+              </div>
+              <div class="chat-bubble-meta">next cycle</div>
+            </div>
+            <div class="chat-bubble chat-bubble--response">
+              <div class="chat-bubble-label">← LLM</div>
+              <div class="ghost-awaiting">
+                <span v-if="agent.status === 'running'" :class="{ 'ghost-pulse': isNextAnalysisImminent }">
+                  {{ isNextAnalysisImminent ? '● analyzing…' : `— next in ${formatCountdown(secondsUntilNextAction)} —` }}
+                </span>
+                <span v-else style="opacity: 0.5;">— stopped —</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
