@@ -111,7 +111,7 @@ function buildBehaviorSummaryMd(b: Record<string, unknown>): string {
   if (typeof b.creationAggressiveness === 'number') rows.push(`**Creation aggression:** ${b.creationAggressiveness}%`);
 
   if (rows.length === 0) return '';
-  return `\n\n---\n\n*Auto-generated behavior summary:*\n\n${rows.join(' · ')}`;
+  return `\n\n---\n\n*Behavior summary:*\n\n${rows.join(' · ')}`;
 }
 
 function generatePersonaMd() {

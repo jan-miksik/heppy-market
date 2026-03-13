@@ -710,7 +710,12 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* ── Decision Log ─────────────────────────────────────────────── */
-.dec-section { margin-bottom: var(--space-lg); }
+.dec-section { 
+  margin-bottom: var(--space-lg); 
+  max-height: 1200px;
+  overflow: auto;
+}
+
 .dec-section-header {
   display: flex;
   align-items: center;
@@ -876,7 +881,7 @@ tbody tr:last-child td { border-bottom: none; }
   white-space: pre-wrap;
   word-break: break-word;
   padding: 12px 14px;
-  max-height: 400px;
+  max-height: fit-content;
   overflow-y: auto;
 }
 

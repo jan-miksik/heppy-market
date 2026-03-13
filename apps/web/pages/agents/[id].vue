@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false });
-import { marked } from 'marked';
+import { parse as markedParse } from 'marked';
 import type { Trade } from '~/composables/useTrades';
 import { pollUntilFutureAlarm } from '~/utils/statusPolling';
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
@@ -92,8 +92,24 @@ function formatJson(text: string): string {
   try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+}
+
 function renderMarkdown(text: string): string {
-  return marked(text) as string;
+  try {
+    return markedParse(text, { async: false });
+  } catch {
+    return escapeHtml(text);
+  }
+}
+
+function decisionHtml(text: string, md: boolean): string {
+  return md ? renderMarkdown(text) : escapeHtml(text);
 }
 
 /** Extract pair → price map from a MARKET DATA section */
@@ -102,9 +118,9 @@ function parseMarketPrices(marketData: string): Record<string, number> {
   let currentPair = '';
   for (const line of marketData.split('\n')) {
     const pairMatch = line.match(/^### (.+)$/);
-    if (pairMatch) currentPair = pairMatch[1].trim();
+    if (pairMatch) currentPair = pairMatch[1]?.trim() ?? '';
     const priceMatch = line.match(/^Price: \$([0-9.]+)/);
-    if (priceMatch && currentPair) prices[currentPair] = parseFloat(priceMatch[1]);
+    if (priceMatch && currentPair) prices[currentPair] = parseFloat(priceMatch[1] ?? '0');
   }
   return prices;
 }
@@ -712,7 +728,7 @@ function formatLatency(ms: number): string {
       <!-- ── Analysis Log ───────────────────────────────────────────── -->
       <div class="dec-section">
         <div class="dec-section-header">
-          <span class="dec-section-title">Analysis Log</span>
+          <span class="dec-section-title">Decisions Log</span>
           <span class="dec-section-count">{{ decisions.length }}</span>
           <button
             class="btn btn-ghost btn-sm"
@@ -727,20 +743,8 @@ function formatLatency(ms: number): string {
 
         <div v-else class="chat-feed">
           <!-- ── Ghost: next analysis preview ── -->
-          <div class="chat-row chat-row--ghost">
-            <div class="chat-bubble chat-bubble--prompt">
-              <div class="chat-prompt-header">
-                <span class="chat-bubble-label">PROMPT →</span>
-                <span class="prompt-pill--system" style="font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-muted);">[SYSTEM]</span>
-                <span class="prompt-pill--market" style="font-size:10px;font-family:var(--font-mono,monospace);color:#f59e0b;">[MARKET DATA]</span>
-                <span class="prompt-pill--setup" style="font-size:10px;font-family:var(--font-mono,monospace);color:#60a5fa;">[EDITABLE SETUP]</span>
-              </div>
-              <div class="chat-bubble-meta">next cycle</div>
-            </div>
-            <div class="chat-bubble chat-bubble--response">
-              <div class="chat-prompt-header">
-                <span class="chat-bubble-label">← LLM</span>
-              </div>
+          <!-- <div class="dec-entry dec-entry--ghost">
+            <div class="dec-main">
               <div class="ghost-awaiting">
                 <span v-if="agent.status === 'running'" :class="{ 'ghost-pulse': isNextAnalysisImminent }">
                   {{ isNextAnalysisImminent ? '● analyzing…' : `— next in ${formatCountdown(secondsUntilNextAction)} —` }}
@@ -748,83 +752,110 @@ function formatLatency(ms: number): string {
                 <span v-else style="opacity: 0.5;">— stopped —</span>
               </div>
             </div>
-          </div>
+          </div> -->
 
           <!-- ── Past decisions ── -->
-          <div v-for="(dec, idx) in decisions" :key="dec.id" class="chat-row">
-
-            <!-- Prompt bubble -->
-            <div class="chat-bubble chat-bubble--prompt">
-              <div class="chat-prompt-header">
-                <span class="chat-bubble-label">PROMPT →</span>
-                <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">setup edited</span>
-                <span v-if="marketDiffSummary(dec, decisions[idx + 1])" class="market-diff">{{ marketDiffSummary(dec, decisions[idx + 1]) }}</span>
-                <button class="prompt-sections-btn" @click="toggleSection(dec.id, 'sections')" :title="expandedSections[dec.id]?.has('sections') ? 'Hide sections' : 'Show sections'">
-                  {{ expandedSections[dec.id]?.has('sections') ? '×' : '+' }}
-                </button>
-              </div>
-
-              <template v-if="expandedSections[dec.id]?.has('sections')">
-                <div class="prompt-pills">
-                  <button class="prompt-pill prompt-pill--system" @click="toggleSection(dec.id, 'system')">
-                    <span>[SYSTEM]</span>
-                    <span class="pill-chevron">{{ expandedSections[dec.id]?.has('system') ? '▾' : '▸' }}</span>
-                  </button>
-                  <div v-if="expandedSections[dec.id]?.has('system')" class="pill-content">
-                    <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).system }}</pre>
-                  </div>
-
-                  <button class="prompt-pill prompt-pill--market" @click="toggleSection(dec.id, 'market')">
-                    <span>[MARKET DATA]</span>
-                    <span class="pill-chevron">{{ expandedSections[dec.id]?.has('market') ? '▾' : '▸' }}</span>
-                  </button>
-                  <div v-if="expandedSections[dec.id]?.has('market')" class="pill-content">
-                    <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).marketData }}</pre>
-                  </div>
-
-                  <button class="prompt-pill prompt-pill--setup" @click="toggleSection(dec.id, 'setup')">
-                    <span>[EDITABLE SETUP]</span>
-                    <span class="pill-chevron">{{ expandedSections[dec.id]?.has('setup') ? '▾' : '▸' }}</span>
-                  </button>
-                  <div v-if="expandedSections[dec.id]?.has('setup')" class="pill-content">
-                    <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).editableSetup }}</pre>
-                  </div>
+          <div v-for="(dec, idx) in decisions" :key="dec.id" class="dec-entry">
+            <!-- Always-visible main content -->
+            <div class="dec-main">
+              <div class="dec-main-header">
+                <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+                <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
+                <div class="dec-conf-track">
+                  <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
                 </div>
-              </template>
-
-              <div class="chat-bubble-meta">{{ (dec.llmPromptTokens ?? 0).toLocaleString() }}↑</div>
+              </div>
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div class="chat-reasoning" :class="{ 'chat-reasoning--md': showMdPreview }" v-html="decisionHtml(dec.reasoning, showMdPreview)" />
+              <div class="dec-meta">
+                {{ dec.llmModel.split('/').pop() }} · {{ timeAgo(dec.createdAt) }}
+              </div>
             </div>
 
-            <!-- LLM response bubble -->
-            <div class="chat-bubble chat-bubble--response">
-              <div class="chat-prompt-header">
-                <span class="chat-bubble-label">← LLM</span>
-                <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
-                <div class="dec-conf">
-                  <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
-                  <div class="dec-conf-track">
-                    <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
-                  </div>
+            <!-- Details toggle -->
+            <button class="dec-details-btn" @click="toggleSection(dec.id, 'details')">
+              Details {{ expandedSections[dec.id]?.has('details') ? '▾' : '▸' }}
+            </button>
+
+            <!-- Details: prompt sections + raw response -->
+            <div v-if="expandedSections[dec.id]?.has('details')" class="dec-details">
+              <!-- PROMPT group -->
+              <div class="dec-details-section-label">
+                PROMPT →
+                <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">setup edited</span>
+              </div>
+              <div class="prompt-pills">
+                <button class="prompt-pill prompt-pill--system" @click="toggleSection(dec.id, 'system')">
+                  <span>[SYSTEM]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('system') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('system')" class="pill-content">
+                  <pre v-if="!showMdPreview" class="dec-code-block">
+{{ parsePromptSections(dec.llmPromptText).system }}
+                  </pre>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    v-else
+                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    v-html="decisionHtml(parsePromptSections(dec.llmPromptText).system, true)"
+                  />
+                </div>
+
+                <button class="prompt-pill prompt-pill--market" @click="toggleSection(dec.id, 'market')">
+                  <span>[MARKET DATA]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('market') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('market')" class="pill-content">
+                  <pre v-if="!showMdPreview" class="dec-code-block">
+{{ parsePromptSections(dec.llmPromptText).marketData }}
+                  </pre>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    v-else
+                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    v-html="decisionHtml(parsePromptSections(dec.llmPromptText).marketData, true)"
+                  />
+                </div>
+
+                <button class="prompt-pill prompt-pill--setup" @click="toggleSection(dec.id, 'setup')">
+                  <span>[EDITABLE SETUP]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('setup') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('setup')" class="pill-content">
+                  <pre v-if="!showMdPreview" class="dec-code-block">
+{{ parsePromptSections(dec.llmPromptText).editableSetup }}
+                  </pre>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    v-else
+                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    v-html="decisionHtml(parsePromptSections(dec.llmPromptText).editableSetup, true)"
+                  />
                 </div>
               </div>
 
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <div v-if="showMdPreview" class="chat-reasoning chat-reasoning--md" v-html="renderMarkdown(dec.reasoning)" />
-              <div v-else class="chat-reasoning">{{ dec.reasoning }}</div>
-
+              <!-- LLM RESPONSE group -->
               <template v-if="dec.llmRawResponse">
+                <div class="dec-details-section-label dec-details-section-label--llm">
+                  ← LLM
+                  <span class="dec-details-tokens">{{ (dec.llmPromptTokens ?? 0).toLocaleString() }}↑ {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓</span>
+                </div>
                 <button class="prompt-pill prompt-pill--llm-response" @click="toggleSection(dec.id, 'response')">
                   <span>[RESPONSE]</span>
                   <span class="pill-chevron">{{ expandedSections[dec.id]?.has('response') ? '▾' : '▸' }}</span>
                 </button>
                 <div v-if="expandedSections[dec.id]?.has('response')" class="pill-content">
-                  <pre class="dec-code-block">{{ formatJson(dec.llmRawResponse) }}</pre>
+                  <pre v-if="!showMdPreview" class="dec-code-block">
+{{ formatJson(dec.llmRawResponse) }}
+                  </pre>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    v-else
+                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    v-html="decisionHtml(dec.llmRawResponse, true)"
+                  />
                 </div>
               </template>
-
-              <div class="chat-bubble-meta">
-                {{ dec.llmModel.split('/').pop() }} · {{ formatLatency(dec.llmLatencyMs) }} · {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓ · {{ timeAgo(dec.createdAt) }}
-              </div>
             </div>
           </div>
         </div>
@@ -1073,7 +1104,7 @@ function formatLatency(ms: number): string {
 </template>
 
 <style scoped>
-/* ── Analysis Log — Chat Layout ────────────────────────────────── */
+/* ── Analysis Log ───────────────────────────────────────────────── */
 
 .chat-feed {
   display: flex;
@@ -1081,52 +1112,91 @@ function formatLatency(ms: number): string {
   gap: 0;
 }
 
-.chat-row {
+.dec-entry {
   display: flex;
   flex-direction: column;
   gap: 0;
-  border-left: 2px solid var(--border);
   padding-left: 12px;
   margin-bottom: 16px;
+  background: #1b1c1c;
+  min-height: fit-content;
 }
 
-.chat-bubble {
-  padding: 10px 12px;
+.dec-main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
+  padding: 10px 0;
 }
 
-.chat-bubble--prompt {
-  border-left: 2px solid var(--border);
-}
-
-.chat-bubble--response {
-  border-left: 2px solid #4ade80;
-  margin-top: 2px;
-}
-
-.chat-prompt-header {
+.dec-main-header {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.chat-bubble-label {
+.dec-meta {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+}
+
+.dec-details-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.dec-details-btn:hover {
+  color: var(--text);
+}
+
+.dec-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+.dec-details-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 10px;
   font-family: var(--font-mono, monospace);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
+  margin-top: 8px;
+  margin-bottom: 2px;
 }
 
-.chat-bubble-meta {
-  font-size: 11px;
+.dec-details-section-label:first-child {
+  margin-top: 0;
+}
+
+.dec-details-section-label--llm {
+  color: #4ade80;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.dec-details-tokens {
+  font-size: 10px;
   font-family: var(--font-mono, monospace);
   color: var(--text-muted);
-  margin-top: 4px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* ── Prompt pills ── */
@@ -1140,7 +1210,6 @@ function formatLatency(ms: number): string {
 .prompt-pill {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   padding: 4px 8px;
   font-size: 11px;
@@ -1149,7 +1218,6 @@ function formatLatency(ms: number): string {
   letter-spacing: 0.04em;
   background: transparent;
   border: none;
-  border-left: 2px solid currentColor;
   cursor: pointer;
   text-align: left;
   width: 100%;
@@ -1205,19 +1273,17 @@ span.prompt-pill:hover {
   font-size: 12px;
   line-height: 1.6;
   color: var(--text);
-  white-space: pre-wrap;
 }
 
-.chat-reasoning--md {
-  white-space: normal;
-}
-
-.chat-reasoning--md :deep(p)    { margin: 0 0 6px; }
-.chat-reasoning--md :deep(ul)   { margin: 4px 0; padding-left: 16px; }
-.chat-reasoning--md :deep(li)   { margin-bottom: 2px; }
-.chat-reasoning--md :deep(h1),
-.chat-reasoning--md :deep(h2),
-.chat-reasoning--md :deep(h3)   { margin: 6px 0 2px; font-size: 12px; font-weight: 700; }
+.chat-reasoning :deep(p)    { margin: 0 0 6px; }
+.chat-reasoning :deep(ul)   { margin: 4px 0; padding-left: 16px; }
+.chat-reasoning :deep(li)   { margin-bottom: 2px; }
+.chat-reasoning :deep(h1),
+.chat-reasoning :deep(h2),
+.chat-reasoning :deep(h3)   { margin: 6px 0 2px; font-size: 12px; font-weight: 700; }
+.chat-reasoning :deep(strong) { font-weight: 700; }
+.chat-reasoning :deep(em)     { font-style: italic; }
+.chat-reasoning :deep(code)   { font-family: var(--font-mono, monospace); font-size: 11px; }
 
 .market-diff {
   font-size: 10px;
@@ -1226,26 +1292,9 @@ span.prompt-pill:hover {
   letter-spacing: 0.02em;
 }
 
-.prompt-sections-btn {
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1;
-  padding: 1px 5px;
-  cursor: pointer;
-  font-family: var(--font-mono, monospace);
-  flex-shrink: 0;
-}
-.prompt-sections-btn:hover {
-  color: var(--text);
-  border-color: var(--text-muted);
-}
-
 /* ── Ghost entry ── */
 
-.chat-row--ghost {
+.dec-entry--ghost {
   opacity: 0.35;
   pointer-events: none;
 }
