@@ -1048,3 +1048,161 @@ function formatLatency(ms: number): string {
     </Teleport>
   </main>
 </template>
+
+<style scoped>
+/* ── Analysis Log — Chat Layout ────────────────────────────────── */
+
+.chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .chat-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-bubble {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-bubble--prompt {
+  border-left: 3px solid var(--border);
+}
+
+.chat-bubble--response {
+  border-right: 3px solid var(--border);
+}
+
+.chat-bubble-label {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.chat-bubble-meta {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── Prompt pills ── */
+
+.prompt-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prompt-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: none;
+  border-left: 2px solid currentColor;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: var(--text-muted);
+  transition: opacity 0.1s;
+}
+
+.prompt-pill:hover {
+  opacity: 0.75;
+}
+
+/* span-only pills in the ghost row have no interactivity */
+span.prompt-pill {
+  cursor: default;
+}
+span.prompt-pill:hover {
+  opacity: 1;
+}
+
+.prompt-pill--system        { color: var(--text-muted); }
+.prompt-pill--market        { color: #f59e0b; }
+.prompt-pill--setup         { color: #60a5fa; }
+.prompt-pill--llm-response  { color: #4ade80; }
+
+.pill-chevron {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.pill-edited-tag {
+  font-size: 10px;
+  color: #f59e0b;
+  border: 1px solid #f59e0b;
+  padding: 0 4px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.pill-content {
+  padding-left: 10px;
+}
+
+/* ── Response bubble internals ── */
+
+.chat-decision-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chat-reasoning {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* ── Ghost entry ── */
+
+.chat-row--ghost {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.ghost-awaiting {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+@keyframes ghost-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.ghost-pulse {
+  animation: ghost-blink 1s ease-in-out infinite;
+  color: #4ade80;
+}
+</style>
