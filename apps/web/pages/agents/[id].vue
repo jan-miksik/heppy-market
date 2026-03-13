@@ -82,8 +82,6 @@ const isAnalyzing = ref(false);
 const showEditModal = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const expandedDecisions = ref<Set<string>>(new Set());
-
 /** Tracks which pill sections are open per decision id */
 const expandedSections = ref<Record<string, Set<string>>>({});
 
@@ -98,7 +96,6 @@ function toggleSection(decId: string, section: string) {
   expandedSections.value = { ...expandedSections.value, [decId]: next };
 }
 const expandedTrades = ref<Set<string>>(new Set());
-const decisionDetailTab = ref<Record<string, 'prompt' | 'response' | 'market'>>({});
 const analyzeError = ref<string | null>(null);
 const personaMd = ref('');
 const personaSaving = ref(false);
@@ -507,27 +504,6 @@ function hasEditedSetup(dec: AgentDecision, prevDec: AgentDecision | undefined):
   const curr = parsePromptSections(dec.llmPromptText).editableSetup;
   const prev = parsePromptSections(prevDec.llmPromptText).editableSetup;
   return curr.length > 0 && prev.length > 0 && curr !== prev;
-}
-
-function toggleDecision(decId: string) {
-  if (expandedDecisions.value.has(decId)) {
-    expandedDecisions.value.delete(decId);
-    const next = { ...decisionDetailTab.value };
-    delete next[decId];
-    decisionDetailTab.value = next;
-  } else {
-    expandedDecisions.value.add(decId);
-  }
-}
-
-function setDecisionTab(decId: string, tab: 'prompt' | 'response' | 'market') {
-  if (decisionDetailTab.value[decId] === tab) {
-    const next = { ...decisionDetailTab.value };
-    delete next[decId];
-    decisionDetailTab.value = next;
-  } else {
-    decisionDetailTab.value = { ...decisionDetailTab.value, [decId]: tab };
-  }
 }
 
 function toggleTrade(tradeId: string) {
