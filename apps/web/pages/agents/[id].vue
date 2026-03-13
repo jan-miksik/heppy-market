@@ -82,9 +82,20 @@ const isAnalyzing = ref(false);
 const showEditModal = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
-const expandedDecisions = ref<Set<string>>(new Set());
+/** Tracks which pill sections are open per decision id */
+const expandedSections = ref<Record<string, Set<string>>>({});
+
+function toggleSection(decId: string, section: string) {
+  const current = expandedSections.value[decId] ?? new Set<string>();
+  const next = new Set(current);
+  if (next.has(section)) {
+    next.delete(section);
+  } else {
+    next.add(section);
+  }
+  expandedSections.value = { ...expandedSections.value, [decId]: next };
+}
 const expandedTrades = ref<Set<string>>(new Set());
-const decisionDetailTab = ref<Record<string, 'prompt' | 'response' | 'market'>>({});
 const analyzeError = ref<string | null>(null);
 const personaMd = ref('');
 const personaSaving = ref(false);
@@ -452,25 +463,47 @@ const editInitialValues = computed(() => {
   };
 });
 
-function toggleDecision(decId: string) {
-  if (expandedDecisions.value.has(decId)) {
-    expandedDecisions.value.delete(decId);
-    const next = { ...decisionDetailTab.value };
-    delete next[decId];
-    decisionDetailTab.value = next;
-  } else {
-    expandedDecisions.value.add(decId);
-  }
+/** Split a stored llmPromptText into the three logical sections */
+function parsePromptSections(promptText: string | undefined): {
+  system: string;
+  marketData: string;
+  editableSetup: string;
+} {
+  if (!promptText) return { system: '', marketData: '', editableSetup: '' };
+
+  const portfolioIdx = promptText.indexOf('## Portfolio State');
+  const behaviorIdx  = promptText.indexOf('## Your Behavior Profile');
+  const personaIdx   = promptText.indexOf('## Your Persona');
+
+  // SYSTEM: everything before ## Portfolio State
+  const system = portfolioIdx >= 0 ? promptText.slice(0, portfolioIdx).trim() : promptText.trim();
+
+  // EDITABLE SETUP: ## Your Behavior Profile and/or ## Your Persona onwards
+  const editableStart = behaviorIdx >= 0 ? behaviorIdx : (personaIdx >= 0 ? personaIdx : -1);
+  const editableSetup = editableStart >= 0 ? promptText.slice(editableStart).trim() : '';
+
+  // MARKET DATA: between system and editableSetup
+  const marketEnd = editableStart >= 0 ? editableStart : promptText.length;
+  const marketData = portfolioIdx >= 0 ? promptText.slice(portfolioIdx, marketEnd).trim() : '';
+
+  return { system, marketData, editableSetup };
 }
 
-function setDecisionTab(decId: string, tab: 'prompt' | 'response' | 'market') {
-  if (decisionDetailTab.value[decId] === tab) {
-    const next = { ...decisionDetailTab.value };
-    delete next[decId];
-    decisionDetailTab.value = next;
-  } else {
-    decisionDetailTab.value = { ...decisionDetailTab.value, [decId]: tab };
-  }
+/** Rough token estimate: 1 token ≈ 4 characters */
+function countTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Returns true when the EDITABLE SETUP section of `dec` differs from `prevDec`.
+ * `prevDec` is the entry that came *before* this one in the decisions array
+ * (i.e. decisions[idx + 1], because the array is newest-first).
+ */
+function hasEditedSetup(dec: AgentDecision, prevDec: AgentDecision | undefined): boolean {
+  if (!prevDec || !dec.llmPromptText || !prevDec.llmPromptText) return false;
+  const curr = parsePromptSections(dec.llmPromptText).editableSetup;
+  const prev = parsePromptSections(prevDec.llmPromptText).editableSetup;
+  return curr.length > 0 && prev.length > 0 && curr !== prev;
 }
 
 function toggleTrade(tradeId: string) {
@@ -636,115 +669,116 @@ function formatLatency(ms: number): string {
         </div>
       </div>
 
-      <!-- ── Decisions Log ───────────────────────────────────────────── -->
+      <!-- ── Analysis Log ───────────────────────────────────────────── -->
       <div class="dec-section">
         <div class="dec-section-header">
-          <span class="dec-section-title">Decision Log</span>
+          <span class="dec-section-title">Analysis Log</span>
           <span class="dec-section-count">{{ decisions.length }}</span>
         </div>
 
         <div v-if="decisions.length === 0" class="dec-empty">
-          No decisions yet — click <strong>⚡ Run Analysis</strong> to fetch market data and get the LLM's reasoning
+          No decisions yet — click <strong>⚡ Run Analysis</strong> to fetch market data and get the LLM&apos;s reasoning
         </div>
 
-        <div v-else class="dec-feed">
-          <div
-            v-for="dec in decisions"
-            :key="dec.id"
-            class="dec-card"
-            :class="`dec-card--${dec.decision}`"
-          >
-            <!-- ── Meta row ── -->
-            <div class="dec-meta" @click="toggleDecision(dec.id)" style="cursor: pointer;">
-              <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+        <div v-else class="chat-feed">
+          <!-- ── Past decisions ── -->
+          <div v-for="(dec, idx) in decisions" :key="dec.id" class="chat-row">
 
-              <div class="dec-conf">
-                <span class="dec-conf-label">Confidence</span>
-                <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
-                <div class="dec-conf-track">
-                  <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
+            <!-- LEFT: Prompt bubble -->
+            <div class="chat-bubble chat-bubble--prompt">
+              <div class="chat-bubble-label">PROMPT →</div>
+
+              <div class="prompt-pills">
+                <!-- SYSTEM -->
+                <button class="prompt-pill prompt-pill--system" @click="toggleSection(dec.id, 'system')">
+                  <span>[SYSTEM · {{ countTokens(parsePromptSections(dec.llmPromptText).system) }}]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('system') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('system')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).system }}</pre>
+                </div>
+
+                <!-- MARKET DATA -->
+                <button class="prompt-pill prompt-pill--market" @click="toggleSection(dec.id, 'market')">
+                  <span>[MARKET DATA · {{ countTokens(parsePromptSections(dec.llmPromptText).marketData) }}]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('market') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('market')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).marketData }}</pre>
+                </div>
+
+                <!-- EDITABLE SETUP -->
+                <button
+                  class="prompt-pill prompt-pill--setup"
+                  @click="toggleSection(dec.id, 'setup')"
+                >
+                  <span>[EDITABLE SETUP · {{ countTokens(parsePromptSections(dec.llmPromptText).editableSetup) }}]</span>
+                  <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">edited</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('setup') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('setup')" class="pill-content">
+                  <pre class="dec-code-block">{{ parsePromptSections(dec.llmPromptText).editableSetup }}</pre>
                 </div>
               </div>
 
-              <div class="dec-meta-right">
-                <span class="dec-time">{{ timeAgo(dec.createdAt) }}</span>
-                <span class="dec-meta-dot">·</span>
-                <span class="dec-model" :title="dec.llmModel">{{ dec.llmModel.split('/').pop() }}</span>
-                <span class="dec-meta-dot">·</span>
-                <span class="dec-latency">{{ formatLatency(dec.llmLatencyMs) }}</span>
-                <template v-if="dec.llmPromptTokens != null || dec.llmCompletionTokens != null">
-                  <span class="dec-meta-dot">·</span>
-                  <span class="dec-tokens">{{ (dec.llmPromptTokens ?? 0).toLocaleString() }}↑ {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓</span>
-                </template>
-                <span class="dec-chevron" :class="{ 'dec-chevron--open': expandedDecisions.has(dec.id) }">›</span>
+              <div class="chat-bubble-meta">
+                total: {{ (dec.llmPromptTokens ?? countTokens(dec.llmPromptText ?? '')).toLocaleString() }}↑
               </div>
             </div>
 
-            <!-- ── Reasoning — the hero ── -->
-            <div
-              class="dec-reasoning"
-              :class="{ 'dec-reasoning--clamped': !expandedDecisions.has(dec.id) }"
-              @click="toggleDecision(dec.id)"
-              style="cursor: pointer;"
-            >{{ dec.reasoning }}</div>
+            <!-- RIGHT: LLM response bubble -->
+            <div class="chat-bubble chat-bubble--response">
+              <div class="chat-bubble-label">← LLM</div>
 
-            <!-- ── Detail tabs (only when expanded) ── -->
-            <template v-if="expandedDecisions.has(dec.id)">
-              <div class="dec-detail-tabs">
-                <button
-                  v-if="parseSnapshot(dec.marketDataSnapshot).length > 0"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'market' }"
-                  @click="setDecisionTab(dec.id, 'market')"
-                >Market Data</button>
-                <button
-                  v-if="dec.llmPromptText"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'prompt' }"
-                  @click="setDecisionTab(dec.id, 'prompt')"
-                >Prompt</button>
-                <button
-                  v-if="dec.llmRawResponse"
-                  class="dec-detail-tab"
-                  :class="{ 'dec-detail-tab--active': decisionDetailTab[dec.id] === 'response' }"
-                  @click="setDecisionTab(dec.id, 'response')"
-                >Response</button>
-              </div>
-
-              <!-- Market data panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'market'" class="dec-detail-panel">
-                <div class="dec-market-grid">
-                  <div
-                    v-for="entry in parseSnapshot(dec.marketDataSnapshot)"
-                    :key="entry.pair"
-                    class="dec-market-card"
-                  >
-                    <div class="dec-market-pair">{{ entry.pair }}</div>
-                    <div class="dec-market-price">${{ formatPrice(entry.priceUsd) }}</div>
-                    <div v-if="entry.priceChange" class="dec-market-changes">
-                      <span v-if="entry.priceChange.h1 !== undefined" :class="(entry.priceChange.h1 ?? 0) >= 0 ? 'positive' : 'negative'">1h {{ (entry.priceChange.h1 ?? 0).toFixed(2) }}%</span>
-                      <span v-if="entry.priceChange.h24 !== undefined" :class="(entry.priceChange.h24 ?? 0) >= 0 ? 'positive' : 'negative'">24h {{ (entry.priceChange.h24 ?? 0).toFixed(2) }}%</span>
-                    </div>
-                    <div v-if="entry.indicators" class="dec-market-indicators">
-                      <span v-if="entry.indicators.rsi">RSI <strong>{{ entry.indicators.rsi }}</strong></span>
-                      <span v-if="entry.indicators.emaTrend" :class="entry.indicators.emaTrend === 'bullish' ? 'positive' : 'negative'">EMA {{ entry.indicators.emaTrend }}</span>
-                      <span v-if="entry.indicators.macdHistogram">MACD <strong>{{ entry.indicators.macdHistogram }}</strong></span>
-                    </div>
-                    <a v-if="entry.dexScreenerUrl" :href="entry.dexScreenerUrl" target="_blank" rel="noopener" class="dec-market-link">DexScreener ↗</a>
+              <div class="chat-decision-header">
+                <span class="dec-action-badge" :class="`dec-action--${dec.decision}`">{{ dec.decision.toUpperCase() }}</span>
+                <div class="dec-conf">
+                  <span class="dec-conf-label">conf</span>
+                  <span class="dec-conf-num">{{ (dec.confidence * 100).toFixed(0) }}%</span>
+                  <div class="dec-conf-track">
+                    <div class="dec-conf-fill" :class="`dec-conf-fill--${dec.decision}`" :style="{ width: (dec.confidence * 100) + '%' }" />
                   </div>
                 </div>
               </div>
 
-              <!-- Prompt panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'prompt'" class="dec-detail-panel">
-                <pre class="dec-code-block">{{ dec.llmPromptText }}</pre>
-              </div>
+              <div class="chat-reasoning">{{ dec.reasoning }}</div>
 
-              <!-- Response panel -->
-              <div v-if="decisionDetailTab[dec.id] === 'response'" class="dec-detail-panel">
-                <pre class="dec-code-block">{{ dec.llmRawResponse }}</pre>
+              <template v-if="dec.llmRawResponse">
+                <button class="prompt-pill prompt-pill--llm-response" @click="toggleSection(dec.id, 'response')">
+                  <span>[RESPONSE]</span>
+                  <span class="pill-chevron">{{ expandedSections[dec.id]?.has('response') ? '▾' : '▸' }}</span>
+                </button>
+                <div v-if="expandedSections[dec.id]?.has('response')" class="pill-content">
+                  <pre class="dec-code-block">{{ dec.llmRawResponse }}</pre>
+                </div>
+              </template>
+
+              <div class="chat-bubble-meta">
+                {{ dec.llmModel.split('/').pop() }} · {{ formatLatency(dec.llmLatencyMs) }} · {{ (dec.llmCompletionTokens ?? 0).toLocaleString() }}↓ · {{ timeAgo(dec.createdAt) }}
               </div>
-            </template>
+            </div>
+          </div>
+
+          <!-- ── Ghost: next analysis preview ── -->
+          <div class="chat-row chat-row--ghost">
+            <div class="chat-bubble chat-bubble--prompt">
+              <div class="chat-bubble-label">PROMPT →</div>
+              <div class="prompt-pills">
+                <span class="prompt-pill prompt-pill--system">[SYSTEM]</span>
+                <span class="prompt-pill prompt-pill--market">[MARKET DATA]</span>
+                <span class="prompt-pill prompt-pill--setup">[EDITABLE SETUP]</span>
+              </div>
+              <div class="chat-bubble-meta">next cycle</div>
+            </div>
+            <div class="chat-bubble chat-bubble--response">
+              <div class="chat-bubble-label">← LLM</div>
+              <div class="ghost-awaiting">
+                <span v-if="agent.status === 'running'" :class="{ 'ghost-pulse': isNextAnalysisImminent }">
+                  {{ isNextAnalysisImminent ? '● analyzing…' : `— next in ${formatCountdown(secondsUntilNextAction)} —` }}
+                </span>
+                <span v-else style="opacity: 0.5;">— stopped —</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -990,3 +1024,161 @@ function formatLatency(ms: number): string {
     </Teleport>
   </main>
 </template>
+
+<style scoped>
+/* ── Analysis Log — Chat Layout ────────────────────────────────── */
+
+.chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .chat-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-bubble {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-bubble--prompt {
+  border-left: 3px solid var(--border);
+}
+
+.chat-bubble--response {
+  border-right: 3px solid var(--border);
+}
+
+.chat-bubble-label {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.chat-bubble-meta {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── Prompt pills ── */
+
+.prompt-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prompt-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: none;
+  border-left: 2px solid currentColor;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: var(--text-muted);
+  transition: opacity 0.1s;
+}
+
+.prompt-pill:hover {
+  opacity: 0.75;
+}
+
+/* span-only pills in the ghost row have no interactivity */
+span.prompt-pill {
+  cursor: default;
+}
+span.prompt-pill:hover {
+  opacity: 1;
+}
+
+.prompt-pill--system        { color: var(--text-muted); }
+.prompt-pill--market        { color: #f59e0b; }
+.prompt-pill--setup         { color: #60a5fa; }
+.prompt-pill--llm-response  { color: #4ade80; }
+
+.pill-chevron {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.pill-edited-tag {
+  font-size: 10px;
+  color: #f59e0b;
+  border: 1px solid #f59e0b;
+  padding: 0 4px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.pill-content {
+  padding-left: 10px;
+}
+
+/* ── Response bubble internals ── */
+
+.chat-decision-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chat-reasoning {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* ── Ghost entry ── */
+
+.chat-row--ghost {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.ghost-awaiting {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+@keyframes ghost-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.ghost-pulse {
+  animation: ghost-blink 1s ease-in-out infinite;
+  color: #4ade80;
+}
+</style>
