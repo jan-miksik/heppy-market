@@ -83,6 +83,20 @@ const showEditModal = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const expandedDecisions = ref<Set<string>>(new Set());
+
+/** Tracks which pill sections are open per decision id */
+const expandedSections = ref<Record<string, Set<string>>>({});
+
+function toggleSection(decId: string, section: string) {
+  const current = expandedSections.value[decId] ?? new Set<string>();
+  const next = new Set(current);
+  if (next.has(section)) {
+    next.delete(section);
+  } else {
+    next.add(section);
+  }
+  expandedSections.value = { ...expandedSections.value, [decId]: next };
+}
 const expandedTrades = ref<Set<string>>(new Set());
 const decisionDetailTab = ref<Record<string, 'prompt' | 'response' | 'market'>>({});
 const analyzeError = ref<string | null>(null);
@@ -451,6 +465,49 @@ const editInitialValues = computed(() => {
     personaMd: personaMd.value || undefined,
   };
 });
+
+/** Split a stored llmPromptText into the three logical sections */
+function parsePromptSections(promptText: string | undefined): {
+  system: string;
+  marketData: string;
+  editableSetup: string;
+} {
+  if (!promptText) return { system: '', marketData: '', editableSetup: '' };
+
+  const portfolioIdx = promptText.indexOf('## Portfolio State');
+  const behaviorIdx  = promptText.indexOf('## Your Behavior Profile');
+  const personaIdx   = promptText.indexOf('## Your Persona');
+
+  // SYSTEM: everything before ## Portfolio State
+  const system = portfolioIdx >= 0 ? promptText.slice(0, portfolioIdx).trim() : promptText.trim();
+
+  // EDITABLE SETUP: ## Your Behavior Profile and/or ## Your Persona onwards
+  const editableStart = behaviorIdx >= 0 ? behaviorIdx : (personaIdx >= 0 ? personaIdx : -1);
+  const editableSetup = editableStart >= 0 ? promptText.slice(editableStart).trim() : '';
+
+  // MARKET DATA: between system and editableSetup
+  const marketEnd = editableStart >= 0 ? editableStart : promptText.length;
+  const marketData = portfolioIdx >= 0 ? promptText.slice(portfolioIdx, marketEnd).trim() : '';
+
+  return { system, marketData, editableSetup };
+}
+
+/** Rough token estimate: 1 token ≈ 4 characters */
+function countTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Returns true when the EDITABLE SETUP section of `dec` differs from `prevDec`.
+ * `prevDec` is the entry that came *before* this one in the decisions array
+ * (i.e. decisions[idx + 1], because the array is newest-first).
+ */
+function hasEditedSetup(dec: AgentDecision, prevDec: AgentDecision | undefined): boolean {
+  if (!prevDec || !dec.llmPromptText || !prevDec.llmPromptText) return false;
+  const curr = parsePromptSections(dec.llmPromptText).editableSetup;
+  const prev = parsePromptSections(prevDec.llmPromptText).editableSetup;
+  return curr.length > 0 && prev.length > 0 && curr !== prev;
+}
 
 function toggleDecision(decId: string) {
   if (expandedDecisions.value.has(decId)) {
