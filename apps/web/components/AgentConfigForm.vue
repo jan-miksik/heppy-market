@@ -259,7 +259,7 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <form class="acf" @submit.prevent="handleSubmit">
+  <form id="agent-config-form" class="acf" @submit.prevent="handleSubmit">
     <div v-if="validationError" class="alert alert-error">{{ validationError }}</div>
 
     <!-- Name -->
@@ -673,12 +673,18 @@ async function handleSubmit() {
 .toggle-track.active .toggle-thumb { transform: translateX(14px); }
 .pair-toggle-label { font-size: 13px; font-weight: 500; color: var(--text, #e0e0e0); font-family: 'JetBrains Mono', monospace; }
 
-/* Footer */
+/* Footer — sticky within the scrollable left column */
 .acf__footer {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
+  padding: 12px 0 4px;
+  background: var(--bg, #0a0a0a);
+  border-top: 1px solid var(--border, #1e1e1e);
+  margin-top: 8px;
+  z-index: 2;
 }
 
 .model-browse-link {

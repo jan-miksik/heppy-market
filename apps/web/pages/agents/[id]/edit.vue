@@ -8,6 +8,7 @@ const { request } = useApi();
 
 const agent = ref<any>(null);
 const loading = ref(true);
+const saving = ref(false);
 const error = ref('');
 
 // Prompt preview state
@@ -50,11 +51,14 @@ onMounted(async () => {
 
 async function handleSave(payload: any) {
   error.value = '';
+  saving.value = true;
   try {
     await updateAgent(id.value, payload);
     router.push(`/agents/${id.value}`);
   } catch (e: any) {
     error.value = e.message ?? 'Save failed';
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -85,11 +89,26 @@ function formatTime(iso: string | null) {
   <div class="edit-page">
     <div v-if="loading" class="edit-page__loading">Loading…</div>
     <template v-else>
-      <!-- Header -->
-      <div class="edit-page__header">
-        <NuxtLink :to="`/agents/${id}`" class="edit-page__back">← Back</NuxtLink>
-        <h1 class="edit-page__title">Edit Agent</h1>
+      <!-- Sticky command bar -->
+      <div class="edit-bar">
+        <NuxtLink :to="`/agents/${id}`" class="edit-bar__back">← back</NuxtLink>
+        <span class="edit-bar__sep">/</span>
+        <span class="edit-bar__name">{{ agent?.name ?? 'Edit Agent' }}</span>
+        <div class="edit-bar__actions">
+          <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
+          <button
+            type="submit"
+            form="agent-config-form"
+            class="edit-bar__save"
+            :disabled="saving"
+          >
+            <span v-if="saving" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
+            {{ saving ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </div>
       </div>
+
+      <div v-if="error" class="edit-error">{{ error }}</div>
 
       <div class="edit-page__body">
         <!-- Left: Config form -->
@@ -100,20 +119,20 @@ function formatTime(iso: string | null) {
             @submit="handleSave"
             @cancel="handleCancel"
           />
-          <div v-if="error" class="alert alert-error" style="margin-top:12px">{{ error }}</div>
         </div>
 
         <!-- Right: Prompt preview -->
         <div class="edit-page__right">
           <div class="prompt-preview">
             <div class="prompt-preview__header">
-              <span class="prompt-preview__title">Prompt Preview</span>
+              <span class="prompt-preview__title">PROMPT PREVIEW</span>
               <span v-if="marketDataAt" class="prompt-preview__meta">
-                market data from {{ formatTime(marketDataAt) }}
+                market data · {{ formatTime(marketDataAt) }}
               </span>
+              <span v-else class="prompt-preview__meta">no market snapshot yet</span>
             </div>
 
-            <div v-if="previewLoading" class="prompt-preview__state">Loading preview…</div>
+            <div v-if="previewLoading" class="prompt-preview__state">fetching prompt…</div>
             <div v-else-if="previewError" class="prompt-preview__state prompt-preview__state--error">{{ previewError }}</div>
             <template v-else>
               <!-- SYSTEM — collapsed by default -->
@@ -149,54 +168,122 @@ function formatTime(iso: string | null) {
 .edit-page {
   min-height: 100vh;
   background: var(--bg, #0a0a0a);
-  padding: 24px;
+  padding: 0 24px 40px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 .edit-page__loading {
   color: var(--text-muted, #555);
   padding: 40px;
   text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
 }
-.edit-page__header {
+
+/* ── Command bar ────────────────────────────────────────────────── */
+.edit-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
+  padding: 12px 0;
+  background: var(--bg, #0a0a0a);
+  border-bottom: 1px solid var(--border, #1e1e1e);
 }
-.edit-page__back {
-  color: var(--accent, #7c6af7);
-  font-size: 13px;
+.edit-bar__back {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted, #555);
   text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s;
 }
-.edit-page__back:hover { text-decoration: underline; }
-.edit-page__title {
-  font-size: 20px;
-  font-weight: 700;
+.edit-bar__back:hover { color: var(--text, #e0e0e0); }
+.edit-bar__sep {
+  color: var(--border, #333);
+  font-size: 14px;
+  font-weight: 300;
+}
+.edit-bar__name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text, #e0e0e0);
-  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.edit-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.edit-bar__cancel {
+  padding: 7px 14px;
+  background: none;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 5px;
+  color: var(--text-muted, #666);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.edit-bar__cancel:hover { border-color: var(--text-muted, #555); color: var(--text, #e0e0e0); }
+.edit-bar__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 20px;
+  background: var(--accent, #7c6af7);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.01em;
+}
+.edit-bar__save:hover { opacity: 0.88; }
+.edit-bar__save:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.edit-error {
+  padding: 10px 14px;
+  background: color-mix(in srgb, #e55 10%, transparent);
+  border: 1px solid color-mix(in srgb, #e55 30%, transparent);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #e55;
+}
+
+/* ── Two-column body ────────────────────────────────────────────── */
 .edit-page__body {
   display: grid;
-  grid-template-columns: 420px 1fr;
-  gap: 24px;
+  grid-template-columns: minmax(460px, 2fr) 3fr;
+  gap: 28px;
   align-items: start;
 }
 .edit-page__left {
   position: sticky;
-  top: 24px;
-  max-height: calc(100vh - 48px);
+  top: 53px; /* matches command bar height */
+  max-height: calc(100vh - 73px);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border, #2a2a2a) transparent;
 }
 .edit-page__right { min-width: 0; }
 
-/* Prompt preview panel */
+/* ── Prompt preview panel ───────────────────────────────────────── */
 .prompt-preview {
-  background: var(--surface, #141414);
-  border: 1px solid var(--border, #2a2a2a);
-  border-radius: 12px;
+  background: var(--surface, #111);
+  border: 1px solid var(--border, #222);
+  border-left: 3px solid color-mix(in srgb, var(--accent, #7c6af7) 40%, transparent);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -205,31 +292,35 @@ function formatTime(iso: string | null) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
-  background: color-mix(in srgb, var(--border, #2a2a2a) 30%, transparent);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border, #1e1e1e);
+  background: color-mix(in srgb, var(--border, #2a2a2a) 20%, transparent);
+  gap: 12px;
 }
 .prompt-preview__title {
-  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted, #555);
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--accent, #7c6af7) 70%, var(--text-muted, #555));
 }
 .prompt-preview__meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #3a3a3a);
+  margin-left: auto;
+}
+.prompt-preview__state {
+  padding: 20px 14px;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--text-muted, #444);
 }
-.prompt-preview__state {
-  padding: 24px 16px;
-  font-size: 13px;
-  color: var(--text-muted, #555);
-}
-.prompt-preview__state--error { color: var(--error, #e55); }
+.prompt-preview__state--error { color: #e55; }
 
 /* Section rows */
 .prompt-section {
-  border-bottom: 1px solid var(--border, #1e1e1e);
+  border-bottom: 1px solid var(--border, #1a1a1a);
 }
 .prompt-section:last-child { border-bottom: none; }
 .prompt-section__toggle {
@@ -237,52 +328,60 @@ function formatTime(iso: string | null) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 9px 14px;
   background: none;
   border: none;
-  color: var(--text-muted, #555);
+  color: var(--text-muted, #444);
+  font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
   text-align: left;
   gap: 8px;
+  transition: background 0.12s;
 }
 .prompt-section__toggle:hover {
-  background: color-mix(in srgb, var(--border, #2a2a2a) 20%, transparent);
+  background: color-mix(in srgb, var(--border, #2a2a2a) 25%, transparent);
+  color: var(--text-muted, #666);
 }
 .prompt-section__label { flex: 1; }
 .prompt-section__hint {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 400;
   text-transform: none;
-  color: var(--text-muted, #444);
+  letter-spacing: 0;
+  color: var(--text-muted, #333);
 }
 .prompt-section__chevron {
-  font-size: 16px;
-  transition: transform 0.2s;
+  font-size: 14px;
+  transition: transform 0.18s;
   display: inline-block;
+  opacity: 0.5;
 }
-.prompt-section__chevron.open { transform: rotate(90deg); }
+.prompt-section__chevron.open { transform: rotate(90deg); opacity: 1; }
 
 .prompt-section__content {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 11px;
-  line-height: 1.65;
-  color: var(--text-secondary, #aaa);
-  padding: 12px 16px;
+  line-height: 1.7;
+  color: var(--text-secondary, #888);
+  padding: 12px 14px;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  background: color-mix(in srgb, var(--border, #2a2a2a) 8%, transparent);
+  border-top: 1px solid var(--border, #1a1a1a);
 }
 .prompt-section__content--main {
-  max-height: 65vh;
+  max-height: 70vh;
   overflow-y: auto;
+  color: var(--text-secondary, #999);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border, #2a2a2a) transparent;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .edit-page__body {
     grid-template-columns: 1fr;
   }
