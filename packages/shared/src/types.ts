@@ -49,6 +49,8 @@ export interface AgentConfig {
   name: string;
   description?: string;
   autonomyLevel: AutonomyLevel;
+  autoApplySelfModification: boolean;
+  selfModCooldownCycles: number;
   llmModel: string;
   llmFallback: string;
   maxLlmCallsPerHour: number;

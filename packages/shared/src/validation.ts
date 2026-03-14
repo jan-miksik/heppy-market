@@ -54,6 +54,8 @@ export const AgentConfigSchema = z.object({
 
   // Autonomy
   autonomyLevel: z.enum(['full', 'guided', 'strict']),
+  autoApplySelfModification: z.boolean().default(false),
+  selfModCooldownCycles: z.number().min(1).max(20).default(3),
 
   // LLM
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
@@ -140,6 +142,8 @@ export const CreateAgentRequestSchema = z.object({
   name: z.string().min(1).max(50),
   description: z.string().max(500).optional(),
   autonomyLevel: z.enum(['full', 'guided', 'strict']).default('guided'),
+  autoApplySelfModification: z.boolean().default(false),
+  selfModCooldownCycles: z.number().min(1).max(20).default(3),
   llmModel: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   llmFallback: z.string().default('nvidia/nemotron-3-nano-30b-a3b:free'),
   allowFallback: z.boolean().default(false),
