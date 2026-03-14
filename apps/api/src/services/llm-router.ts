@@ -64,7 +64,7 @@ export interface TradeDecisionRequest {
   personaMd?: string | null;
 }
 
-const JSON_SCHEMA_INSTRUCTION = `
+export const JSON_SCHEMA_INSTRUCTION = `
 IMPORTANT: Respond with ONLY a valid JSON object — no markdown, no code blocks, no explanation.
 The JSON must match this schema exactly:
 {
@@ -130,6 +130,7 @@ export async function getTradeDecision(
     marketData: request.marketData,
     lastDecisions: request.lastDecisions,
     config: request.config,
+    autonomyLevel: request.autonomyLevel,
     behavior: request.behavior,
     personaMd: request.personaMd,
   });
