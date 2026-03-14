@@ -3,7 +3,9 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc, or, isNull } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
-import { agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
+import { agents, trades, agentDecisions, performanceSnapshots, agentSelfModifications } from '../db/schema.js';
+import { BASE_AGENT_PROMPT, buildAnalysisPrompt } from '../agents/prompts.js';
+import { JSON_SCHEMA_INSTRUCTION } from '../services/llm-router.js';
 import { CreateAgentRequestSchema, UpdateAgentRequestSchema, UpdatePersonaSchema, getAgentPersonaTemplate } from '@dex-agents/shared';
 import { validateBody, ValidationError } from '../lib/validation.js';
 import { generateId, nowIso, autonomyLevelToInt, intToAutonomyLevel } from '../lib/utils.js';
@@ -400,6 +402,161 @@ agentsRoute.post('/:id/persona/reset', async (c) => {
   const personaMd = getAgentPersonaTemplate(profileId, agent.name);
   await db.update(agents).set({ personaMd, updatedAt: nowIso() }).where(eq(agents.id, id));
   return c.json({ ok: true, personaMd });
+});
+
+/** GET /api/agents/:id/prompt-preview */
+agentsRoute.get('/:id/prompt-preview', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const config = JSON.parse(agent.config) as Record<string, unknown>;
+
+  const [lastDecision] = await db
+    .select()
+    .from(agentDecisions)
+    .where(eq(agentDecisions.agentId, id))
+    .orderBy(desc(agentDecisions.createdAt))
+    .limit(1);
+
+  const rawMarketData = lastDecision?.marketDataSnapshot
+    ? (JSON.parse(lastDecision.marketDataSnapshot) as Array<{
+        pair: string; priceUsd: number; priceChange: Record<string, number | undefined>;
+        volume24h?: number; liquidity?: number; indicatorText: string;
+      }>)
+    : [];
+
+  const recentDecisions = await db
+    .select({ decision: agentDecisions.decision, confidence: agentDecisions.confidence, createdAt: agentDecisions.createdAt })
+    .from(agentDecisions)
+    .where(eq(agentDecisions.agentId, id))
+    .orderBy(desc(agentDecisions.createdAt))
+    .limit(10);
+
+  const openTrades = await db.select().from(trades).where(eq(trades.agentId, id));
+  const openPositions = openTrades
+    .filter((t) => t.status === 'open')
+    .map((t) => ({
+      pair: t.pair,
+      side: t.side as 'buy' | 'sell',
+      entryPrice: t.entryPrice,
+      amountUsd: t.amountUsd,
+      unrealizedPct: 0,
+      currentPrice: t.entryPrice,
+      openedAt: t.openedAt,
+      slPct: (config.stopLossPct as number) ?? 5,
+      tpPct: (config.takeProfitPct as number) ?? 7,
+    }));
+
+  const autonomyLevel = intToAutonomyLevel(agent.autonomyLevel) as 'full' | 'guided' | 'strict';
+  const systemPrompt = BASE_AGENT_PROMPT + JSON_SCHEMA_INSTRUCTION;
+  const userPrompt = rawMarketData.length > 0
+    ? buildAnalysisPrompt({
+        portfolioState: {
+          balance: (config.paperBalance as number) ?? 10000,
+          openPositions: openPositions.length,
+          dailyPnlPct: 0,
+          totalPnlPct: 0,
+        },
+        openPositions,
+        marketData: rawMarketData,
+        lastDecisions: recentDecisions,
+        config: {
+          pairs: (config.pairs as string[]) ?? [],
+          maxPositionSizePct: (config.maxPositionSizePct as number) ?? 5,
+          maxOpenPositions: (config.maxOpenPositions as number) ?? 3,
+          stopLossPct: (config.stopLossPct as number) ?? 5,
+          takeProfitPct: (config.takeProfitPct as number) ?? 7,
+        },
+        autonomyLevel,
+        behavior: config.behavior as any,
+        personaMd: agent.personaMd,
+      })
+    : '(No market data yet — run the agent at least once to populate the preview)';
+
+  return c.json({
+    systemPrompt,
+    userPrompt,
+    marketDataAt: lastDecision?.createdAt ?? null,
+    hasMarketData: rawMarketData.length > 0,
+  });
+});
+
+/** GET /api/agents/:id/self-modifications */
+agentsRoute.get('/:id/self-modifications', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  const mods = await db
+    .select()
+    .from(agentSelfModifications)
+    .where(eq(agentSelfModifications.agentId, id))
+    .orderBy(desc(agentSelfModifications.createdAt))
+    .limit(20);
+  return c.json({ modifications: mods });
+});
+
+/** POST /api/agents/:id/self-modifications/:modId/approve */
+agentsRoute.post('/:id/self-modifications/:modId/approve', async (c) => {
+  const id = c.req.param('id');
+  const modId = c.req.param('modId');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const [mod] = await db.select().from(agentSelfModifications).where(eq(agentSelfModifications.id, modId));
+  if (!mod || mod.agentId !== id || mod.status !== 'pending') {
+    return c.json({ error: 'Modification not found or not pending' }, 404);
+  }
+
+  const changes = JSON.parse(mod.changesApplied ?? mod.changes) as {
+    personaMd?: string;
+    behavior?: Record<string, unknown>;
+    config?: { stopLossPct?: number; takeProfitPct?: number; maxPositionSizePct?: number };
+  };
+
+  const existingConfig = JSON.parse(agent.config) as Record<string, unknown>;
+  const agentUpdates: Partial<typeof agents.$inferInsert> = { updatedAt: nowIso() };
+  const configPatch: Record<string, unknown> = {};
+
+  if (changes.personaMd) agentUpdates.personaMd = changes.personaMd;
+  if (changes.behavior) configPatch.behavior = { ...(existingConfig.behavior as object ?? {}), ...changes.behavior };
+  if (changes.config) {
+    if (changes.config.stopLossPct !== undefined)        configPatch.stopLossPct        = changes.config.stopLossPct;
+    if (changes.config.takeProfitPct !== undefined)      configPatch.takeProfitPct      = changes.config.takeProfitPct;
+    if (changes.config.maxPositionSizePct !== undefined) configPatch.maxPositionSizePct = changes.config.maxPositionSizePct;
+  }
+  if (Object.keys(configPatch).length > 0) {
+    agentUpdates.config = JSON.stringify({ ...existingConfig, ...configPatch });
+  }
+
+  await db.update(agents).set(agentUpdates).where(eq(agents.id, id));
+  await db.update(agentSelfModifications)
+    .set({ status: 'applied', appliedAt: nowIso() })
+    .where(eq(agentSelfModifications.id, modId));
+
+  return c.json({ ok: true });
+});
+
+/** POST /api/agents/:id/self-modifications/:modId/reject */
+agentsRoute.post('/:id/self-modifications/:modId/reject', async (c) => {
+  const id = c.req.param('id');
+  const modId = c.req.param('modId');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+  const agent = await requireOwnership(db, id, walletAddress);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  await db.update(agentSelfModifications)
+    .set({ status: 'rejected' })
+    .where(eq(agentSelfModifications.id, modId));
+  return c.json({ ok: true });
 });
 
 // Error handler
