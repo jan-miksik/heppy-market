@@ -125,6 +125,6 @@ export interface TradeDecision {
   action: TradeAction;
   confidence: number;
   reasoning: string;
-  targetPair?: string;
-  suggestedPositionSizePct?: number;
+  targetPair?: string | null;
+  suggestedPositionSizePct?: number | null;
 }

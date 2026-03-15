@@ -27,6 +27,7 @@ watch(customModel, (val) => {
 
 const props = defineProps<{
   initialValues?: Partial<CreateAgentPayload & { pairs: string[] }>;
+  hidePersonaEditor?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -92,42 +93,9 @@ const isPersonaCustomized = ref(false);
 
 // ─── Behavior → Persona sync helpers ──────────────────────────────────────
 
-function buildBehaviorSummaryMd(b: Record<string, unknown>): string {
-  const RISK: Record<string, string> = { conservative: 'Conservative', moderate: 'Moderate', aggressive: 'Aggressive', degen: 'Degen' };
-  const STYLE: Record<string, string> = { scalp: 'Scalp', swing: 'Swing', position: 'Position', hodl: 'HODL', any: 'Any' };
-  const DEPTH: Record<string, string> = { quick: 'Quick scan', balanced: 'Balanced', deep: 'Deep analysis', obsessive: 'Obsessive' };
-  const SPEED: Record<string, string> = { aggressive: 'Fast', measured: 'Measured', patient: 'Patient', sloth: 'Very patient' };
-  const BIAS: Record<string, string> = { bullish: 'Bullish', bearish: 'Bearish', neutral: 'Neutral', contrarian: 'Contrarian' };
-  const ENTRY: Record<string, string> = { momentum: 'Momentum', dip_buy: 'Dip buy', breakout: 'Breakout', mean_reversion: 'Mean reversion' };
-  const EXIT: Record<string, string> = { fixed_targets: 'Fixed TP/SL', trailing_stop: 'Trailing stop', signal_based: 'Signal-based', time_based: 'Time-based' };
-
-  const rows: string[] = [];
-  if (b.riskAppetite) rows.push(`**Risk:** ${RISK[b.riskAppetite as string] ?? b.riskAppetite}`);
-  if (b.style) rows.push(`**Style:** ${STYLE[b.style as string] ?? b.style}`);
-  if (b.analysisDepth) rows.push(`**Analysis:** ${DEPTH[b.analysisDepth as string] ?? b.analysisDepth}`);
-  if (b.decisionSpeed) rows.push(`**Speed:** ${SPEED[b.decisionSpeed as string] ?? b.decisionSpeed}`);
-  if (b.defaultBias && b.defaultBias !== 'neutral') rows.push(`**Bias:** ${BIAS[b.defaultBias as string] ?? b.defaultBias}`);
-  if (b.entryPreference) rows.push(`**Entry:** ${ENTRY[b.entryPreference as string] ?? b.entryPreference}`);
-  if (b.exitStrategy) rows.push(`**Exit:** ${EXIT[b.exitStrategy as string] ?? b.exitStrategy}`);
-  if (typeof b.confidenceThreshold === 'number') rows.push(`**Min confidence:** ${b.confidenceThreshold}%`);
-  if (typeof b.fomoProne === 'number' && (b.fomoProne as number) > 40) rows.push(`**FOMO tendency:** ${b.fomoProne}%`);
-  if (typeof b.adaptability === 'number') rows.push(`**Adaptability:** ${b.adaptability}%`);
-
-  const flags: string[] = [];
-  if (b.averageDown === true) flags.push('averages down');
-  if (b.overthinker === true) flags.push('overthinks');
-  if (b.emotionalAwareness === true) flags.push('emotionally aware');
-  if (typeof b.contrarian === 'number' && (b.contrarian as number) > 50) flags.push('contrarian tendency');
-  if (flags.length) rows.push(`**Traits:** ${flags.join(', ')}`);
-
-  if (rows.length === 0) return '';
-  return `\n\n---\n\n*Behavior summary:*\n\n${rows.join(' · ')}`;
-}
-
 function generatePersonaMd() {
   if (!selectedProfileId.value) return;
-  const base = getAgentPersonaTemplate(selectedProfileId.value, form.name || 'Agent');
-  personaMd.value = base + buildBehaviorSummaryMd(behavior.value);
+  personaMd.value = getAgentPersonaTemplate(selectedProfileId.value, form.name || 'Agent');
 }
 
 // Watch behavior deeply — regenerate persona if not manually customized
@@ -247,6 +215,8 @@ async function handleSubmit() {
   } as CreateAgentPayload);
   submitting.value = false;
 }
+
+defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, generatePersonaMd });
 </script>
 
 <template>
@@ -295,7 +265,7 @@ async function handleSubmit() {
     </div>
 
     <!-- Persona MD accordion -->
-    <div class="acf__accordion">
+    <div v-if="!hidePersonaEditor" class="acf__accordion">
       <button type="button" class="acf__accordion-btn" @click="personaMdOpen = !personaMdOpen">
         <span class="acf__acc-left">
           Persona MD

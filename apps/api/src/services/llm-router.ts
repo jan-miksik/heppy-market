@@ -64,7 +64,15 @@ export interface TradeDecisionRequest {
   personaMd?: string | null;
 }
 
-const JSON_SCHEMA_INSTRUCTION = `
+export function buildJsonSchemaInstruction(autonomyLevel: 'full' | 'guided' | 'strict'): string {
+  const selfModField = autonomyLevel === 'strict' ? '' :
+    autonomyLevel === 'guided'
+      ? `,
+  "selfModification": { "reason": "<string>", "changes": { "personaMd": "<string, optional>", "behavior": {<object, optional>} } } (optional)`
+      : `,
+  "selfModification": { "reason": "<string>", "changes": { "personaMd": "<string, optional>", "behavior": {<object, optional>}, "config": { "stopLossPct": <number, optional>, "takeProfitPct": <number, optional>, "maxPositionSizePct": <number, optional> } } } (optional)`;
+
+  return `
 IMPORTANT: Respond with ONLY a valid JSON object — no markdown, no code blocks, no explanation.
 The JSON must match this schema exactly:
 {
@@ -72,8 +80,9 @@ The JSON must match this schema exactly:
   "confidence": <number 0.0–1.0>,
   "reasoning": "<string>",
   "targetPair": "<string, optional>",
-  "suggestedPositionSizePct": <number 0–100, optional>
+  "suggestedPositionSizePct": <number 0–100, optional>${selfModField}
 }`;
+}
 
 /**
  * Extract a JSON object from raw LLM text.
@@ -123,7 +132,7 @@ export async function getTradeDecision(
   const isAnthropic = config.provider === 'anthropic';
   const openrouter = isAnthropic ? null : createOpenRouter({ apiKey: config.apiKey });
   const anthropic = isAnthropic ? createAnthropic({ apiKey: config.apiKey }) : null;
-  const systemPrompt = BASE_AGENT_PROMPT + JSON_SCHEMA_INSTRUCTION;
+  const systemPrompt = BASE_AGENT_PROMPT + buildJsonSchemaInstruction(request.autonomyLevel);
   const userPrompt = buildAnalysisPrompt({
     portfolioState: request.portfolioState,
     openPositions: request.openPositions,

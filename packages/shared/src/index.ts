@@ -4,3 +4,4 @@ export * from './pairs.js';
 export * from './profiles/agent-profiles.js';
 export * from './profiles/manager-profiles.js';
 export * from './profiles/templates.js';
+export * from './prompts.js';

@@ -7,7 +7,7 @@ import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
 
 const route = useRoute();
 const id = computed(() => route.params.id as string);
-const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent, updateAgent } = useAgents();
+const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent } = useAgents();
 const { fetchAgentTrades, closeTrade, formatPnl, pnlClass } = useTrades();
 const { request } = useApi();
 const { getAgentPersona, updateAgentPersona, resetAgentPersona } = useProfiles();
@@ -80,9 +80,6 @@ const doStatus = ref<DoStatus | null>(null);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 const isAnalyzing = ref(false);
-const showEditModal = ref(false);
-const saving = ref(false);
-const saveError = ref<string | null>(null);
 /** Tracks which pill sections are open per decision id */
 const expandedSections = ref<Record<string, Set<string>>>({});
 
@@ -448,77 +445,6 @@ async function doResetPersona() {
   }
 }
 
-const VALID_ANALYSIS_INTERVALS = ['15m', '1h', '4h', '1d'] as const;
-const VALID_STRATEGIES = ['ema_crossover', 'rsi_oversold', 'macd_signal', 'bollinger_bounce', 'volume_breakout', 'llm_sentiment', 'combined'] as const;
-
-/** Build a PATCH body that matches UpdateAgentRequestSchema (partial, valid enums and types). */
-function normalizeAgentUpdatePayload(p: Partial<Parameters<typeof updateAgent>[1]>): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  if (p.name !== undefined && typeof p.name === 'string' && p.name.trim().length > 0) body.name = p.name.trim();
-  if (p.autonomyLevel !== undefined && ['full', 'guided', 'strict'].includes(p.autonomyLevel)) body.autonomyLevel = p.autonomyLevel;
-  if (p.llmModel !== undefined && typeof p.llmModel === 'string') body.llmModel = p.llmModel;
-  if (p.allowFallback !== undefined && typeof p.allowFallback === 'boolean') body.allowFallback = p.allowFallback;
-  if (p.temperature !== undefined && typeof p.temperature === 'number' && p.temperature >= 0 && p.temperature <= 2) body.temperature = p.temperature;
-  if (p.pairs !== undefined && Array.isArray(p.pairs) && p.pairs.length >= 1 && p.pairs.length <= 10) {
-    const pairs = p.pairs.filter((s): s is string => typeof s === 'string');
-    body.pairs = pairs.length >= 1 ? pairs : [agent.value?.config?.pairs?.[0] ?? 'WETH/USDC'];
-  }
-  if (p.paperBalance !== undefined && typeof p.paperBalance === 'number' && p.paperBalance >= 100 && p.paperBalance <= 1_000_000) body.paperBalance = p.paperBalance;
-  if (p.maxPositionSizePct !== undefined && typeof p.maxPositionSizePct === 'number' && p.maxPositionSizePct >= 1 && p.maxPositionSizePct <= 100) body.maxPositionSizePct = p.maxPositionSizePct;
-  if (p.stopLossPct !== undefined && typeof p.stopLossPct === 'number' && p.stopLossPct >= 0.5 && p.stopLossPct <= 50) body.stopLossPct = p.stopLossPct;
-  if (p.takeProfitPct !== undefined && typeof p.takeProfitPct === 'number' && p.takeProfitPct >= 0.5 && p.takeProfitPct <= 100) body.takeProfitPct = p.takeProfitPct;
-  if (p.maxOpenPositions !== undefined && typeof p.maxOpenPositions === 'number' && p.maxOpenPositions >= 1 && p.maxOpenPositions <= 10) body.maxOpenPositions = p.maxOpenPositions;
-  if (p.analysisInterval !== undefined && VALID_ANALYSIS_INTERVALS.includes(p.analysisInterval as typeof VALID_ANALYSIS_INTERVALS[number])) body.analysisInterval = p.analysisInterval;
-  if (p.strategies !== undefined) {
-    const arr = Array.isArray(p.strategies) ? p.strategies : [p.strategies].filter(Boolean);
-    const valid = arr.filter((s): s is (typeof VALID_STRATEGIES)[number] => typeof s === 'string' && (VALID_STRATEGIES as readonly string[]).includes(s));
-    if (valid.length > 0) body.strategies = valid;
-  }
-  if (p.profileId !== undefined && (p.profileId === null || typeof p.profileId === 'string')) body.profileId = p.profileId;
-  if (p.personaMd !== undefined && typeof p.personaMd === 'string') body.personaMd = p.personaMd;
-  return body;
-}
-
-async function handleEdit(payload: Parameters<typeof updateAgent>[1]) {
-  if (!agent.value) return;
-  saving.value = true;
-  saveError.value = null;
-  try {
-    const normalized = normalizeAgentUpdatePayload(payload);
-    const updated = await updateAgent(id.value, normalized as Parameters<typeof updateAgent>[1]);
-    agent.value = updated;
-    if (payload.personaMd !== undefined) personaMd.value = payload.personaMd;
-    showEditModal.value = false;
-  } catch (e) {
-    saveError.value = extractApiError(e);
-  } finally {
-    saving.value = false;
-  }
-}
-
-/** Build initialValues for the edit form from the current agent config */
-const editInitialValues = computed(() => {
-  if (!agent.value) return undefined;
-  const profileId = agent.value.profileId ?? (agent.value.config as { profileId?: string })?.profileId;
-  return {
-    name: agent.value.name,
-    autonomyLevel: agent.value.autonomyLevel,
-    llmModel: agent.value.llmModel,
-    pairs: agent.value.config.pairs,
-    paperBalance: agent.value.config.paperBalance,
-    strategies: agent.value.config.strategies,
-    analysisInterval: agent.value.config.analysisInterval,
-    maxPositionSizePct: agent.value.config.maxPositionSizePct,
-    stopLossPct: agent.value.config.stopLossPct,
-    takeProfitPct: agent.value.config.takeProfitPct,
-    maxOpenPositions: agent.value.config.maxOpenPositions,
-    temperature: agent.value.config.temperature ?? 0.7,
-    allowFallback: agent.value.config.allowFallback ?? false,
-    profileId: profileId ?? undefined,
-    personaMd: personaMd.value || undefined,
-  };
-});
-
 /** Split a stored llmPromptText into the three logical sections */
 function parsePromptSections(promptText: string | undefined): {
   system: string;
@@ -640,7 +566,7 @@ function formatLatency(ms: number): string {
             <span v-if="isAnalyzing" class="spinner" style="width: 14px; height: 14px; margin-right: 4px;" />
             {{ isAnalyzing ? 'Fetching data & reasoning…' : '⚡ Run Analysis' }}
           </button>
-          <button class="btn btn-ghost btn-sm" @click="showEditModal = true">✎ Edit</button>
+          <NuxtLink :to="`/agents/${id}/edit`" class="btn btn-ghost btn-sm">✎ Edit</NuxtLink>
           <button v-if="agent.status !== 'running'" class="btn btn-success" @click="handleStart">
             ▶ Start
           </button>
@@ -659,14 +585,14 @@ function formatLatency(ms: number): string {
           <span v-else>{{ analyzeError }}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-          <button
+          <NuxtLink
             v-if="isModelUnavailableError"
-            type="button"
+            :to="`/agents/${id}/edit`"
             class="btn btn-ghost btn-sm"
-            @click="showEditModal = true; analyzeError = null"
+            @click="analyzeError = null"
           >
             Select other model
-          </button>
+          </NuxtLink>
           <button class="btn btn-ghost btn-sm" @click="analyzeError = null" aria-label="Dismiss">✕</button>
         </div>
       </div>
@@ -1079,27 +1005,6 @@ function formatLatency(ms: number): string {
 
     </template>
 
-    <!-- Edit Modal -->
-    <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal modal--wide">
-          <div class="modal-header">
-            <span class="modal-title">Edit Agent</span>
-            <button class="btn btn-ghost btn-sm" @click="showEditModal = false">✕</button>
-          </div>
-          <div class="modal-body">
-            <div v-if="saveError" class="alert alert-error">{{ saveError }}</div>
-            <AgentConfigForm
-              v-if="editInitialValues"
-              :initialValues="editInitialValues"
-              @submit="handleEdit"
-              @cancel="showEditModal = false"
-            />
-          </div>
-          <div v-if="agent?.status === 'running'" class="modal-bottom-warning">Agent is running — changes take effect on the next analysis cycle.</div>
-        </div>
-      </div>
-    </Teleport>
   </main>
 </template>
 
