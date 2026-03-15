@@ -35,6 +35,8 @@ export interface Agent {
 export interface CreateAgentPayload {
   name: string;
   autonomyLevel: 'full' | 'guided' | 'strict';
+  autoApplySelfModification?: boolean;
+  selfModCooldownCycles?: number;
   pairs?: string[];
   paperBalance?: number;
   strategies?: string[];

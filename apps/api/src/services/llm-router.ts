@@ -139,6 +139,7 @@ export async function getTradeDecision(
     marketData: request.marketData,
     lastDecisions: request.lastDecisions,
     config: request.config,
+    autonomyLevel: request.autonomyLevel,
     behavior: request.behavior,
     personaMd: request.personaMd,
   });
@@ -226,6 +227,9 @@ export async function getTradeDecision(
 
       return {
         ...object,
+        targetPair: object.targetPair ?? undefined,
+        suggestedPositionSizePct: object.suggestedPositionSizePct ?? undefined,
+        selfModification: object.selfModification ?? undefined,
         latencyMs,
         tokensUsed: usage.totalTokens,
         tokensIn: usage.inputTokens,

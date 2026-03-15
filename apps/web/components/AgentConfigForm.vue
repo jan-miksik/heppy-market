@@ -40,6 +40,8 @@ const isEditing = computed(() => !!props.initialValues);
 const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   name: '',
   autonomyLevel: 'guided',
+  autoApplySelfModification: false,
+  selfModCooldownCycles: 3,
   pairs: ['WETH/USDC'],
   paperBalance: 10000,
   strategies: ['combined'],
@@ -160,6 +162,13 @@ function generateName(): string {
 
 const syncNameWithModel = ref(true);
 
+// Auto-set autoApplySelfModification default based on autonomy level (only when not editing existing)
+watch(() => form.autonomyLevel, (level) => {
+  if (!props.initialValues?.autoApplySelfModification) {
+    form.autoApplySelfModification = level === 'full';
+  }
+});
+
 watch([() => form.llmModel, () => [...form.pairs], isPersonaCustomized, selectedProfileName], () => {
   if (syncNameWithModel.value) form.name = generateName();
 });
@@ -220,7 +229,7 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
 </script>
 
 <template>
-  <form class="acf" @submit.prevent="handleSubmit">
+  <form id="agent-config-form" class="acf" @submit.prevent="handleSubmit">
     <div v-if="validationError" class="alert alert-error">{{ validationError }}</div>
 
     <!-- Name -->
@@ -230,6 +239,67 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
         <input v-model="syncNameWithModel" type="checkbox" />
         <span>auto-name</span>
       </label>
+    </div>
+
+    <!-- LLM Model (top-level) -->
+    <div class="form-group">
+      <label class="form-label">LLM Model</label>
+      <select v-model="dropdownModel" class="form-select">
+        <optgroup label="Free models (OpenRouter)">
+          <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
+          <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
+          <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
+          <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
+          <option value="xiaomi/mimo-v2-flash:free">MiMo Flash · 256K (free)</option>
+        </optgroup>
+        <optgroup v-if="hasOwnKey" label="Paid (your OpenRouter key)">
+          <option v-for="m in PAID_MODELS" :key="m.id" :value="m.id">
+            {{ m.label }} · {{ m.ctx }} · {{ m.price }}
+          </option>
+        </optgroup>
+        <optgroup v-if="isTester" label="Anthropic direct (tester)">
+          <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+          <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+        </optgroup>
+      </select>
+      <template v-if="hasOwnKey">
+        <input
+          v-model="customModel"
+          class="form-input"
+          style="margin-top: 8px"
+          placeholder="Or type any model ID…"
+        />
+        <a
+          href="https://openrouter.ai/models"
+          target="_blank"
+          rel="noopener"
+          class="model-browse-link"
+        >Browse all models at openrouter.ai/models ↗</a>
+      </template>
+      <p v-else class="model-nudge">
+        <NuxtLink to="/settings">Connect your OpenRouter key</NuxtLink> to unlock paid models.
+      </p>
+    </div>
+
+    <!-- Autonomy Level + self-mod settings (top-level) -->
+    <div class="form-group">
+      <label class="form-label">Autonomy Level</label>
+      <select v-model="form.autonomyLevel" class="form-select">
+        <option value="full">Full — agent decides everything</option>
+        <option value="guided">Guided — within bounds (default)</option>
+        <option value="strict">Strict — rule-based only</option>
+      </select>
+    </div>
+    <div v-if="form.autonomyLevel !== 'strict'" class="acf__selfmod-row">
+      <label class="acf__selfmod-label">
+        <input v-model="form.autoApplySelfModification" type="checkbox" />
+        <span>Auto-apply self-modifications</span>
+        <span class="acf__hint-chip">agent can update its own persona/behavior each cycle</span>
+      </label>
+      <div v-if="form.autoApplySelfModification" class="form-group" style="margin-top:8px">
+        <label class="form-label">Cooldown (cycles between modifications)</label>
+        <input v-model.number="form.selfModCooldownCycles" type="number" class="form-input" min="1" max="20" />
+      </div>
     </div>
 
     <!-- Persona style (profile picker) -->
@@ -296,24 +366,14 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
       </button>
       <div class="acf__accordion-body" :class="{ open: configOpen }">
         <div class="acf__config">
-          <div class="grid-2">
-            <div class="form-group">
-              <label class="form-label">Autonomy Level</label>
-              <select v-model="form.autonomyLevel" class="form-select">
-                <option value="full">Full — agent decides everything</option>
-                <option value="guided">Guided — within bounds (default)</option>
-                <option value="strict">Strict — rule-based only</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Analysis Interval</label>
-              <select v-model="form.analysisInterval" class="form-select">
-                <option value="15m">Every 15 minutes</option>
-                <option value="1h">Every hour</option>
-                <option value="4h">Every 4 hours</option>
-                <option value="1d">Daily</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label class="form-label">Analysis Interval</label>
+            <select v-model="form.analysisInterval" class="form-select">
+              <option value="15m">Every 15 minutes</option>
+              <option value="1h">Every hour</option>
+              <option value="4h">Every 4 hours</option>
+              <option value="1d">Daily</option>
+            </select>
           </div>
 
           <div class="form-group">
@@ -326,45 +386,6 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
                 <span class="pair-toggle-label">{{ pairLabel }}</span>
               </label>
             </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">LLM Model</label>
-            <select v-model="dropdownModel" class="form-select">
-              <optgroup label="Free models (OpenRouter)">
-                <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron-30B (free)</option>
-                <option value="stepfun/step-3.5-flash:free">Step-3.5 Flash (free)</option>
-                <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron-9B (free)</option>
-                <option value="arcee-ai/trinity-large-preview:free">Trinity-Large (free)</option>
-                <option value="xiaomi/mimo-v2-flash:free">MiMo Flash · 256K (free)</option>
-              </optgroup>
-              <optgroup v-if="hasOwnKey" label="Paid (your OpenRouter key)">
-                <option v-for="m in PAID_MODELS" :key="m.id" :value="m.id">
-                  {{ m.label }} · {{ m.ctx }} · {{ m.price }}
-                </option>
-              </optgroup>
-              <optgroup v-if="isTester" label="Anthropic direct (tester)">
-                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
-                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-              </optgroup>
-            </select>
-            <template v-if="hasOwnKey">
-              <input
-                v-model="customModel"
-                class="form-input"
-                style="margin-top: 8px"
-                placeholder="Or type any model ID…"
-              />
-              <a
-                href="https://openrouter.ai/models"
-                target="_blank"
-                rel="noopener"
-                class="model-browse-link"
-              >Browse all models at openrouter.ai/models ↗</a>
-            </template>
-            <p v-else class="model-nudge">
-              <NuxtLink to="/settings">Connect your OpenRouter key</NuxtLink> to unlock paid models.
-            </p>
           </div>
 
           <div class="grid-2">
@@ -590,6 +611,22 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
 }
 
 /* Config body */
+/* Self-mod row */
+.acf__selfmod-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.acf__selfmod-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text, #e0e0e0);
+  cursor: pointer;
+}
+.acf__selfmod-label input[type="checkbox"] { cursor: pointer; }
+
 .acf__config {
   padding: 16px;
   display: flex;
@@ -606,12 +643,18 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
 .toggle-track.active .toggle-thumb { transform: translateX(14px); }
 .pair-toggle-label { font-size: 13px; font-weight: 500; color: var(--text, #e0e0e0); font-family: 'JetBrains Mono', monospace; }
 
-/* Footer */
+/* Footer — sticky within the scrollable left column */
 .acf__footer {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
+  padding: 12px 0 4px;
+  background: var(--bg, #0a0a0a);
+  border-top: 1px solid var(--border, #1e1e1e);
+  margin-top: 8px;
+  z-index: 2;
 }
 
 .model-browse-link {

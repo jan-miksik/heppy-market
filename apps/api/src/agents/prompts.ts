@@ -60,13 +60,25 @@ export function buildAnalysisPrompt(params: {
     stopLossPct: number;
     takeProfitPct: number;
   };
+  autonomyLevel: 'full' | 'guided' | 'strict';
   behavior?: Partial<AgentBehaviorConfig>;
   personaMd?: string | null;
 }): string {
-  const { portfolioState, openPositions, marketData, lastDecisions, config, behavior, personaMd } = params;
+  const { portfolioState, openPositions, marketData, lastDecisions, config, autonomyLevel, behavior, personaMd } = params;
 
   const maxPerTrade = (portfolioState.balance * config.maxPositionSizePct) / 100;
   const fmtPrice = (p: number) => p < 0.01 ? p.toFixed(6) : p.toFixed(2);
+
+  const autonomyDesc: Record<string, string> = {
+    strict: 'Strict — follow configured rules exactly, no discretion',
+    guided: 'Guided — operate within configured bounds, persona guides style and judgment',
+    full:   'Full — use complete discretion; persona and your own judgment can override defaults',
+  };
+
+  const selfModInstructions = autonomyLevel === 'strict' ? '' :
+    autonomyLevel === 'guided'
+      ? `\n## Self-Modification (optional)\nYou MAY suggest soft changes to your own setup for the next cycle. Include a "selfModification" key in your JSON response with: reason (string), changes.personaMd (updated persona markdown, optional), changes.behavior (object with any AgentBehaviorConfig keys, optional). You CANNOT modify hard trading parameters (SL, TP, position sizes).`
+      : `\n## Self-Modification (optional)\nYou MAY suggest changes to your own setup for the next cycle. Include a "selfModification" key in your JSON response with: reason (string), changes.personaMd (updated persona markdown, optional), changes.behavior (object with any AgentBehaviorConfig keys, optional), changes.config (object with any of: stopLossPct, takeProfitPct, maxPositionSizePct — optional).`;
 
   const openPositionsSection = openPositions.length > 0
     ? `\n## Open Positions\n${openPositions.map((p) => {
@@ -108,7 +120,13 @@ ${lastDecisions
   .map((d) => `- ${d.createdAt.slice(0, 16)}: ${d.decision} (confidence: ${d.confidence.toFixed(2)})`)
   .join('\n') || 'No recent decisions'}
 
-${behavior ? buildBehaviorSection(behavior) + '\n\n' : ''}${personaMd ? '## Your Persona\n' + personaMd + '\n\n' : ''}${buildConstraintsSection(config)}
+${behavior ? buildBehaviorSection(behavior) + '\n\n' : ''}${personaMd ? '## Your Persona\n' + personaMd + '\n\n' : ''}## Constraints
+Autonomy: ${autonomyDesc[autonomyLevel] ?? autonomyLevel}
+Allowed pairs: ${config.pairs.join(', ')}
+Max position size: ${config.maxPositionSizePct}% of balance
+Max open positions: ${config.maxOpenPositions}
+Stop loss: ${config.stopLossPct}%
+Take profit: ${config.takeProfitPct}%${selfModInstructions}
 
 Based on the above data, what is your trading decision?`;
 }

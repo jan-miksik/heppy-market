@@ -49,6 +49,8 @@ export interface AgentConfig {
   name: string;
   description?: string;
   autonomyLevel: AutonomyLevel;
+  autoApplySelfModification: boolean;
+  selfModCooldownCycles: number;
   llmModel: string;
   llmFallback: string;
   maxLlmCallsPerHour: number;
@@ -127,4 +129,16 @@ export interface TradeDecision {
   reasoning: string;
   targetPair?: string | null;
   suggestedPositionSizePct?: number | null;
+  selfModification?: {
+    reason: string;
+    changes: {
+      personaMd?: string;
+      behavior?: Record<string, unknown>;
+      config?: {
+        stopLossPct?: number;
+        takeProfitPct?: number;
+        maxPositionSizePct?: number;
+      };
+    };
+  } | null;
 }

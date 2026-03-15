@@ -122,6 +122,18 @@ export const agentManagerLogs = sqliteTable('agent_manager_logs', {
     .default(sql`(datetime('now'))`),
 });
 
+export const agentSelfModifications = sqliteTable('agent_self_modifications', {
+  id:             text('id').primaryKey(),
+  agentId:        text('agent_id').notNull(),
+  decisionId:     text('decision_id').notNull(),
+  reason:         text('reason').notNull(),
+  changes:        text('changes').notNull(),
+  changesApplied: text('changes_applied'),
+  status:         text('status').notNull().default('pending'),
+  appliedAt:      text('applied_at'),
+  createdAt:      text('created_at').notNull(),
+});
+
 export const behaviorProfiles = sqliteTable('behavior_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

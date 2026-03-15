@@ -7,7 +7,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc, sql } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
-import { agents, trades, agentDecisions, users } from '../db/schema.js';
+import { agents, trades, agentDecisions, agentSelfModifications, users } from '../db/schema.js';
 import { createDexDataService, getPriceUsd } from '../services/dex-data.js';
 import type { DexPair } from '../services/dex-data.js';
 import { createGeckoTerminalService } from '../services/gecko-terminal.js';
@@ -19,7 +19,7 @@ import { generateId, nowIso, intToAutonomyLevel } from '../lib/utils.js';
 import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
-import { AgentConfigSchema } from '@dex-agents/shared';
+import { AgentConfigSchema, SelfModificationSchema } from '@dex-agents/shared';
 
 /** Build a search query from a pair name.
  *  "WETH/USDC" → "WETH USDC"
@@ -593,8 +593,9 @@ export async function runAgentLoop(
   }
 
   // 7. Log the decision
+  const decisionId = generateId('dec');
   await db.insert(agentDecisions).values({
-    id: generateId('dec'),
+    id: decisionId,
     agentId,
     decision: decision.action,
     confidence: decision.confidence,
@@ -613,6 +614,78 @@ export async function runAgentLoop(
   console.log(
     `[agent-loop] ${agentId}: Decision=${decision.action} confidence=${decision.confidence.toFixed(2)}`
   );
+
+  // 7b. Handle self-modification suggestions
+  const selfMod = decision.selfModification;
+  if (selfMod && autonomyLevel !== 'strict') {
+    const parsed = SelfModificationSchema.safeParse(selfMod);
+    if (!parsed.success) {
+      console.warn(`[agent-loop] ${agentId}: selfModification failed validation:`, parsed.error);
+    } else {
+      const mod = parsed.data;
+      const modId = generateId('selfmod');
+
+      const meetsConfidence = decision.confidence >= 0.6;
+      const cyclesSinceLastMod: number = (config as any).cyclesSinceLastMod ?? 999;
+      const cooldownCycles = config.selfModCooldownCycles ?? 3;
+      const cooldownPassed = cyclesSinceLastMod >= cooldownCycles;
+
+      // Gate hard config changes for guided autonomy
+      const gatedChanges = { ...mod.changes };
+      if (autonomyLevel === 'guided') {
+        delete gatedChanges.config;
+      }
+
+      const canApply = meetsConfidence && cooldownPassed;
+      const shouldAutoApply = config.autoApplySelfModification === true;
+
+      if (!canApply) {
+        console.log(`[agent-loop] ${agentId}: selfMod skipped — confidence=${decision.confidence.toFixed(2)} cooldown=${cyclesSinceLastMod}/${cooldownCycles}`);
+      } else {
+        const status = shouldAutoApply ? 'applied' : 'pending';
+
+        await db.insert(agentSelfModifications).values({
+          id: modId,
+          agentId,
+          decisionId,
+          reason: mod.reason,
+          changes: JSON.stringify(mod.changes),
+          changesApplied: JSON.stringify(gatedChanges),
+          status,
+          appliedAt: status === 'applied' ? nowIso() : null,
+          createdAt: nowIso(),
+        });
+
+        if (status === 'applied') {
+          const agentUpdates: Partial<typeof agents.$inferInsert> = { updatedAt: nowIso() };
+          const configPatch: Record<string, unknown> = { cyclesSinceLastMod: 0 };
+
+          if (gatedChanges.personaMd) agentUpdates.personaMd = gatedChanges.personaMd;
+          if (gatedChanges.behavior) {
+            configPatch.behavior = { ...(config.behavior ?? {}), ...gatedChanges.behavior };
+          }
+          if (gatedChanges.config) {
+            const c = gatedChanges.config;
+            if (c.stopLossPct !== undefined)        configPatch.stopLossPct        = c.stopLossPct;
+            if (c.takeProfitPct !== undefined)      configPatch.takeProfitPct      = c.takeProfitPct;
+            if (c.maxPositionSizePct !== undefined) configPatch.maxPositionSizePct = c.maxPositionSizePct;
+          }
+
+          agentUpdates.config = JSON.stringify({ ...config, ...configPatch });
+          await db.update(agents).set(agentUpdates).where(eq(agents.id, agentId));
+          console.log(`[agent-loop] ${agentId}: Applied self-modification — ${mod.reason}`);
+        }
+      }
+
+      // Increment cooldown counter when not resetting it
+      if (!canApply || !shouldAutoApply) {
+        const newCycles = cyclesSinceLastMod === 999 ? 1 : cyclesSinceLastMod + 1;
+        await db.update(agents)
+          .set({ config: JSON.stringify({ ...config, cyclesSinceLastMod: newCycles }) })
+          .where(eq(agents.id, agentId));
+      }
+    }
+  }
 
   // 8. Execute trade if confidence is high enough
   const minConfidence = 0.65;

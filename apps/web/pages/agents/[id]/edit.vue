@@ -56,7 +56,6 @@ const liveEditableSetup = computed(() => {
 // Fallback editable setup extracted from API-fetched userPrompt
 const apiFallbackEditableSetup = ref('');
 
-// Split sections from API userPrompt
 const liveBehaviorSection = computed(() => {
   const form = configFormRef.value;
   if (!form) return '';
@@ -153,6 +152,7 @@ async function handleSave(payload: CreateAgentPayload) {
     router.push(`/agents/${id.value}`);
   } catch (e: any) {
     saveError.value = e?.message ?? 'Save failed';
+  } finally {
     saving.value = false;
   }
 }
@@ -216,12 +216,27 @@ function resetPersona() {
   <div class="edit-page">
     <div v-if="loading" class="edit-page__loading">Loading…</div>
     <template v-else-if="agent">
-      <!-- Header -->
-      <div class="edit-page__header">
-        <NuxtLink :to="`/agents/${id}`" class="edit-page__back">← Back to agent</NuxtLink>
-        <h1 class="edit-page__title">Edit · {{ agent.name }}</h1>
-        <span v-if="agent.status === 'running'" class="edit-page__running-badge">running — changes apply next cycle</span>
+      <!-- Sticky command bar -->
+      <div class="edit-bar">
+        <NuxtLink :to="`/agents/${id}`" class="edit-bar__back">← back</NuxtLink>
+        <span class="edit-bar__sep">/</span>
+        <span class="edit-bar__name">{{ agent.name }}</span>
+        <span v-if="agent.status === 'running'" class="edit-page__running-badge" style="flex-shrink:0">running — changes apply next cycle</span>
+        <div class="edit-bar__actions">
+          <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
+          <button
+            type="submit"
+            form="agent-config-form"
+            class="edit-bar__save"
+            :disabled="saving"
+          >
+            <span v-if="saving" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
+            {{ saving ? 'Saving…' : 'Save Changes' }}
+          </button>
+        </div>
       </div>
+
+      <div v-if="saveError" class="edit-error">{{ saveError }}</div>
 
       <div class="edit-page__body">
         <!-- Left: Config form -->
@@ -234,7 +249,6 @@ function resetPersona() {
             @submit="handleSave"
             @cancel="handleCancel"
           />
-          <div v-if="saveError" class="alert alert-error" style="margin-top:12px">{{ saveError }}</div>
         </div>
 
         <!-- Right: Prompt preview -->
@@ -336,11 +350,11 @@ function resetPersona() {
 .edit-page {
   min-height: 100vh;
   background: var(--bg, #0a0a0a);
-  padding: 24px;
+  padding: 0 24px 40px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 .edit-page__loading {
@@ -348,24 +362,73 @@ function resetPersona() {
   padding: 40px;
   text-align: center;
 }
-.edit-page__header {
+
+/* ── Command bar ────────────────────────────────────────────────── */
+.edit-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0;
+  background: var(--bg, #0a0a0a);
+  border-bottom: 1px solid var(--border, #1e1e1e);
 }
-.edit-page__back {
-  color: var(--accent, #7c6af7);
+.edit-bar__back {
   font-size: 13px;
+  color: var(--accent, #7c6af7);
   text-decoration: none;
+  white-space: nowrap;
 }
-.edit-page__back:hover { text-decoration: underline; }
-.edit-page__title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0;
+.edit-bar__back:hover { text-decoration: underline; }
+.edit-bar__sep {
+  color: var(--border, #333);
+  font-size: 14px;
 }
+.edit-bar__name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #e0e0e0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.edit-bar__cancel {
+  padding: 7px 14px;
+  background: none;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 5px;
+  color: var(--text-muted, #666);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.edit-bar__cancel:hover { border-color: var(--text-muted, #555); color: var(--text, #e0e0e0); }
+.edit-bar__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 20px;
+  background: var(--accent, #7c6af7);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.edit-bar__save:hover { opacity: 0.88; }
+.edit-bar__save:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .edit-page__running-badge {
   font-size: 11px;
   padding: 3px 8px;
@@ -374,16 +437,27 @@ function resetPersona() {
   color: var(--warning, #f5a623);
   border: 1px solid color-mix(in srgb, var(--warning, #f5a623) 25%, transparent);
 }
+
+.edit-error {
+  padding: 10px 14px;
+  background: color-mix(in srgb, #e55 10%, transparent);
+  border: 1px solid color-mix(in srgb, #e55 30%, transparent);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #e55;
+}
+
+/* ── Two-column body ────────────────────────────────────────────── */
 .edit-page__body {
   display: grid;
-  grid-template-columns: 420px 1fr;
-  gap: 24px;
+  grid-template-columns: minmax(460px, 2fr) 3fr;
+  gap: 28px;
   align-items: start;
 }
 .edit-page__left {
   position: sticky;
-  top: 24px;
-  max-height: calc(100vh - 80px);
+  top: 53px; /* matches command bar height */
+  max-height: calc(100vh - 73px);
   overflow-y: auto;
 }
 .edit-page__right { min-width: 0; }
@@ -555,7 +629,7 @@ function resetPersona() {
   border: 1px solid color-mix(in srgb, var(--warning, #f5a623) 30%, transparent);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .edit-page__body { grid-template-columns: 1fr; }
   .edit-page__left { position: static; max-height: none; }
 }

@@ -8,6 +8,7 @@ import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
 const route = useRoute();
 const id = computed(() => route.params.id as string);
 const { getAgent, startAgent, stopAgent, pauseAgent, deleteAgent } = useAgents();
+const { modifications, pendingModifications, modDecisionIds, fetchModifications, approve, reject } = useSelfModifications();
 const { fetchAgentTrades, closeTrade, formatPnl, pnlClass } = useTrades();
 const { request } = useApi();
 const { getAgentPersona, updateAgentPersona, resetAgentPersona } = useProfiles();
@@ -209,6 +210,7 @@ async function loadAll() {
       const personaData = await getAgentPersona(id.value);
       personaMd.value = personaData.personaMd ?? '';
     } catch { /* ignore */ }
+    fetchModifications(id.value).catch(() => { /* non-critical */ });
   } catch (err) {
     loadError.value = extractApiError(err);
   } finally {
@@ -445,6 +447,8 @@ async function doResetPersona() {
   }
 }
 
+
+
 /** Split a stored llmPromptText into the three logical sections */
 function parsePromptSections(promptText: string | undefined): {
   system: string;
@@ -651,6 +655,24 @@ function formatLatency(ms: number): string {
         </div>
       </div>
 
+      <!-- ── Pending Self-Modifications ──────────────────────────── -->
+      <div v-if="pendingModifications.length > 0" class="dec-section" style="margin-bottom: 16px;">
+        <div class="dec-section-header">
+          <span class="dec-section-title">Pending Self-Modifications</span>
+          <span class="dec-section-count">{{ pendingModifications.length }}</span>
+        </div>
+        <div class="self-mod-list">
+          <div v-for="mod in pendingModifications" :key="mod.id" class="self-mod-item">
+            <div class="self-mod-reason">{{ mod.reason }}</div>
+            <pre class="self-mod-changes">{{ JSON.stringify(mod.changes, null, 2) }}</pre>
+            <div class="self-mod-actions">
+              <button class="btn btn-success btn-sm" @click="approve(id, mod.id)">✓ Apply</button>
+              <button class="btn btn-ghost btn-sm" @click="reject(id, mod.id)">✕ Reject</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Analysis Log ───────────────────────────────────────────── -->
       <div class="dec-section">
         <div class="dec-section-header">
@@ -695,6 +717,7 @@ function formatLatency(ms: number): string {
               <div class="chat-reasoning" :class="{ 'chat-reasoning--md': showMdPreview }" v-html="decisionHtml(dec.reasoning, showMdPreview)" />
               <div class="dec-meta">
                 {{ dec.llmModel.split('/').pop() }} · {{ timeAgo(dec.createdAt) }}
+                <span v-if="modDecisionIds.has(dec.id)" class="badge-self-mod">✎ self-modified</span>
               </div>
             </div>
 
@@ -1219,5 +1242,61 @@ span.prompt-pill:hover {
 .ghost-pulse {
   animation: ghost-blink 1s ease-in-out infinite;
   color: #4ade80;
+}
+
+/* ── Self-modifications ─────────────────────────────────────────── */
+
+.badge-self-mod {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #a78bfa;
+  background: color-mix(in srgb, #a78bfa 12%, transparent);
+  border: 1px solid color-mix(in srgb, #a78bfa 30%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+}
+
+.self-mod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.self-mod-item {
+  background: var(--surface, #141414);
+  border: 1px solid color-mix(in srgb, #a78bfa 25%, transparent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.self-mod-reason {
+  font-size: 13px;
+  color: var(--text, #e0e0e0);
+  line-height: 1.5;
+}
+
+.self-mod-changes {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-secondary, #aaa);
+  background: color-mix(in srgb, var(--border, #2a2a2a) 15%, transparent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.self-mod-actions {
+  display: flex;
+  gap: 8px;
 }
 </style>
