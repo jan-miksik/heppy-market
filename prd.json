@@ -131,7 +131,7 @@
       "Audit auth flow and session validation (SIWE nonce reuse, session expiry, cookie flags)",
       "Test for common abuse scenarios (replay attacks, session fixation, malformed payloads)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "testing",

@@ -48,6 +48,9 @@ export async function getSession(
   cache: KVNamespace,
   token: string
 ): Promise<SessionData | null> {
+  // Reject obviously invalid tokens before hitting KV (prevents probing with empty/crafted strings)
+  if (!token || token.length < 16 || token.length > 128 || !/^[0-9a-f]+$/.test(token)) return null;
+
   const raw = await cache.get(`session:${token}`, 'text');
   if (!raw) return null;
   try {
@@ -118,6 +121,16 @@ export function parseSiweMessage(message: string): ParsedSiwe {
   return { address, nonce, domain, chainId };
 }
 
+/** Allowed SIWE domains — prevents accepting messages signed for a different site */
+const ALLOWED_SIWE_DOMAINS = [
+  'localhost',
+  'localhost:3000',
+  'localhost:3001',
+  'localhost:3002',
+  'heppy.market',
+  'dex-trading-agents.pages.dev',
+];
+
 export interface VerifySiweOptions {
   message: string;
   signature: string;
@@ -149,6 +162,14 @@ export async function verifySiweAndCreateSession(
   const parsed = parseSiweMessage(message);
   if (!parsed.address || !parsed.nonce) {
     throw new Error('Invalid SIWE message format');
+  }
+
+  // Validate domain to prevent phishing (signing on another site, replaying here)
+  const domainAllowed = ALLOWED_SIWE_DOMAINS.some(
+    (allowed) => parsed.domain === allowed || parsed.domain.endsWith(`.${allowed}`)
+  );
+  if (!domainAllowed) {
+    throw new Error(`SIWE domain "${parsed.domain}" is not allowed`);
   }
 
   // Validate nonce exists (one-time use)

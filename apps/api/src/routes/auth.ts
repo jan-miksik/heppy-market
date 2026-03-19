@@ -126,6 +126,12 @@ authRoute.post('/logout', async (c) => {
   return c.json({ ok: true });
 });
 
+const OpenRouterExchangeSchema = z.object({
+  code: z.string().min(1).max(512),
+  code_verifier: z.string().min(1).max(512),
+  code_challenge_method: z.enum(['S256', 'plain']).optional(),
+});
+
 /** POST /api/auth/openrouter/exchange — exchange PKCE code for OR key, encrypt, store */
 authRoute.post('/openrouter/exchange', async (c) => {
   const cookieHeader = c.req.header('cookie') ?? '';
@@ -135,10 +141,7 @@ authRoute.post('/openrouter/exchange', async (c) => {
   const session = await getSession(c.env.CACHE, token);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
-  const body = await c.req.json<{ code?: string; code_verifier?: string; code_challenge_method?: string }>();
-  if (!body.code || !body.code_verifier) {
-    return c.json({ error: 'Missing code or code_verifier' }, 400);
-  }
+  const body = await validateBody(c, OpenRouterExchangeSchema);
 
   let res: Response;
   try {
@@ -149,7 +152,7 @@ authRoute.post('/openrouter/exchange', async (c) => {
         code: body.code,
         code_verifier: body.code_verifier,
         code_challenge_method: body.code_challenge_method ?? 'S256',
-      }),
+      } satisfies Record<string, string>),
     });
   } catch (fetchErr) {
     console.error('[auth/openrouter/exchange] Network error reaching OpenRouter:', fetchErr);

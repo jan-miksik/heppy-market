@@ -72,9 +72,19 @@ async function shouldRunCron(cron: string, env: Env): Promise<boolean> {
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
-// Rate limiting only on unauthenticated auth endpoints — protect against brute force
-// on nonce/verify. Authenticated routes are already gated by session middleware so
-// per-IP KV counters there are pure waste (1 write per request).
+// Global per-IP rate limit — broad defence against scraping and DoS.
+// Applied before auth so even unauthenticated traffic is bounded.
+// Generous limit (200/min) to avoid false positives on legitimate use.
+app.use(
+  '/api/*',
+  createRateLimitMiddleware<{ Bindings: Env; Variables: AuthVariables }>({
+    limit: 200,
+    windowSecs: 60,
+  })
+);
+
+// Stricter limits on unauthenticated auth endpoints — protect against brute-force
+// on nonce/verify (these are the only paths reachable without a valid session).
 app.use(
   '/api/auth/nonce',
   createRateLimitMiddleware<{ Bindings: Env; Variables: AuthVariables }>({

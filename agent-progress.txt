@@ -62,3 +62,21 @@ Each entry should include:
 - Pre-existing phase1 test failure and web lint errors are unrelated to this task.
 
 **Next recommended:** architecture (DO as source of truth) or security (API hardening).
+
+---
+
+## 2026-03-19 — security: API and auth hardening
+
+**Completed:**
+- `apps/api/src/lib/auth.ts`: Added session token format validation in `getSession` (rejects empty/short/non-hex tokens before KV lookup). Added `ALLOWED_SIWE_DOMAINS` constant and domain check in `verifySiweAndCreateSession` (prevents phishing — SIWE message signed for foreign domain is rejected).
+- `apps/api/src/routes/auth.ts`: Added `OpenRouterExchangeSchema` (Zod) to validate `POST /api/auth/openrouter/exchange` body — previously used raw untyped `c.req.json()`.
+- `apps/api/src/index.ts`: Added global per-IP rate limit (200 req/min) on `/api/*` before auth middleware. Stricter limits on nonce/verify are still applied after.
+- Added `apps/api/tests/security.test.ts` with 34 tests covering SIWE parsing, domain allow-listing, session token format, cookie parsing, OR exchange schema, and rate-limit key derivation.
+
+**Notable decisions:**
+- Session token regex `/^[0-9a-f]+$/` is strict (lowercase hex only) — matches `generateId()` output format, blocks injection via cookie header.
+- Domain validation uses suffix-match `domain.endsWith('.'+allowed)` for subdomains, but exact match first — prevents "heppy.market.evil.com" from matching "heppy.market".
+- Global rate limit is 200/min (generous) to avoid false positives on legitimate dashboard usage; auth brute-force limits remain at 10/5min.
+- Pre-existing phase1 test failure and web lint errors are unrelated to this task.
+
+**Next recommended:** architecture (DO as source of truth) or testing (expand e2e).
