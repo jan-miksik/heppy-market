@@ -99,3 +99,24 @@ Each entry should include:
 - Pre-existing phase1 test failure and web lint errors are unrelated to this task.
 
 **Next recommended:** architecture (DO as source of truth) or testing (expand e2e agent lifecycle).
+
+---
+
+## 2026-03-19 — rate-limiting: DO-based per-user LLM rate limiter
+
+**Completed:**
+- Created `apps/api/src/lib/global-rate-limiter.ts` with `GlobalRateLimiterDO` class. Uses fixed-window counters (10 req/min, 120 req/hr) stored in DO storage for persistence across evictions. Endpoints: `/check` (POST — atomic increment+check), `/status` (GET — peek without incrementing), `/reset` (POST — clear counters). In-memory cache avoids redundant reads within same request.
+- Added `checkLlmRateLimit(env, userId)` helper that calls DO `/check` endpoint.
+- Registered `RATE_LIMITER` binding in `apps/api/wrangler.toml` (local + production) with `v3` migration (`new_sqlite_classes = ["GlobalRateLimiterDO"]`).
+- Updated `apps/api/src/types/env.ts` to add `RATE_LIMITER: DurableObjectNamespace<GlobalRateLimiterDO>`.
+- Exported `GlobalRateLimiterDO` from `apps/api/src/index.ts`.
+- Integrated rate limit check into `apps/api/src/agents/agent-loop.ts` — checked before each LLM call, keyed by `agentRow.ownerAddress.toLowerCase()`. Returns a hold decision with time-until-reset when limited.
+- Added `apps/api/tests/rate-limiting.test.ts` with 20 tests covering: limit constants, result shape, window boundary math, stub-based helper correctness, guard logic, and simulated DO /check increment loop.
+
+**Notable decisions:**
+- Used `agentRow.ownerAddress` (wallet address) as the rate limiter key — already available in agent-loop without an extra DB lookup. Uniquely identifies users.
+- Guard is skipped when `env.RATE_LIMITER` is absent (facilitates local dev without binding).
+- `vi.mock('cloudflare:workers')` stubs the `DurableObject` base class so tests run in Vitest/Node without the CF runtime.
+- Pre-existing phase1 test failure and web lint errors are unrelated to this task.
+
+**Next recommended:** architecture (DO as source of truth) or testing (expand e2e agent lifecycle).

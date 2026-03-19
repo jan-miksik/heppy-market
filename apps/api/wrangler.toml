@@ -38,7 +38,8 @@ id = "local-cache"
 [durable_objects]
 bindings = [
   { name = "TRADING_AGENT", class_name = "TradingAgentDO" },
-  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" }
+  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" },
+  { name = "RATE_LIMITER",  class_name = "GlobalRateLimiterDO" }
 ]
 
 # Free plan requires SQLite-backed DOs. Add a new [[migrations]] entry when adding a new DO class.
@@ -48,6 +49,9 @@ new_sqlite_classes = ["TradingAgentDO"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["AgentManagerDO"]
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["GlobalRateLimiterDO"]
 
 # Production: create D1 + KV in dashboard, then set database_id and id below. Deploy with: wrangler deploy --env production
 [env.production]
@@ -66,7 +70,8 @@ id = "b056ff9b5da14b23b8f4a5076038b783"
 [env.production.durable_objects]
 bindings = [
   { name = "TRADING_AGENT", class_name = "TradingAgentDO" },
-  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" }
+  { name = "AGENT_MANAGER", class_name = "AgentManagerDO" },
+  { name = "RATE_LIMITER",  class_name = "GlobalRateLimiterDO" }
 ]
 [[env.production.migrations]]
 tag = "v1"
@@ -74,3 +79,6 @@ new_sqlite_classes = ["TradingAgentDO"]
 [[env.production.migrations]]
 tag = "v2"
 new_sqlite_classes = ["AgentManagerDO"]
+[[env.production.migrations]]
+tag = "v3"
+new_sqlite_classes = ["GlobalRateLimiterDO"]

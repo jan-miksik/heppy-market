@@ -1,5 +1,6 @@
 import type { TradingAgentDO } from '../agents/trading-agent.js';
 import type { AgentManagerDO } from '../agents/agent-manager.js';
+import type { GlobalRateLimiterDO } from '../lib/global-rate-limiter.js';
 
 /** Cloudflare Worker environment bindings */
 export interface Env {
@@ -7,6 +8,7 @@ export interface Env {
   CACHE: KVNamespace;
   TRADING_AGENT: DurableObjectNamespace<TradingAgentDO>;
   AGENT_MANAGER: DurableObjectNamespace<AgentManagerDO>;
+  RATE_LIMITER: DurableObjectNamespace<GlobalRateLimiterDO>;
   OPENROUTER_API_KEY: string;
   ANTHROPIC_API_KEY?: string;
   /** Optional comma-separated origins for CORS (e.g. production Pages URL). Merged with default allowlist. */

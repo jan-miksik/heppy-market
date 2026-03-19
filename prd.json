@@ -68,7 +68,7 @@
       "Return proper error (429) when limit exceeded",
       "Test concurrency safety and correctness"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "caching",

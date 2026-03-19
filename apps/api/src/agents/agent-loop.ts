@@ -20,6 +20,7 @@ import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
 import { classifyApiError, logStructuredError } from '../lib/agent-errors.js';
 import { createLogger } from '../lib/logger.js';
+import { checkLlmRateLimit } from '../lib/global-rate-limiter.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
 import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@dex-agents/shared';
 import { resolveAgentPersonaMd } from './resolve-agent-persona.js';
@@ -592,6 +593,28 @@ export async function runAgentLoop(
       tpPct: config.takeProfitPct,
     };
   });
+
+  // Check per-user LLM rate limit before calling the LLM.
+  // Uses the owner's wallet address as the rate limiter key (unique per user).
+  const rateLimitKey = agentRow.ownerAddress?.toLowerCase();
+  if (rateLimitKey && env.RATE_LIMITER) {
+    const rl = await checkLlmRateLimit(env, rateLimitKey);
+    if (!rl.allowed) {
+      log.warn('llm_rate_limited', { limitedBy: rl.limitedBy, minuteRemaining: rl.minuteRemaining, hourRemaining: rl.hourRemaining });
+      await db.insert(agentDecisions).values({
+        id: generateId('dec'),
+        agentId,
+        decision: 'hold',
+        confidence: 0,
+        reasoning: `LLM rate limit reached (${rl.limitedBy} limit). Resets in ${rl.limitedBy === 'minute' ? Math.ceil((rl.minuteResetAt - Date.now() / 1000)) : Math.ceil((rl.hourResetAt - Date.now() / 1000))}s.`,
+        llmModel: effectiveLlmModel,
+        llmLatencyMs: 0,
+        marketDataSnapshot: JSON.stringify(marketData),
+        createdAt: nowIso(),
+      });
+      return;
+    }
+  }
 
   let decision: Awaited<ReturnType<typeof getTradeDecision>>;
   const doneLlm = log.time('llm_call', { model: effectiveLlmModel });

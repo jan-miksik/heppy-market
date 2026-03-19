@@ -19,6 +19,7 @@ import profilesRoute from './routes/profiles.js';
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
 export { AgentManagerDO } from './agents/agent-manager.js';
+export { GlobalRateLimiterDO } from './lib/global-rate-limiter.js';
 
 function cronToMs(cron: string): number | null {
   switch (cron) {
