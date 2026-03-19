@@ -157,3 +157,23 @@ Each entry should include:
 - `buildIndicatorText` is defined inside the closure (not module-level) to maintain access to `evaluateSignals`/`combineSignals` without refactoring imports.
 
 **Next recommended:** architecture (DO as source of truth) or realtime (WebSocket).
+
+---
+
+## 2026-03-19 — migration: Structured schema versioning for DO storage and D1
+
+**Completed:**
+- Created `apps/api/src/lib/do-storage-migration.ts` with `migrateStorage(storage)` runner. Uses `storageVersion` sentinel key in each DO's storage. Append-only `MIGRATIONS` array (v0→v1 = stamping only). `StorageLike` structural type avoids CF Workers type resolution issues. Fast-path exits if already at current version. Stamps version after each migration step for interruption safety.
+- Created `apps/api/src/lib/agent-config-migration.ts` extracting config normalization from `agent-loop.ts` into a pure, testable function `migrateAgentConfig(rawConfig)`. Handles: legacy seconds-string intervals (`3600`→`1h`), removed short intervals (`1m`/`5m`→`15m`), unknown intervals→`1h`, invalid strategies→`combined`, out-of-range numeric fields (clamped to Zod schema bounds).
+- Updated `apps/api/src/agents/trading-agent.ts`: calls `migrateStorage(this.ctx.storage)` at top of `fetch()` (non-fatal — logs warning on failure).
+- Updated `apps/api/src/agents/agent-loop.ts`: replaced inline config clamping/migration logic with `migrateAgentConfig()` call.
+- Added `apps/api/tests/migration.test.ts` with 41 tests covering: DO storage versioning (fresh DO, idempotent, no-op, future version graceful), agent config migration (all legacy interval mappings, removed intervals, unknown intervals, valid preserved), strategies (unknown→combined, empty→combined, valid preserved), numeric clamping (all fields, bounds, rounding), and pure function contract (no mutation, unknown keys preserved).
+
+**Notable decisions:**
+- `StorageLike` structural type (not CF Workers import) keeps module usable in Vitest/Node without CF runtime — same pattern as rate limiter.
+- Migration is called on every `fetch()` with O(1) fast-path — no performance cost when already up-to-date.
+- `MIGRATIONS` array is append-only (never reorder/remove) — same convention as Drizzle D1 migrations.
+- Local `let interval: string` variable required due to TypeScript's inability to narrow mutable `Record<string,unknown>` properties across if-branches.
+- Pre-existing phase1 test failure and web lint errors are unrelated to this task.
+
+**Next recommended:** architecture (DO as source of truth) or realtime (WebSocket).

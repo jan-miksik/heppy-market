@@ -7,6 +7,7 @@ import type { Position } from '../services/paper-engine.js';
 import { runAgentLoop } from './agent-loop.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
+import { migrateStorage } from '../lib/do-storage-migration.js';
 
 /** Interval string → milliseconds */
 function intervalToMs(interval: string): number {
@@ -39,6 +40,12 @@ export class TradingAgentDO extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    // Run any pending DO storage migrations on every request.
+    // migrateStorage() exits immediately when already at current version (fast path).
+    await migrateStorage(this.ctx.storage).catch((err) => {
+      console.warn('[TradingAgentDO] storage migration failed (non-fatal):', err);
+    });
 
     if (url.pathname === '/status') {
       const agentId = (await this.ctx.storage.get<string>('agentId')) ?? null;

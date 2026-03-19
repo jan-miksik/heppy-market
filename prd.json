@@ -157,7 +157,7 @@
       "Document migration strategy for both D1 (Drizzle) and DO storage in a single place",
       "Test forward migration and verify backward-incompatible changes are caught"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "meta:orchestrator",
