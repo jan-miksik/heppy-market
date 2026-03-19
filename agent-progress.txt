@@ -10,3 +10,18 @@ Each entry should include:
 - Next recommended steps
 
 ---
+
+## 2026-03-19 — stability: Error handling and retry logic
+
+**Completed:**
+- Created `apps/api/src/lib/agent-errors.ts` with typed error classes (`AgentLoopError`), error codes (LLM_TIMEOUT, LLM_RATE_LIMIT, LLM_MALFORMED_RESPONSE, API_NETWORK_ERROR, etc.), and `classifyLlmError` / `classifyApiError` / `logStructuredError` utilities.
+- Updated `apps/api/src/services/llm-router.ts`: added per-model retry with exponential backoff (up to 2 retries for primary models, 1 for emergency). Transient errors (timeout, rate-limit, network) trigger retry with 500ms/1000ms delays. Non-transient errors skip to next model immediately.
+- Updated `apps/api/src/agents/agent-loop.ts`: GeckoTerminal and DexScreener API failures now emit structured error log lines (`error_code=… recoverable=… message=…`). LLM call failures also use structured logging and always persist a hold decision to D1.
+- Added `apps/api/tests/stability.test.ts` with 24 tests covering error classification, context propagation, log format, and recovery flags.
+
+**Notable decisions:**
+- Used `maxRetries: 0` in `generateText` to keep retry logic fully in our control.
+- Per-model retry + model fallback chain = two-level resilience.
+- Pre-existing failures (phase1 test + web lint) are unrelated to this task.
+
+**Next recommended:** observability or testing (expand e2e agent lifecycle).

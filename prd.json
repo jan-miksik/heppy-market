@@ -107,7 +107,7 @@
       "Ensure agent loop never crashes silently — always record failure reason in D1 decisions log",
       "Add tests for each failure mode (LLM timeout, API 429, malformed response, network error)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "observability",

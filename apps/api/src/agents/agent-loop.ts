@@ -18,6 +18,7 @@ import { getTradeDecision } from '../services/llm-router.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
+import { classifyApiError, logStructuredError } from '../lib/agent-errors.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
 import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@dex-agents/shared';
 import { resolveAgentPersonaMd } from './resolve-agent-persona.js';
@@ -291,17 +292,20 @@ export async function runAgentLoop(
           prices = hourlyResult.value;
           console.log(`[agent-loop] ${agentId}: Got ${prices.length} hourly candles`);
         } else {
-          console.warn(`[agent-loop] ${agentId}: Hourly OHLCV unavailable:`, hourlyResult.reason);
+          const classified = classifyApiError(hourlyResult.reason, { pair: pairName, source: 'gecko-ohlcv-hourly' });
+          logStructuredError('agent-loop', agentId, classified);
         }
         if (dailyResult.status === 'fulfilled') {
           dailyPrices = dailyResult.value;
           console.log(`[agent-loop] ${agentId}: Got ${dailyPrices.length} daily candles`);
         } else {
-          console.warn(`[agent-loop] ${agentId}: Daily OHLCV unavailable:`, dailyResult.reason);
+          const classified = classifyApiError(dailyResult.reason, { pair: pairName, source: 'gecko-ohlcv-daily' });
+          logStructuredError('agent-loop', agentId, classified);
         }
       }
     } catch (geckoErr) {
-      console.warn(`[agent-loop] ${agentId}: GeckoTerminal failed for "${query}":`, geckoErr);
+      const classified = classifyApiError(geckoErr, { pair: pairName, source: 'gecko-terminal' });
+      logStructuredError('agent-loop', agentId, classified);
     }
 
     // ── Fallback: DexScreener ────────────────────────────────────────────────
@@ -330,7 +334,8 @@ export async function runAgentLoop(
           console.warn(`[agent-loop] ${agentId}: DexScreener also found no Base pair for "${query}"`);
         }
       } catch (dexErr) {
-        console.warn(`[agent-loop] ${agentId}: DexScreener failed for "${query}":`, dexErr);
+        const classified = classifyApiError(dexErr, { pair: pairName, source: 'dexscreener' });
+        logStructuredError('agent-loop', agentId, classified);
       }
     }
 
@@ -360,7 +365,8 @@ export async function runAgentLoop(
             console.log(`[agent-loop] ${agentId}: Token address fallback found @ $${priceUsd}`);
           }
         } catch (tokenErr) {
-          console.warn(`[agent-loop] ${agentId}: Token address fallback failed:`, tokenErr);
+          const classified = classifyApiError(tokenErr, { pair: pairName, source: 'token-address-fallback' });
+          logStructuredError('agent-loop', agentId, classified);
         }
       }
     }
@@ -615,14 +621,16 @@ export async function runAgentLoop(
       }
     );
   } catch (err) {
-    console.error(`[agent-loop] ${agentId}: LLM call failed:`, err);
-    // Log the failure as a hold decision
+    const { classifyLlmError } = await import('../lib/agent-errors.js');
+    const classified = classifyLlmError(err, { model: effectiveLlmModel });
+    logStructuredError('agent-loop', agentId, classified);
+    // Always record the failure as a hold decision so the loop never crashes silently
     await db.insert(agentDecisions).values({
       id: generateId('dec'),
       agentId,
       decision: 'hold',
       confidence: 0,
-      reasoning: `LLM error: ${String(err)}`,
+      reasoning: `LLM error [${classified.code}]: ${classified.message}`,
       llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
       marketDataSnapshot: JSON.stringify(marketData),

@@ -4,6 +4,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { TradeDecisionSchema } from '@dex-agents/shared';
 import type { TradeDecision, AgentBehaviorConfig } from '@dex-agents/shared';
 import { sleep } from '../lib/utils.js';
+import { classifyLlmError } from '../lib/agent-errors.js';
 import { BASE_AGENT_PROMPT, buildAnalysisPrompt } from '../agents/prompts.js';
 
 export function buildJsonSchemaInstruction(): string {
@@ -172,73 +173,108 @@ export async function getTradeDecision(
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+  /** Whether an error is transient enough to warrant a per-model retry */
+  function isTransientError(err: unknown): boolean {
+    const classified = classifyLlmError(err);
+    return classified.code === 'LLM_TIMEOUT' ||
+      classified.code === 'LLM_RATE_LIMIT' ||
+      classified.code === 'LLM_NETWORK_ERROR';
+  }
+
   for (const modelId of modelsToTry) {
-    try {
-      const effectiveTimeout = primaryModelSet.has(modelId) ? timeoutMs : EMERGENCY_MODEL_TIMEOUT_MS;
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Model request timed out after ${effectiveTimeout / 1000}s`)),
-          effectiveTimeout
-        )
-      );
+    const effectiveTimeout = primaryModelSet.has(modelId) ? timeoutMs : EMERGENCY_MODEL_TIMEOUT_MS;
+    // Per-model retry: up to 2 retries for transient errors (timeout, rate-limit, network)
+    const MAX_MODEL_RETRIES = primaryModelSet.has(modelId) ? 2 : 1;
+    let modelAttempt = 0;
 
-      const modelInstance = isAnthropic
-        ? anthropic!(modelId)
-        : openrouter!(modelId);
-
-      console.log('[llm-router] === PROMPT SENT TO LLM ===');
-      console.log('[llm-router] Model:', modelId);
-      console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
-      console.log('[llm-router] --- USER PROMPT ---');
-      console.log(userPrompt);
-      console.log('[llm-router] === END PROMPT ===');
-
-      const result = await Promise.race([
-        generateText({
-          model: modelInstance,
-          // Merge system into prompt — some models (e.g. Gemma) reject the system role.
-          // Anthropic also handles a flat prompt just fine.
-          prompt: fullPrompt,
-          ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
-          maxRetries: 0,
-        }),
-        timeoutPromise,
-      ]);
-
-      const json = extractJson(result.text ?? '');
-      if (!json.trim()) {
-        throw new Error(`Model returned empty response`);
-      }
-      let parsed: unknown;
+    while (modelAttempt <= MAX_MODEL_RETRIES) {
       try {
-        parsed = JSON.parse(json);
-      } catch (parseErr) {
-        throw new Error(
-          `Model returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw length: ${json.length}`
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Model request timed out after ${effectiveTimeout / 1000}s`)),
+            effectiveTimeout
+          )
         );
-      }
-      const object = TradeDecisionSchema.parse(parsed);
-      const latencyMs = Date.now() - startTime;
-      const usage = (result as any).usage ?? {};
 
-      return {
-        ...object,
-        targetPair: object.targetPair ?? undefined,
-        suggestedPositionSizePct: object.suggestedPositionSizePct ?? undefined,
-        latencyMs,
-        tokensUsed: usage.totalTokens,
-        tokensIn: usage.inputTokens,
-        tokensOut: usage.outputTokens,
-        modelUsed: modelId,
-        llmPromptText: fullPrompt,
-        llmRawResponse: result.text ?? '',
-      };
-    } catch (err) {
-      lastError = err;
-      console.warn(`[llm-router] Model ${modelId} failed:`, err);
-      if (modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
-        await sleep(300);
+        const modelInstance = isAnthropic
+          ? anthropic!(modelId)
+          : openrouter!(modelId);
+
+        if (modelAttempt === 0) {
+          console.log('[llm-router] === PROMPT SENT TO LLM ===');
+          console.log('[llm-router] Model:', modelId);
+          console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
+          console.log('[llm-router] --- USER PROMPT ---');
+          console.log(userPrompt);
+          console.log('[llm-router] === END PROMPT ===');
+        } else {
+          console.log(`[llm-router] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`);
+        }
+
+        const result = await Promise.race([
+          generateText({
+            model: modelInstance,
+            // Merge system into prompt — some models (e.g. Gemma) reject the system role.
+            // Anthropic also handles a flat prompt just fine.
+            prompt: fullPrompt,
+            ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+            maxRetries: 0,
+          }),
+          timeoutPromise,
+        ]);
+
+        const json = extractJson(result.text ?? '');
+        if (!json.trim()) {
+          throw new Error(`Model returned empty response`);
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(json);
+        } catch (parseErr) {
+          throw new Error(
+            `Model returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw length: ${json.length}`
+          );
+        }
+        const object = TradeDecisionSchema.parse(parsed);
+        const latencyMs = Date.now() - startTime;
+        const usage = (result as any).usage ?? {};
+
+        return {
+          ...object,
+          targetPair: object.targetPair ?? undefined,
+          suggestedPositionSizePct: object.suggestedPositionSizePct ?? undefined,
+          latencyMs,
+          tokensUsed: usage.totalTokens,
+          tokensIn: usage.inputTokens,
+          tokensOut: usage.outputTokens,
+          modelUsed: modelId,
+          llmPromptText: fullPrompt,
+          llmRawResponse: result.text ?? '',
+        };
+      } catch (err) {
+        lastError = err;
+        const isTransient = isTransientError(err);
+        const classified = classifyLlmError(err, { model: modelId, attempt: modelAttempt });
+        console.warn(
+          `[llm-router] model=${modelId} attempt=${modelAttempt} error_code=${classified.code} message=${classified.message}`
+        );
+
+        if (isTransient && modelAttempt < MAX_MODEL_RETRIES) {
+          // Exponential backoff: 500ms, 1000ms
+          const backoffMs = 500 * Math.pow(2, modelAttempt);
+          console.log(`[llm-router] Transient error — retrying in ${backoffMs}ms`);
+          await sleep(backoffMs);
+          modelAttempt++;
+          continue;
+        }
+        // Non-transient or out of retries — move to next model
+        break;
       }
+    }
+
+    // Brief pause between different models
+    if (modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
+      await sleep(300);
     }
   }
 
