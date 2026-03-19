@@ -128,7 +128,7 @@ const form = reactive<CreateAgentPayload & { pairs: string[] }>({
   pairs: ['WETH/USDC'],
   paperBalance: 1000,
   strategies: ['combined'],
-  analysisInterval: '15m',
+  analysisInterval: '1h',
   maxPositionSizePct: 2,
   stopLossPct: 2,
   takeProfitPct: 3,

@@ -118,11 +118,11 @@ export async function runAgentLoop(
       console.warn(`[agent-loop] ${agentId}: analysisInterval "${rawConfig.analysisInterval}" is no longer supported → upgrading to "15m"`);
       rawConfig.analysisInterval = '15m';
     }
-    // Clamp analysisInterval to valid enum — any unrecognized value (e.g. "30m" from manager LLM) → "15m"
+    // Clamp analysisInterval to valid enum — any unrecognized value (e.g. "30m" from manager LLM) → "1h" (global default)
     const validIntervals = new Set(['15m', '1h', '4h', '1d']);
     if (typeof rawConfig.analysisInterval === 'string' && !validIntervals.has(rawConfig.analysisInterval)) {
-      console.warn(`[agent-loop] ${agentId}: Unknown analysisInterval "${rawConfig.analysisInterval}" → defaulting to "15m"`);
-      rawConfig.analysisInterval = '15m';
+      console.warn(`[agent-loop] ${agentId}: Unknown analysisInterval "${rawConfig.analysisInterval}" → defaulting to "1h"`);
+      rawConfig.analysisInterval = '1h';
     }
 
     // Migrate legacy strategy values not in the current enum → "combined"
@@ -145,6 +145,14 @@ export async function runAgentLoop(
   } catch (configErr) {
     console.error(`[agent-loop] ${agentId}: Invalid agent config in DB:`, configErr);
     throw configErr; // Bubble up so the DO handler returns a 500 visible to the user
+  }
+
+  // Keep the Durable Object's interval in sync with the DB config so edits actually take effect.
+  // (The DO uses its stored interval for alarm rescheduling.)
+  try {
+    await ctx.storage.put('analysisInterval', config.analysisInterval);
+  } catch (err) {
+    console.warn(`[agent-loop] ${agentId}: failed to persist analysisInterval to DO storage:`, err);
   }
 
   // Use DB column as source of truth for model (avoids stale/missing config.llmModel)

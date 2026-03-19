@@ -126,18 +126,43 @@ agentsRoute.patch('/:id', async (c) => {
     ...(body.pairs !== undefined && { pairs: normalizePairsForDex(body.pairs) }),
   };
 
+  const prevInterval = (existingConfig as any).analysisInterval;
+  const nextInterval = (mergedConfig as any).analysisInterval;
+  const intervalChanged =
+    typeof nextInterval === 'string' &&
+    nextInterval.trim().length > 0 &&
+    nextInterval !== prevInterval;
+
   const updates: Partial<typeof agents.$inferInsert> = {
     config: JSON.stringify(mergedConfig),
     updatedAt: nowIso(),
   };
   if (body.name) updates.name = body.name;
   // Always sync llm_model column from merged config so the agent loop uses the selected model
-  updates.llmModel = (mergedConfig.llmModel ?? existing.llmModel) || 'nvidia/nemotron-3-super-120b-a12b:free';  if (body.profileId !== undefined) {
+  updates.llmModel = (mergedConfig.llmModel ?? existing.llmModel) || 'nvidia/nemotron-3-super-120b-a12b:free';
+  if (body.profileId !== undefined) {
     updates.profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : body.profileId ?? null;
   }
   if (body.personaMd !== undefined) updates.personaMd = body.personaMd ?? null;
 
   await db.update(agents).set(updates).where(eq(agents.id, id));
+
+  // Best-effort: if the agent is currently running, sync the DO alarm interval immediately.
+  if (intervalChanged && existing.status === 'running') {
+    try {
+      const doId = c.env.TRADING_AGENT.idFromName(id);
+      const stub = c.env.TRADING_AGENT.get(doId);
+      await stub.fetch(
+        new Request('http://do/set-interval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisInterval: nextInterval }),
+        })
+      );
+    } catch (err) {
+      console.warn(`[agents route] Failed to sync analysisInterval to TRADING_AGENT DO for ${id}:`, err);
+    }
+  }
 
   const [updated] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json({
@@ -324,6 +349,35 @@ agentsRoute.post('/:id/history/clear', async (c) => {
 
   const agent = await requireOwnership(db, id, walletAddress);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  // Clear Durable Object engine state first to avoid "phantom" open positions lingering in memory.
+  try {
+    const agentConfig = JSON.parse(agent.config) as {
+      paperBalance?: number;
+      slippageSimulation?: number;
+      analysisInterval?: string;
+    };
+    const doId = c.env.TRADING_AGENT.idFromName(id);
+    const stub = c.env.TRADING_AGENT.get(doId);
+    const res = await stub.fetch(
+      new Request('http://do/clear-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: id,
+          paperBalance: agentConfig.paperBalance,
+          slippageSimulation: agentConfig.slippageSimulation,
+          analysisInterval: agentConfig.analysisInterval,
+        }),
+      })
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      return c.json({ error: body?.error ?? 'Failed to clear agent engine state' }, 500);
+    }
+  } catch (err) {
+    return c.json({ error: `Failed to clear agent engine state: ${String(err)}` }, 500);
+  }
 
   await db.delete(trades).where(eq(trades.agentId, id));
   await db.delete(agentDecisions).where(eq(agentDecisions.agentId, id));

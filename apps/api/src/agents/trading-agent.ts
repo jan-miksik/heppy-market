@@ -118,6 +118,11 @@ export class TradingAgentDO extends DurableObject<Env> {
 
       if (!agentId) return Response.json({ error: 'Agent not initialized. Start the agent first.' }, { status: 400 });
 
+      // If the caller provides an interval, always sync it (so config edits take effect).
+      if (typeof body.analysisInterval === 'string' && body.analysisInterval.trim()) {
+        await this.ctx.storage.put('analysisInterval', body.analysisInterval);
+      }
+
       // Prevent concurrent loop runs (e.g. manual trigger racing with scheduled alarm).
       // Store a timestamp so stale locks (dev restart, crash) self-clear after 10 minutes.
       const LOCK_TTL_MS = 10 * 60_000;
@@ -156,6 +161,70 @@ export class TradingAgentDO extends DurableObject<Env> {
       await this.rescheduleAlarmIfRunning();
 
       return Response.json({ ok: true });
+    }
+
+    if (url.pathname === '/set-interval' && request.method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as { analysisInterval?: string };
+      const interval = typeof body.analysisInterval === 'string' && body.analysisInterval.trim()
+        ? body.analysisInterval.trim()
+        : null;
+      if (!interval) return Response.json({ error: 'analysisInterval is required' }, { status: 400 });
+
+      await this.ctx.storage.put('analysisInterval', interval);
+
+      const status = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+      if (status === 'running') {
+        const nextAlarmAt = Date.now() + intervalToMs(interval);
+        await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+        await this.ctx.storage.setAlarm(nextAlarmAt);
+      }
+
+      return Response.json({ ok: true, analysisInterval: interval });
+    }
+
+    if (url.pathname === '/clear-history' && request.method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as {
+        agentId?: string;
+        paperBalance?: number;
+        slippageSimulation?: number;
+        analysisInterval?: string;
+      };
+
+      const existingStatus = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+
+      const storedAgentId = await this.ctx.storage.get<string>('agentId');
+      if (!storedAgentId && typeof body.agentId === 'string' && body.agentId.trim()) {
+        await this.ctx.storage.put('agentId', body.agentId.trim());
+      }
+
+      if (typeof body.analysisInterval === 'string' && body.analysisInterval.trim()) {
+        await this.ctx.storage.put('analysisInterval', body.analysisInterval.trim());
+      }
+
+      const balance = body.paperBalance ?? 10_000;
+      const slippage = body.slippageSimulation ?? 0.3;
+      const engine = new PaperEngine({ balance, slippage });
+      await this.ctx.storage.put('engineState', engine.serialize());
+
+      await this.ctx.storage.delete('tickCount');
+      await this.ctx.storage.delete('pendingTrade');
+      await this.ctx.storage.delete('lastStopOutAt');
+      await this.ctx.storage.delete('isLoopRunning');
+
+      // Clear any stale per-position warning keys
+      const priceMissKeys = await this.ctx.storage.list({ prefix: 'priceMiss:' });
+      for (const key of priceMissKeys.keys()) {
+        await this.ctx.storage.delete(key);
+      }
+
+      if (existingStatus === 'running') {
+        // Kick a quick next tick so the UI updates promptly (and then normal scheduling resumes).
+        const nextAlarmAt = Date.now() + 5_000;
+        await this.ctx.storage.put('nextAlarmAt', nextAlarmAt);
+        await this.ctx.storage.setAlarm(nextAlarmAt);
+      }
+
+      return Response.json({ ok: true, status: existingStatus });
     }
 
     if (url.pathname === '/reset' && request.method === 'POST') {
