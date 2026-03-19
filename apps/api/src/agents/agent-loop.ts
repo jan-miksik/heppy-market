@@ -25,6 +25,7 @@ import { migrateAgentConfig } from '../lib/agent-config-migration.js';
 import type { AgentBehaviorConfig } from '@dex-agents/shared';
 import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@dex-agents/shared';
 import { resolveAgentPersonaMd } from './resolve-agent-persona.js';
+import type { CachedAgentRow } from './trading-agent.js';
 
 /** Build a search query from a pair name.
  *  "WETH/USDC" → "WETH USDC"
@@ -82,12 +83,40 @@ export async function runAgentLoop(
   const geckoSvc = createGeckoTerminalService(env.CACHE, { bypassCache });
   const dexSvc = createDexDataService(env.CACHE, { bypassCache });
 
-  // 1. Load agent config
-  const [agentRow] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agentRow) {
-    console.log(`[agent-loop] Agent ${agentId} not found`);
-    return;
+  // 1. Load agent config — try DO storage cache first to skip a D1 read on every tick.
+  //    On cache miss (first run after deploy or DO eviction), fall back to D1 and warm the cache.
+  let agentRow: CachedAgentRow | (typeof agents.$inferSelect) | null = null;
+
+  const cachedRow = await ctx.storage.get<CachedAgentRow>('cachedAgentRow');
+  if (cachedRow && cachedRow.id === agentId) {
+    agentRow = cachedRow;
+    log.info('agent_config_cache_hit', { agentId });
+  } else {
+    log.info('agent_config_cache_miss', { agentId });
+    const [dbRow] = await db.select().from(agents).where(eq(agents.id, agentId));
+    if (!dbRow) {
+      console.log(`[agent-loop] Agent ${agentId} not found`);
+      return;
+    }
+    agentRow = dbRow;
+    // Warm the cache for the next tick (best-effort)
+    try {
+      const toCache: CachedAgentRow = {
+        id: dbRow.id,
+        name: dbRow.name,
+        status: dbRow.status,
+        config: dbRow.config,
+        ownerAddress: dbRow.ownerAddress ?? null,
+        llmModel: dbRow.llmModel ?? null,
+        profileId: dbRow.profileId ?? null,
+        personaMd: dbRow.personaMd ?? null,
+      };
+      await ctx.storage.put('cachedAgentRow', toCache);
+    } catch (cacheErr) {
+      console.warn(`[agent-loop] ${agentId}: failed to warm agent row cache:`, cacheErr);
+    }
   }
+
   // forceRun bypasses the status check (used for manual "Run Analysis" on stopped agents)
   if (!options?.forceRun && agentRow.status !== 'running') {
     console.log(`[agent-loop] Agent ${agentId} not running (status=${agentRow.status}), skipping tick`);
@@ -141,6 +170,12 @@ export async function runAgentLoop(
       .update(agents)
       .set({ status: 'paused', updatedAt: nowIso() })
       .where(eq(agents.id, agentId));
+    // Also update DO status and cache so the alarm fast-paths on the next tick
+    try {
+      await ctx.storage.put('status', 'paused');
+      const cached = await ctx.storage.get<CachedAgentRow>('cachedAgentRow');
+      if (cached) await ctx.storage.put('cachedAgentRow', { ...cached, status: 'paused' });
+    } catch { /* non-fatal */ }
     return;
   }
 
@@ -426,21 +461,46 @@ export async function runAgentLoop(
   }
 
   // Fetch all pairs in parallel and recent decisions at the same time.
-  // recentDecisions is independent of market data — no reason to wait.
+  // recentDecisions is served from DO storage cache (no D1 query on hot path).
+  // On cache miss (first run / DO eviction), the DB query runs in parallel with market data fetch.
+  type RecentDecision = { decision: string; confidence: number; createdAt: string };
+  const cachedRecentDecisions = await ctx.storage.get<RecentDecision[]>('recentDecisions');
+
   const doneMarketFetch = log.time('market_data_fetch', { pairs: pairsToFetch.length });
-  const [pairResults, recentDecisionsResult] = await Promise.allSettled([
-    Promise.allSettled(pairsToFetch.map(fetchOnePair)),
-    db
-      .select({
-        decision: agentDecisions.decision,
-        confidence: agentDecisions.confidence,
-        createdAt: agentDecisions.createdAt,
-      })
-      .from(agentDecisions)
-      .where(eq(agentDecisions.agentId, agentId))
-      .orderBy(desc(agentDecisions.createdAt))
-      .limit(10),
-  ]);
+
+  // Resolved below based on cache hit/miss path
+  let pairResults: PromiseSettledResult<PromiseSettledResult<Awaited<ReturnType<typeof fetchOnePair>>>[]>;
+  let recentDecisions: RecentDecision[];
+
+  if (cachedRecentDecisions !== undefined) {
+    // Hot path: recent decisions served from DO storage — only market data fetch
+    recentDecisions = cachedRecentDecisions;
+    pairResults = await Promise.allSettled(pairsToFetch.map(fetchOnePair))
+      .then((r) => ({ status: 'fulfilled' as const, value: r }))
+      .catch((e) => ({ status: 'rejected' as const, reason: e }));
+  } else {
+    // Cold path: co-fetch with market data to keep latency overlap
+    log.info('recent_decisions_cache_miss', { agentId });
+    const [pairResultsRaw, dbDecisions] = await Promise.allSettled([
+      Promise.allSettled(pairsToFetch.map(fetchOnePair)),
+      db
+        .select({
+          decision: agentDecisions.decision,
+          confidence: agentDecisions.confidence,
+          createdAt: agentDecisions.createdAt,
+        })
+        .from(agentDecisions)
+        .where(eq(agentDecisions.agentId, agentId))
+        .orderBy(desc(agentDecisions.createdAt))
+        .limit(10),
+    ]);
+    pairResults = pairResultsRaw;
+    recentDecisions = dbDecisions.status === 'fulfilled' ? dbDecisions.value : [];
+    // Warm the cache for subsequent ticks
+    if (dbDecisions.status === 'fulfilled') {
+      try { await ctx.storage.put('recentDecisions', dbDecisions.value); } catch { /* non-fatal */ }
+    }
+  }
 
   const marketData = (
     pairResults.status === 'fulfilled'
@@ -470,9 +530,6 @@ export async function runAgentLoop(
   }
 
   console.log(`[agent-loop] ${agentId}: Got market data for ${marketData.map((m) => m.pair).join(', ')}`);
-
-  // 5. Recent decisions were fetched in parallel with market data above.
-  const recentDecisions = recentDecisionsResult.status === 'fulfilled' ? recentDecisionsResult.value : [];
 
   // 6. Call LLM for trade decision
   const isAnthropicModel = effectiveLlmModel.startsWith('claude-');
@@ -698,6 +755,18 @@ export async function runAgentLoop(
   });
 
   const llmDurationMs = doneLlm();
+
+  // Update the DO recent-decisions cache so subsequent ticks skip the D1 query.
+  try {
+    const newCachedDecision: RecentDecision = {
+      decision: decision.action,
+      confidence: decision.confidence,
+      createdAt: nowIso(),
+    };
+    const updatedDecisions = [newCachedDecision, ...recentDecisions].slice(0, 10);
+    await ctx.storage.put('recentDecisions', updatedDecisions);
+  } catch { /* non-fatal — cache will be rebuilt on next miss */ }
+
   log.info('decision', {
     action: decision.action,
     confidence: decision.confidence,

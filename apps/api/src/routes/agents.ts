@@ -172,6 +172,37 @@ agentsRoute.patch('/:id', async (c) => {
 
   await db.update(agents).set(updates).where(eq(agents.id, id));
 
+  const [updated] = await db.select().from(agents).where(eq(agents.id, id));
+
+  // Best-effort: push updated config to the DO cache so runAgentLoop picks it up
+  // immediately without waiting for the next cache miss.
+  if (updated) {
+    try {
+      const doId = c.env.TRADING_AGENT.idFromName(id);
+      const stub = c.env.TRADING_AGENT.get(doId);
+      await stub.fetch(
+        new Request('http://do/sync-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentRow: {
+              id: updated.id,
+              name: updated.name,
+              status: updated.status,
+              config: updated.config,
+              ownerAddress: updated.ownerAddress ?? null,
+              llmModel: updated.llmModel ?? null,
+              profileId: updated.profileId ?? null,
+              personaMd: updated.personaMd ?? null,
+            },
+          }),
+        })
+      );
+    } catch (err) {
+      console.warn(`[agents route] Failed to push config to TRADING_AGENT DO cache for ${id}:`, err);
+    }
+  }
+
   // Best-effort: if the agent is currently running, sync the DO alarm interval immediately.
   if (intervalChanged && existing.status === 'running') {
     try {
@@ -190,8 +221,6 @@ agentsRoute.patch('/:id', async (c) => {
     // Also update the scheduler registry with the new interval
     await notifyScheduler(c.env, 'register', id, nextInterval);
   }
-
-  const [updated] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json({
     ...formatAgent(updated),
     pendingRestart: existing.status === 'running',
@@ -250,11 +279,23 @@ agentsRoute.post('/:id/start', async (c) => {
   await stub.fetch(
     new Request('http://do/start', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         agentId: id,
         paperBalance: agentConfig.paperBalance,
         slippageSimulation: agentConfig.slippageSimulation,
         analysisInterval: agentConfig.analysisInterval,
+        // Pass full agent row so the DO can skip the D1 read on the first tick
+        agentRow: {
+          id: agent.id,
+          name: agent.name,
+          status: 'running',   // will be set running momentarily
+          config: agent.config,
+          ownerAddress: agent.ownerAddress ?? null,
+          llmModel: agent.llmModel ?? null,
+          profileId: agent.profileId ?? null,
+          personaMd: agent.personaMd ?? null,
+        },
       }),
     })
   );

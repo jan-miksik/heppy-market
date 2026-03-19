@@ -11,7 +11,7 @@
       "Verify agent loop works without direct dependency on D1 for live state",
       "Add tests for DO state recovery and migration edge cases"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "performance",

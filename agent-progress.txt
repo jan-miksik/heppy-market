@@ -177,3 +177,28 @@ Each entry should include:
 - Pre-existing phase1 test failure and web lint errors are unrelated to this task.
 
 **Next recommended:** architecture (DO as source of truth) or realtime (WebSocket).
+
+---
+
+## 2026-03-19 — architecture: Durable Object as source of truth
+
+**Completed:**
+- Added `CachedAgentRow` type to `trading-agent.ts` — minimal agent row fields needed by `runAgentLoop` (id, name, status, config, ownerAddress, llmModel, profileId, personaMd).
+- Updated DO `/start` endpoint: accepts optional `agentRow` in body and stores it as `cachedAgentRow` in DO persistent storage (status forced to 'running').
+- Added `/sync-config` endpoint to DO: called by the HTTP route after PATCH to push updated agent row to DO cache. Preserves DO's authoritative `status` to avoid races with the route's D1 update.
+- Updated `/stop`, `/pause`, `/reset` DO endpoints: update `cachedAgentRow.status` in storage alongside the authoritative `status` key.
+- Refactored `runAgentLoop` to read `cachedAgentRow` from DO storage first (O(1) storage read), fall back to D1 only on cache miss. Warms the cache from D1 on miss. Eliminates the `agents` D1 read on every alarm tick.
+- Refactored `recentDecisions` in `runAgentLoop`: served from `recentDecisions` in DO storage (rolling 10-element array). Cache miss falls back to D1 co-fetched in parallel with market data, then warms the DO cache. Eliminates the `agentDecisions` D1 query on every tick.
+- After each decision is logged to D1, prepends new decision to the DO cache and trims to 10.
+- Updated daily-loss-limit path: also writes `status: paused` to DO storage and updates `cachedAgentRow.status` so the alarm fast-paths on the next tick.
+- Updated `POST /api/agents/:id/start` route: passes full agent row in `/start` body to prime the DO cache immediately (no cold start on first tick).
+- Updated `PATCH /api/agents/:id` route: calls `/sync-config` on the DO after D1 update to push config changes instantly (non-fatal if DO is sleeping).
+- Added `apps/api/tests/architecture.test.ts` with 13 tests covering: CachedAgentRow type shape, cache hit (no D1 call), cache miss + warm, sync-config status preservation, stop/pause status sync, recentDecisions hot path, cold path + DB fallback + warm, decision prepend + trim-to-10, empty decisions graceful, daily loss limit status sync.
+
+**Notable decisions:**
+- Agent state (balance, openPositions, cooldown) is already in the PaperEngine serialized to DO storage — the architecture refactor focused on the remaining D1 reads: `agentRow` config and `recentDecisions` history.
+- DO cache is warming-only (D1 is still the persistent record of truth for agents/decisions tables). DO is the performance layer that avoids D1 reads on the hot loop path.
+- `cachedAgentRow.status` is kept in sync via all mutation paths so the in-loop `agentRow.status !== 'running'` check remains correct without a D1 read.
+- Pre-existing phase1 test failure and web lint errors are unrelated to this task.
+
+**Next recommended:** realtime (WebSocket with Hibernatable API) or queues (async LLM processing).

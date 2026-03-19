@@ -9,6 +9,21 @@ import { generateId, nowIso } from '../lib/utils.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
 import { migrateStorage } from '../lib/do-storage-migration.js';
 
+/**
+ * Minimal agent row fields cached in DO storage.
+ * Updated on every /start and /sync-config call so agent-loop can skip the D1 read.
+ */
+export type CachedAgentRow = {
+  id: string;
+  name: string;
+  status: string;
+  config: string;       // JSON string (same as agents.config column)
+  ownerAddress: string | null;
+  llmModel: string | null;
+  profileId: string | null;
+  personaMd: string | null;
+};
+
 /** Interval string → milliseconds */
 function intervalToMs(interval: string): number {
   switch (interval) {
@@ -73,6 +88,7 @@ export class TradingAgentDO extends DurableObject<Env> {
         paperBalance?: number;
         slippageSimulation?: number;
         analysisInterval?: string;
+        agentRow?: CachedAgentRow;  // optional: caller may pass to prime the DO cache
       };
 
       const currentAgentId = await this.ctx.storage.get<string>('agentId');
@@ -88,6 +104,11 @@ export class TradingAgentDO extends DurableObject<Env> {
       await this.ctx.storage.put('agentId', body.agentId);
       await this.ctx.storage.put('status', 'running');
       await this.ctx.storage.put('analysisInterval', body.analysisInterval ?? '1h');
+
+      // Cache the full agent row so runAgentLoop can skip the D1 read on every tick.
+      if (body.agentRow) {
+        await this.ctx.storage.put('cachedAgentRow', { ...body.agentRow, status: 'running' });
+      }
 
       // Schedule first tick
       const intervalMs = intervalToMs(body.analysisInterval ?? '1h');
@@ -246,18 +267,24 @@ export class TradingAgentDO extends DurableObject<Env> {
       await this.ctx.storage.put('engineState', engine.serialize());
       await this.ctx.storage.put('status', 'stopped');
       await this.ctx.storage.deleteAlarm();
+      const cached = await this.ctx.storage.get<CachedAgentRow>('cachedAgentRow');
+      if (cached) await this.ctx.storage.put('cachedAgentRow', { ...cached, status: 'stopped' });
       return Response.json({ ok: true, balance });
     }
 
     if (url.pathname === '/stop' && request.method === 'POST') {
       await this.ctx.storage.put('status', 'stopped');
       await this.ctx.storage.deleteAlarm();
+      const cached = await this.ctx.storage.get<CachedAgentRow>('cachedAgentRow');
+      if (cached) await this.ctx.storage.put('cachedAgentRow', { ...cached, status: 'stopped' });
       return Response.json({ ok: true, status: 'stopped' });
     }
 
     if (url.pathname === '/pause' && request.method === 'POST') {
       await this.ctx.storage.put('status', 'paused');
       await this.ctx.storage.deleteAlarm();
+      const cached = await this.ctx.storage.get<CachedAgentRow>('cachedAgentRow');
+      if (cached) await this.ctx.storage.put('cachedAgentRow', { ...cached, status: 'paused' });
       return Response.json({ ok: true, status: 'paused' });
     }
 
@@ -349,6 +376,19 @@ export class TradingAgentDO extends DurableObject<Env> {
           : null,
         generatedAt: new Date().toISOString(),
       });
+    }
+
+    if (url.pathname === '/sync-config' && request.method === 'POST') {
+      // Called by the HTTP route layer after a PATCH /api/agents/:id so the DO
+      // cache stays fresh without waiting for the next alarm tick.
+      const body = (await request.json().catch(() => ({}))) as { agentRow?: CachedAgentRow };
+      if (body.agentRow) {
+        // Preserve the authoritative status from DO storage — don't let the
+        // caller's snapshot override it (the DB status update may race the DO).
+        const currentStatus = (await this.ctx.storage.get<string>('status')) ?? 'stopped';
+        await this.ctx.storage.put('cachedAgentRow', { ...body.agentRow, status: currentStatus });
+      }
+      return Response.json({ ok: true });
     }
 
     return new Response('Not Found', { status: 404 });
