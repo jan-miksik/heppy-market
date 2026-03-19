@@ -15,6 +15,7 @@ import { computeIndicators, evaluateSignals, combineSignals } from '../services/
 import { PaperEngine, type Position } from '../services/paper-engine.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
 import { getTradeDecision } from '../services/llm-router.js';
+import type { LlmJobMessage } from '../types/queue-types.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
@@ -26,6 +27,46 @@ import type { AgentBehaviorConfig } from '@dex-agents/shared';
 import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@dex-agents/shared';
 import { resolveAgentPersonaMd } from './resolve-agent-persona.js';
 import type { CachedAgentRow } from './trading-agent.js';
+
+// ── Shared types exported for use in /receive-decision and queue consumer ────
+
+export type MarketDataItem = {
+  pair: string;
+  pairAddress: string;
+  dexScreenerUrl: string;
+  priceUsd: number;
+  priceChange: Record<string, number | undefined>;
+  volume24h?: number;
+  liquidity?: number;
+  indicatorText: string;
+  dailyIndicatorText: string;
+};
+
+export type RecentDecision = {
+  decision: string;
+  confidence: number;
+  createdAt: string;
+};
+
+/**
+ * Context saved to DO storage when the LLM job is enqueued.
+ * Loaded by /receive-decision to execute the trade once the LLM result arrives.
+ */
+export type PendingLlmContext = {
+  jobId: string;
+  enqueuedAt: number;
+  marketData: MarketDataItem[];
+  pairsToFetch: string[];
+  effectiveLlmModel: string;
+  maxOpenPositions: number;
+  maxPositionSizePct: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  minConfidence: number;
+  dexes: string[];
+  strategies: string[];
+  slippageSimulation: number;
+};
 
 /** Build a search query from a pair name.
  *  "WETH/USDC" → "WETH USDC"
@@ -463,7 +504,6 @@ export async function runAgentLoop(
   // Fetch all pairs in parallel and recent decisions at the same time.
   // recentDecisions is served from DO storage cache (no D1 query on hot path).
   // On cache miss (first run / DO eviction), the DB query runs in parallel with market data fetch.
-  type RecentDecision = { decision: string; confidence: number; createdAt: string };
   const cachedRecentDecisions = await ctx.storage.get<RecentDecision[]>('recentDecisions');
 
   const doneMarketFetch = log.time('market_data_fetch', { pairs: pairsToFetch.length });
@@ -632,6 +672,11 @@ export async function runAgentLoop(
     };
   });
 
+  // Execution threshold — needed for both the queue context and sync execution path.
+  // confidenceThreshold is 0–100 in config; convert to 0–1.
+  const effectiveBehavior = AgentBehaviorConfigSchema.parse(config.behavior ?? {});
+  const minConfidence = effectiveBehavior.confidenceThreshold / 100;
+
   // Check per-user LLM rate limit before calling the LLM.
   // Uses the owner's wallet address as the rate limiter key (unique per user).
   const rateLimitKey = agentRow.ownerAddress?.toLowerCase();
@@ -654,12 +699,78 @@ export async function runAgentLoop(
     }
   }
 
-  let decision: Awaited<ReturnType<typeof getTradeDecision>>;
-  const doneLlm = log.time('llm_call', { model: effectiveLlmModel });
-  try {
-    decision = await getTradeDecision(
-      {
-        apiKey: llmApiKey,
+  // ── Build the trade request (used by both queue and sync paths) ──────────
+  const tradeRequest = {
+    portfolioState: {
+      balance: engine.balance,
+      openPositions: engine.openPositions.length,
+      dailyPnlPct: engine.getDailyPnlPct(),
+      totalPnlPct: engine.getTotalPnlPct(),
+    },
+    openPositions: openPositionsSummary,
+    marketData,
+    lastDecisions: recentDecisions,
+    config: {
+      pairs: pairsToFetch,
+      maxPositionSizePct: config.maxPositionSizePct,
+      maxOpenPositions: config.maxOpenPositions,
+      stopLossPct: config.stopLossPct,
+      takeProfitPct: config.takeProfitPct,
+    },
+    behavior: config.behavior,
+    personaMd: resolveAgentPersonaMd({
+      agentName: agentRow.name,
+      agentPersonaMd: agentRow.personaMd,
+      agentProfileId: agentRow.profileId,
+      config: config as unknown as Record<string, unknown>,
+    }),
+    behaviorMd: (config as any).behaviorMd ?? null,
+    roleMd: (config as any).roleMd ?? null,
+  };
+
+  // ── Queue path: enqueue LLM job for async processing ──────────────────────
+  if (env.LLM_QUEUE) {
+    // Idempotency guard: if we already have a pending job from a previous alarm tick,
+    // skip re-enqueuing until the result arrives via /receive-decision.
+    const existingJobId = await ctx.storage.get<string>('pendingLlmJobId');
+    if (existingJobId) {
+      const jobAt = (await ctx.storage.get<number>('pendingLlmJobAt')) ?? 0;
+      if (Date.now() - jobAt < 5 * 60_000) {
+        log.info('llm_job_pending_skip', { jobId: existingJobId });
+        return; // result will arrive via /receive-decision
+      }
+      // Stale job (>5 min with no result) — clear and re-enqueue
+      log.warn('llm_job_stale_cleared', { jobId: existingJobId, ageMs: Date.now() - jobAt });
+      await ctx.storage.delete('pendingLlmJobId');
+      await ctx.storage.delete('pendingLlmJobAt');
+      await ctx.storage.delete('pendingLlmContext');
+    }
+
+    const jobId = generateId('job');
+    const pendingCtx: PendingLlmContext = {
+      jobId,
+      enqueuedAt: Date.now(),
+      marketData,
+      pairsToFetch,
+      effectiveLlmModel,
+      maxOpenPositions: config.maxOpenPositions,
+      maxPositionSizePct: config.maxPositionSizePct,
+      stopLossPct: config.stopLossPct,
+      takeProfitPct: config.takeProfitPct,
+      minConfidence,
+      dexes: config.dexes,
+      strategies: config.strategies,
+      slippageSimulation: config.slippageSimulation,
+    };
+    await ctx.storage.put('pendingLlmContext', pendingCtx);
+    await ctx.storage.put('pendingLlmJobId', jobId);
+    await ctx.storage.put('pendingLlmJobAt', Date.now());
+
+    const message: LlmJobMessage = {
+      agentId,
+      jobId,
+      llmConfig: {
+        apiKey: llmApiKey!,
         model: effectiveLlmModel,
         fallbackModel: effectiveLlmFallback,
         allowFallback,
@@ -667,33 +778,28 @@ export async function runAgentLoop(
         timeoutMs: 90_000,
         provider: llmProvider,
       },
+      tradeRequest,
+    };
+    await env.LLM_QUEUE.send(message);
+    log.info('llm_job_enqueued', { jobId, model: effectiveLlmModel });
+    return; // alarm completes quickly; /receive-decision continues the loop
+  }
+
+  // ── Sync path: call LLM inline (queue binding absent) ─────────────────────
+  let decision: Awaited<ReturnType<typeof getTradeDecision>>;
+  const doneLlm = log.time('llm_call', { model: effectiveLlmModel });
+  try {
+    decision = await getTradeDecision(
       {
-        portfolioState: {
-          balance: engine.balance,
-          openPositions: engine.openPositions.length,
-          dailyPnlPct: engine.getDailyPnlPct(),
-          totalPnlPct: engine.getTotalPnlPct(),
-        },
-        openPositions: openPositionsSummary,
-        marketData,
-        lastDecisions: recentDecisions,
-        config: {
-          pairs: pairsToFetch,
-          maxPositionSizePct: config.maxPositionSizePct,
-          maxOpenPositions: config.maxOpenPositions,
-          stopLossPct: config.stopLossPct,
-          takeProfitPct: config.takeProfitPct,
-        },
-        behavior: config.behavior,
-        personaMd: resolveAgentPersonaMd({
-          agentName: agentRow.name,
-          agentPersonaMd: agentRow.personaMd,
-          agentProfileId: agentRow.profileId,
-          config: config as unknown as Record<string, unknown>,
-        }),
-        behaviorMd: (config as any).behaviorMd ?? null,
-        roleMd: (config as any).roleMd ?? null,
-      }
+        apiKey: llmApiKey!,
+        model: effectiveLlmModel,
+        fallbackModel: effectiveLlmFallback,
+        allowFallback,
+        temperature: config.temperature,
+        timeoutMs: 90_000,
+        provider: llmProvider,
+      },
+      tradeRequest
     );
   } catch (err) {
     doneLlm();
@@ -714,28 +820,76 @@ export async function runAgentLoop(
     });
     return;
   }
+  doneLlm();
 
-  // Execution threshold is defined by the agent itself (its behavior profile).
-  // Even when config.behavior is missing, the schema supplies defaults.
-  // confidenceThreshold is 0–100, convert to 0–1.
-  const effectiveBehavior = AgentBehaviorConfigSchema.parse(config.behavior ?? {});
-  const minConfidence = effectiveBehavior.confidenceThreshold / 100;
+  await executeTradeDecision(decision, {
+    agentId,
+    engine,
+    marketData,
+    pairsToFetch,
+    recentDecisions,
+    effectiveLlmModel,
+    minConfidence,
+    maxOpenPositions: config.maxOpenPositions,
+    maxPositionSizePct: config.maxPositionSizePct,
+    dexes: config.dexes,
+    strategies: config.strategies,
+    slippageSimulation: config.slippageSimulation,
+    db,
+    ctx,
+    tickStart,
+    log,
+  });
+}
 
-  // Determine upfront whether we intend to execute a trade for this decision.
-  // (We still log the LLM decision either way, but we want the UI to clearly show
-  // why a BUY/SELL did not result in a trade.)
+// ── Exported types for executeTradeDecision ───────────────────────────────
+
+export type ExecuteDecisionParams = {
+  agentId: string;
+  engine: PaperEngine;
+  marketData: MarketDataItem[];
+  pairsToFetch: string[];
+  recentDecisions: RecentDecision[];
+  effectiveLlmModel: string;
+  minConfidence: number;
+  maxOpenPositions: number;
+  maxPositionSizePct: number;
+  dexes: string[];
+  strategies: string[];
+  slippageSimulation: number;
+  db: ReturnType<typeof drizzle>;
+  ctx: DurableObjectState;
+  tickStart?: number;
+  log: ReturnType<typeof createLogger>;
+};
+
+/**
+ * Execute a trade decision returned by the LLM.
+ * Called from both the synchronous agent-loop path and the async /receive-decision
+ * DO endpoint (queue path).
+ */
+export async function executeTradeDecision(
+  decision: Awaited<ReturnType<typeof getTradeDecision>>,
+  params: ExecuteDecisionParams
+): Promise<void> {
+  const {
+    agentId, engine, marketData, pairsToFetch, recentDecisions,
+    effectiveLlmModel, minConfidence, maxOpenPositions, maxPositionSizePct,
+    dexes, strategies, slippageSimulation, db, ctx, tickStart, log,
+  } = params;
+
   const wantsTrade = decision.action === 'buy' || decision.action === 'sell';
-  const hasCapacity = engine.openPositions.length < config.maxOpenPositions;
+  const hasCapacity = engine.openPositions.length < maxOpenPositions;
   const meetsConfidence = decision.confidence >= minConfidence;
 
   let executionNote: string | null = null;
   if (wantsTrade && !meetsConfidence) {
     executionNote = `Execution: skipped (confidence ${(decision.confidence * 100).toFixed(0)}% < threshold ${(minConfidence * 100).toFixed(0)}%).`;
   } else if (wantsTrade && !hasCapacity) {
-    executionNote = `Execution: skipped (already at max open positions: ${engine.openPositions.length}/${config.maxOpenPositions}).`;
+    executionNote = `Execution: skipped (already at max open positions: ${engine.openPositions.length}/${maxOpenPositions}).`;
   }
 
-  // 7. Log the decision
+  // Log the decision to D1
   const decisionId = generateId('dec');
   await db.insert(agentDecisions).values({
     id: decisionId,
@@ -753,8 +907,6 @@ export async function runAgentLoop(
     llmRawResponse: decision.llmRawResponse ?? null,
     createdAt: nowIso(),
   });
-
-  const llmDurationMs = doneLlm();
 
   // Update the DO recent-decisions cache so subsequent ticks skip the D1 query.
   const decisionCreatedAt = nowIso();
@@ -784,7 +936,7 @@ export async function runAgentLoop(
     action: decision.action,
     confidence: decision.confidence,
     model: decision.modelUsed,
-    llm_latency_ms: llmDurationMs,
+    llm_latency_ms: decision.latencyMs,
     tokens_in: decision.tokensIn,
     tokens_out: decision.tokensOut,
     execution_note: executionNote ?? undefined,
@@ -793,11 +945,11 @@ export async function runAgentLoop(
     `[agent-loop] ${agentId}: Decision=${decision.action} confidence=${decision.confidence.toFixed(2)}`
   );
 
-  // 8. Execute trade if confidence is high enough
+  // Execute trade if confidence is high enough
   if (
     (decision.action === 'buy' || decision.action === 'sell') &&
     decision.confidence >= minConfidence &&
-    engine.openPositions.length < config.maxOpenPositions
+    engine.openPositions.length < maxOpenPositions
   ) {
     const targetPairName = normalizePairForDex(decision.targetPair ?? pairsToFetch[0]);
     const pairData = marketData.find((m) => m.pair === targetPairName);
@@ -806,10 +958,9 @@ export async function runAgentLoop(
       return;
     }
 
-    // Calculate position size: use suggestion from LLM or default to 10% of balance
     const positionSizePct = Math.min(
       decision.suggestedPositionSizePct ?? 10,
-      config.maxPositionSizePct
+      maxPositionSizePct
     );
     const amountUsd = (engine.balance * positionSizePct) / 100;
 
@@ -817,19 +968,18 @@ export async function runAgentLoop(
       const position = engine.openPosition({
         agentId,
         pair: targetPairName,
-        dex: config.dexes[0] ?? 'aerodrome',
+        dex: dexes[0] ?? 'aerodrome',
         side: decision.action as 'buy' | 'sell',
         price: pairData.priceUsd,
         amountUsd,
-        maxPositionSizePct: config.maxPositionSizePct,
+        maxPositionSizePct,
         balance: engine.balance,
         confidence: decision.confidence,
         reasoning: decision.reasoning,
-        strategyUsed: config.strategies[0] ?? 'combined',
-        slippagePct: config.slippageSimulation,
+        strategyUsed: strategies[0] ?? 'combined',
+        slippagePct: slippageSimulation,
       });
       await ctx.storage.put('pendingTrade', position);
-
       await persistTrade(db, position);
       await ctx.storage.delete('pendingTrade');
       log.info('trade_open', {
@@ -900,12 +1050,14 @@ export async function runAgentLoop(
     }
   }
 
-  log.info('tick_end', {
-    duration_ms: Date.now() - tickStart,
-    pairs_fetched: marketData.length,
-    open_positions: engine.openPositions.length,
-    balance: engine.balance,
-  });
+  if (tickStart !== undefined) {
+    log.info('tick_end', {
+      duration_ms: Date.now() - tickStart,
+      pairs_fetched: marketData.length,
+      open_positions: engine.openPositions.length,
+      balance: engine.balance,
+    });
+  }
 }
 
 /**

@@ -55,7 +55,7 @@
       "Add dead-letter queue handling for permanently failed jobs",
       "Verify agent loop remains stable under load and concurrent alarm/queue-result races"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "rate-limiting",

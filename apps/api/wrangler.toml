@@ -35,6 +35,21 @@ migrations_dir = "src/db/migrations"
 binding = "CACHE"
 id = "local-cache"
 
+# Async LLM processing queue.
+# LLM_QUEUE is OPTIONAL — when absent the agent-loop falls back to synchronous LLM calls.
+# To enable locally: wrangler queues create llm-jobs (then wrangler queues create llm-jobs-dlq)
+# The binding is declared but commented out until the queue is created in your account.
+# Uncomment after running: wrangler queues create llm-jobs
+# [[queues.producers]]
+# queue = "llm-jobs"
+# binding = "LLM_QUEUE"
+# [[queues.consumers]]
+# queue = "llm-jobs"
+# max_batch_size = 10
+# max_batch_timeout = 30
+# max_retries = 3
+# dead_letter_queue = "llm-jobs-dlq"
+
 [durable_objects]
 bindings = [
   { name = "TRADING_AGENT", class_name = "TradingAgentDO" },
@@ -54,6 +69,17 @@ tag = "v3"
 new_sqlite_classes = ["GlobalRateLimiterDO"]
 
 # Production: create D1 + KV in dashboard, then set database_id and id below. Deploy with: wrangler deploy --env production
+# Production queue config (uncomment after: wrangler queues create llm-jobs --env production)
+# [[env.production.queues.producers]]
+# queue = "llm-jobs"
+# binding = "LLM_QUEUE"
+# [[env.production.queues.consumers]]
+# queue = "llm-jobs"
+# max_batch_size = 10
+# max_batch_timeout = 30
+# max_retries = 3
+# dead_letter_queue = "llm-jobs-dlq"
+
 [env.production]
 name = "dex-trading-agents-api"
 # Replace with your production D1 database_id (from: wrangler d1 list)

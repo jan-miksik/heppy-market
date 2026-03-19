@@ -12,6 +12,7 @@ import tradesRoute from './routes/trades.js';
 import authRoute from './routes/auth.js';
 import { snapshotAllAgents } from './services/snapshot.js';
 import { listFreeModels } from './services/llm-router.js';
+import { handleLlmQueueBatch } from './lib/llm-queue.js';
 import { getSession, parseCookieValue } from './lib/auth.js';
 import comparisonRoute from './routes/comparison.js';
 import managersRoute from './routes/managers.js';
@@ -369,6 +370,7 @@ async function handleAgentWebSocket(request: Request, env: Env): Promise<Respons
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+
     // WebSocket upgrades bypass Hono — handle before the router
     if (
       request.headers.get('Upgrade') === 'websocket' &&
@@ -379,4 +381,11 @@ export default {
     return app.fetch(request, env, ctx);
   },
   scheduled,
+  /** Cloudflare Queues consumer for async LLM processing. */
+  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+    if (batch.queue === 'llm-jobs') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await handleLlmQueueBatch(batch as any, env);
+    }
+  },
 };

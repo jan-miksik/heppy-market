@@ -222,3 +222,32 @@ Each entry should include:
 - Pre-existing phase1 test failure and web lint errors are unrelated to this task.
 
 **Next recommended:** queues (async LLM processing) or meta tasks.
+
+---
+
+## 2026-03-19 — queues: Async LLM processing via Cloudflare Queues
+
+**Completed:**
+- Created `apps/api/src/types/queue-types.ts` with `LlmJobMessage` type (agentId, jobId, llmConfig, tradeRequest). Placed in separate types file to avoid circular import between env.ts and llm-queue.ts.
+- Created `apps/api/src/lib/llm-queue.ts` with `handleLlmQueueBatch` queue consumer. Calls `getTradeDecision`, delivers result to DO via stub.fetch('/receive-decision'). Uses CF Queues native `message.ack()` / `message.retry()` for reliability.
+- Updated `apps/api/src/types/env.ts`: added optional `LLM_QUEUE?: Queue<LlmJobMessage>` binding.
+- Refactored `apps/api/src/agents/agent-loop.ts`:
+  - Extracted `executeTradeDecision` as exported function (handles D1 logging, DO cache update, WS broadcast, trade execution).
+  - Extracted `PendingLlmContext`, `MarketDataItem`, `RecentDecision`, `ExecuteDecisionParams` as exported types.
+  - When `env.LLM_QUEUE` is present: saves market context to DO storage, enqueues `LlmJobMessage`, returns immediately. Alarm completes in <1s instead of waiting 30-90s for LLM.
+  - When `env.LLM_QUEUE` is absent: calls LLM inline (existing sync path unchanged).
+  - Idempotency: if `pendingLlmJobId` is set and <5 min old, skips re-enqueue (stale jobs >5 min are cleared and re-enqueued).
+- Added `/receive-decision` endpoint to `TradingAgentDO`: validates jobId matches pending, loads saved context from DO storage, calls `executeTradeDecision`, persists engine state, clears job locks.
+- Added alarm idempotency guard in `TradingAgentDO.alarm()`: skips tick if `pendingLlmJobAt` is present and <5 min old.
+- Added `queue` export to `apps/api/src/index.ts` dispatching to `handleLlmQueueBatch`.
+- Updated `apps/api/wrangler.toml`: queue bindings commented-out with instructions for enabling (queues require `wrangler queues create` before use; `LLM_QUEUE` binding is optional, falls back to sync path when absent).
+- Created `apps/api/tests/queues.test.ts`: 15 tests covering LlmJobMessage shape, delivery paths (ack, retry on LLM failure, retry on DO rejection), /receive-decision idempotency (stale jobId, expired context, happy path), alarm skip logic, PendingLlmContext storage round-trip.
+
+**Decisions:**
+- Queue binding is OPTIONAL — the sync LLM path is preserved when `LLM_QUEUE` is absent. This means existing deployments are unaffected; queues are opt-in.
+- Commented-out wrangler.toml queue config (not activated by default) because CF queues require account-level creation before first use.
+- DLQ configuration (`dead_letter_queue = "llm-jobs-dlq"`) included in the wrangler.toml comments.
+- Stale job timeout is 5 minutes to match CF Queues default max_batch_timeout of 30s + retry window.
+- `executeTradeDecision` is synchronous from the DO's perspective (awaited in both paths) — engine state is always persisted after execution.
+
+**Next recommended:** meta tasks (orchestrator refactor) or all tasks done.

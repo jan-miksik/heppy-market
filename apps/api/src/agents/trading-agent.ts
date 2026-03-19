@@ -4,7 +4,7 @@ import type { Env } from '../types/env.js';
 import { performanceSnapshots, trades } from '../db/schema.js';
 import { PaperEngine } from '../services/paper-engine.js';
 import type { Position } from '../services/paper-engine.js';
-import { runAgentLoop } from './agent-loop.js';
+import { runAgentLoop, executeTradeDecision, type PendingLlmContext, type RecentDecision } from './agent-loop.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
 import { migrateStorage } from '../lib/do-storage-migration.js';
@@ -378,6 +378,88 @@ export class TradingAgentDO extends DurableObject<Env> {
       });
     }
 
+    // ── /receive-decision ─────────────────────────────────────────────────────
+    // Called by the queue consumer after calling the LLM. Validates the jobId to
+    // guard against stale retries, then executes the trade using the saved context.
+    if (url.pathname === '/receive-decision' && request.method === 'POST') {
+      const body = await request.json() as { jobId?: string; decision?: unknown };
+      if (!body.jobId || !body.decision) {
+        return Response.json({ error: 'jobId and decision are required' }, { status: 400 });
+      }
+
+      // Idempotency: reject stale results from retried queue messages
+      const pendingJobId = await this.ctx.storage.get<string>('pendingLlmJobId');
+      if (pendingJobId !== body.jobId) {
+        console.warn(`[TradingAgentDO] /receive-decision: stale jobId=${body.jobId} (pending=${pendingJobId})`);
+        return Response.json({ ok: true, skipped: true });
+      }
+
+      const pendingCtx = await this.ctx.storage.get<PendingLlmContext>('pendingLlmContext');
+      if (!pendingCtx) {
+        // Context expired (DO was evicted after enqueueing) — clear locks and bail
+        await this.ctx.storage.delete('pendingLlmJobId');
+        await this.ctx.storage.delete('pendingLlmJobAt');
+        return Response.json({ error: 'Pending context expired' }, { status: 410 });
+      }
+
+      const agentId = await this.ctx.storage.get<string>('agentId');
+      if (!agentId) return Response.json({ error: 'Agent not initialized' }, { status: 400 });
+
+      // Restore engine state
+      const engineState = await this.ctx.storage.get<ReturnType<PaperEngine['serialize']>>('engineState');
+      const engine = engineState
+        ? PaperEngine.deserialize(engineState)
+        : new PaperEngine({ balance: 10_000, slippage: 0.3 });
+
+      // Read recent decisions from cache (for updating the cache after the decision)
+      const recentDecisions = (await this.ctx.storage.get<RecentDecision[]>('recentDecisions')) ?? [];
+
+      const db = drizzle(this.env.DB);
+      const { createLogger } = await import('../lib/logger.js');
+      const log = createLogger('agent-loop', agentId);
+
+      try {
+        await executeTradeDecision(body.decision as Parameters<typeof executeTradeDecision>[0], {
+          agentId,
+          engine,
+          marketData: pendingCtx.marketData,
+          pairsToFetch: pendingCtx.pairsToFetch,
+          recentDecisions,
+          effectiveLlmModel: pendingCtx.effectiveLlmModel,
+          minConfidence: pendingCtx.minConfidence,
+          maxOpenPositions: pendingCtx.maxOpenPositions,
+          maxPositionSizePct: pendingCtx.maxPositionSizePct,
+          dexes: pendingCtx.dexes,
+          strategies: pendingCtx.strategies,
+          slippageSimulation: pendingCtx.slippageSimulation,
+          db,
+          ctx: this.ctx,
+          log,
+        });
+      } catch (err) {
+        console.error(`[TradingAgentDO] /receive-decision execution error for ${agentId}:`, err);
+        // Clear locks even on error so the alarm can proceed on the next tick
+        await this.ctx.storage.delete('pendingLlmJobId');
+        await this.ctx.storage.delete('pendingLlmJobAt');
+        await this.ctx.storage.delete('pendingLlmContext');
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
+
+      // Persist updated engine state
+      try {
+        await this.ctx.storage.put('engineState', engine.serialize());
+      } catch (err) {
+        console.error(`[TradingAgentDO] failed to persist engine after /receive-decision for ${agentId}:`, err);
+      }
+
+      // Clear pending job locks
+      await this.ctx.storage.delete('pendingLlmJobId');
+      await this.ctx.storage.delete('pendingLlmJobAt');
+      await this.ctx.storage.delete('pendingLlmContext');
+
+      return Response.json({ ok: true });
+    }
+
     if (url.pathname === '/sync-config' && request.method === 'POST') {
       // Called by the HTTP route layer after a PATCH /api/agents/:id so the DO
       // cache stays fresh without waiting for the next alarm tick.
@@ -450,6 +532,16 @@ export class TradingAgentDO extends DurableObject<Env> {
 
     const agentId = await this.ctx.storage.get<string>('agentId');
     if (!agentId) return;
+
+    // Skip if awaiting an async LLM result from the queue (idempotency guard).
+    // Stale jobs (>5 min) are auto-cleared in runAgentLoop; don't block here indefinitely.
+    const pendingJobAt = await this.ctx.storage.get<number>('pendingLlmJobAt');
+    if (pendingJobAt && Date.now() - pendingJobAt < 5 * 60_000) {
+      const pendingJobId = await this.ctx.storage.get<string>('pendingLlmJobId');
+      console.log(`[TradingAgentDO] ${agentId}: awaiting LLM result for job ${pendingJobId}, skipping alarm tick`);
+      await this.rescheduleAlarmIfRunning();
+      return;
+    }
 
     // Skip if a manual analyze is already running (stale locks >10min are ignored)
     const LOCK_TTL_MS = 10 * 60_000;
