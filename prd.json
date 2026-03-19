@@ -24,7 +24,7 @@
       "Add timing instrumentation to measure before/after latency",
       "Add unit tests for cache hit/miss and skip-decision logic"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "realtime",

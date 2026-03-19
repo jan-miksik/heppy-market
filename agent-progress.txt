@@ -138,4 +138,22 @@ Each entry should include:
 - Skipped Playwright e2e expansion (deferred to realtime task) and CI coverage reporter integration (would require CI config changes outside the project source).
 - Pre-existing failures: `phase1.test.ts` `rejects invalid autonomy level` (stale compiled import), web lint `autonomyLevel` errors — both pre-existing and unrelated.
 
-**Next recommended:** architecture (DO as source of truth) or performance.
+**Next recommended:** architecture (DO as source of truth) or realtime (WebSocket).
+
+---
+
+## 2026-03-19 — performance: Parallelize agent-loop market data fetch
+
+**Completed:**
+- Refactored `apps/api/src/agents/agent-loop.ts`: extracted per-pair market data fetch into `fetchOnePair()` async function. All pairs now fetched in parallel via `Promise.allSettled(pairsToFetch.map(fetchOnePair))`. Previously sequential — O(n_pairs × api_latency) → now O(api_latency).
+- Co-located `recentDecisions` DB query in the same `Promise.allSettled([..., db.select(...)])` call as the parallel market data fetch. Both run concurrently; no latency cost for DB query.
+- Lifted `buildIndicatorText` helper out of the for loop (was re-declared on each iteration) to a named function inside the `runAgentLoop` closure.
+- Timing instrumentation was already in place (log.time for market_data_fetch, indicator_compute, llm_call).
+- Added `apps/api/tests/performance.test.ts` with 16 tests covering: parallel error isolation, sequential vs parallel speed comparison, Promise.allSettled semantics, null result filtering, co-fetch timing, DB fallback, and buildIndicatorText indicator label logic.
+
+**Notable decisions:**
+- Used `Promise.allSettled` (not `Promise.all`) to ensure a single failing pair doesn't abort all others.
+- `recentDecisions` fallback is `[]` (empty array) if the DB query rejects — agent can still proceed with LLM call without recent decision history.
+- `buildIndicatorText` is defined inside the closure (not module-level) to maintain access to `evaluateSignals`/`combineSignals` without refactoring imports.
+
+**Next recommended:** architecture (DO as source of truth) or realtime (WebSocket).

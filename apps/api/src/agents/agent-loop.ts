@@ -251,7 +251,52 @@ export async function runAgentLoop(
 
   // 4. Fetch market data — GeckoTerminal primary (network-scoped + real OHLCV),
   //    DexScreener fallback (global search, filter to Base).
-  const marketData: Array<{
+  //    All pairs are fetched in parallel to minimize total latency.
+
+  /** Build a human-readable indicator summary string from a computed indicator set */
+  function buildIndicatorText(
+    indics: ReturnType<typeof computeIndicators> | null,
+    currentPrice: number,
+    noDataMsg: string,
+    includeSignalVerdict: boolean,
+  ): string {
+    if (!indics) return noDataMsg;
+    const lastRsi = indics.rsi?.at(-1);
+    const lastEma9 = indics.ema9?.at(-1);
+    const lastEma21 = indics.ema21?.at(-1);
+    const lastMacd = indics.macd?.at(-1);
+    const lastBb = indics.bollingerBands?.at(-1);
+    const parts: string[] = [];
+    if (lastRsi !== undefined) {
+      const rsiLabel = lastRsi < 30 ? 'oversold' : lastRsi > 70 ? 'overbought' : 'neutral';
+      parts.push(`RSI: ${lastRsi.toFixed(1)} (${rsiLabel})`);
+    }
+    if (lastEma9 !== undefined && lastEma21 !== undefined) {
+      const trend = lastEma9 > lastEma21 ? 'bullish' : 'bearish';
+      parts.push(`EMA9/21: ${trend} (${lastEma9.toFixed(2)} / ${lastEma21.toFixed(2)})`);
+    }
+    if (lastMacd?.MACD !== undefined && lastMacd?.signal !== undefined) {
+      const hist = lastMacd.MACD - lastMacd.signal;
+      parts.push(`MACD: ${hist > 0 ? 'bullish' : 'bearish'} (histogram ${hist >= 0 ? '+' : ''}${hist.toFixed(4)})`);
+    }
+    if (lastBb !== undefined) {
+      const bandWidth = lastBb.upper - lastBb.lower;
+      if (bandWidth > 0) {
+        const pb = (currentPrice - lastBb.lower) / bandWidth;
+        const bbLabel = pb < 0.2 ? 'near lower band' : pb > 0.8 ? 'near upper band' : 'mid-range';
+        parts.push(`Bollinger %B: ${pb.toFixed(2)} (${bbLabel})`);
+      }
+    }
+    if (includeSignalVerdict) {
+      const signals = evaluateSignals(indics, currentPrice);
+      const combined = combineSignals(signals);
+      parts.push(`Signal verdict: ${combined.signal.toUpperCase()} (${(combined.confidence * 100).toFixed(0)}% conf) — ${combined.reason}`);
+    }
+    return parts.length > 0 ? parts.join('\n') : noDataMsg;
+  }
+
+  /** Fetch all market data for a single pair, returning null if all providers fail. */
+  async function fetchOnePair(pairName: string): Promise<{
     pair: string;
     pairAddress: string;
     dexScreenerUrl: string;
@@ -261,14 +306,10 @@ export async function runAgentLoop(
     liquidity?: number;
     indicatorText: string;
     dailyIndicatorText: string;
-  }> = [];
-
-  const doneMarketFetch = log.time('market_data_fetch', { pairs: pairsToFetch.length });
-  for (const pairName of pairsToFetch) {
+  } | null> {
     const query = pairToSearchQuery(pairName);
     let priceUsd = 0;
     let pairAddress = '';
-
     let priceChange: Record<string, number | undefined> = {};
     let volume24h: number | undefined;
     let liquidity: number | undefined;
@@ -380,57 +421,13 @@ export async function runAgentLoop(
 
     if (priceUsd === 0) {
       log.warn('price_resolution_failed', { pair: pairName });
-      continue; // all providers failed for this pair
+      return null;
     }
 
-    // ── Compute indicators (only when we have enough real OHLCV candles) ──────
-    // RSI needs 14 + 1 points, MACD needs 26 + 9 + 1 = 36 points minimum.
-    // If we don't have real data we skip indicators entirely rather than use fabricated prices.
+    // ── Compute indicators ──────────────────────────────────────────────────
     const doneIndicators = log.time('indicator_compute', { pair: pairName, candles: prices.length });
     const indicators = prices.length >= 14 ? computeIndicators(prices) : null;
     doneIndicators();
-
-    /** Build a human-readable indicator summary string from a computed indicator set */
-    function buildIndicatorText(
-      indics: ReturnType<typeof computeIndicators> | null,
-      currentPrice: number,
-      noDataMsg: string,
-      includeSignalVerdict: boolean,
-    ): string {
-      if (!indics) return noDataMsg;
-      const lastRsi = indics.rsi?.at(-1);
-      const lastEma9 = indics.ema9?.at(-1);
-      const lastEma21 = indics.ema21?.at(-1);
-      const lastMacd = indics.macd?.at(-1);
-      const lastBb = indics.bollingerBands?.at(-1);
-      const parts: string[] = [];
-      if (lastRsi !== undefined) {
-        const rsiLabel = lastRsi < 30 ? 'oversold' : lastRsi > 70 ? 'overbought' : 'neutral';
-        parts.push(`RSI: ${lastRsi.toFixed(1)} (${rsiLabel})`);
-      }
-      if (lastEma9 !== undefined && lastEma21 !== undefined) {
-        const trend = lastEma9 > lastEma21 ? 'bullish' : 'bearish';
-        parts.push(`EMA9/21: ${trend} (${lastEma9.toFixed(2)} / ${lastEma21.toFixed(2)})`);
-      }
-      if (lastMacd?.MACD !== undefined && lastMacd?.signal !== undefined) {
-        const hist = lastMacd.MACD - lastMacd.signal;
-        parts.push(`MACD: ${hist > 0 ? 'bullish' : 'bearish'} (histogram ${hist >= 0 ? '+' : ''}${hist.toFixed(4)})`);
-      }
-      if (lastBb !== undefined) {
-        const bandWidth = lastBb.upper - lastBb.lower;
-        if (bandWidth > 0) {
-          const pb = (currentPrice - lastBb.lower) / bandWidth;
-          const bbLabel = pb < 0.2 ? 'near lower band' : pb > 0.8 ? 'near upper band' : 'mid-range';
-          parts.push(`Bollinger %B: ${pb.toFixed(2)} (${bbLabel})`);
-        }
-      }
-      if (includeSignalVerdict) {
-        const signals = evaluateSignals(indics, currentPrice);
-        const combined = combineSignals(signals);
-        parts.push(`Signal verdict: ${combined.signal.toUpperCase()} (${(combined.confidence * 100).toFixed(0)}% conf) — ${combined.reason}`);
-      }
-      return parts.length > 0 ? parts.join('\n') : noDataMsg;
-    }
 
     const indicatorText = buildIndicatorText(
       indicators,
@@ -448,7 +445,7 @@ export async function runAgentLoop(
       false,
     );
 
-    marketData.push({
+    return {
       pair: pairName,
       pairAddress,
       dexScreenerUrl: `https://dexscreener.com/base/${pairAddress}`,
@@ -458,8 +455,34 @@ export async function runAgentLoop(
       liquidity,
       indicatorText,
       dailyIndicatorText,
-    });
+    };
   }
+
+  // Fetch all pairs in parallel and recent decisions at the same time.
+  // recentDecisions is independent of market data — no reason to wait.
+  const doneMarketFetch = log.time('market_data_fetch', { pairs: pairsToFetch.length });
+  const [pairResults, recentDecisionsResult] = await Promise.allSettled([
+    Promise.allSettled(pairsToFetch.map(fetchOnePair)),
+    db
+      .select({
+        decision: agentDecisions.decision,
+        confidence: agentDecisions.confidence,
+        createdAt: agentDecisions.createdAt,
+      })
+      .from(agentDecisions)
+      .where(eq(agentDecisions.agentId, agentId))
+      .orderBy(desc(agentDecisions.createdAt))
+      .limit(10),
+  ]);
+
+  const marketData = (
+    pairResults.status === 'fulfilled'
+      ? pairResults.value
+          .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchOnePair>>> => r.status === 'fulfilled')
+          .map((r) => r.value)
+          .filter((v): v is NonNullable<typeof v> => v !== null)
+      : []
+  );
 
   doneMarketFetch();
 
@@ -481,17 +504,8 @@ export async function runAgentLoop(
 
   console.log(`[agent-loop] ${agentId}: Got market data for ${marketData.map((m) => m.pair).join(', ')}`);
 
-  // 5. Get recent decisions for context
-  const recentDecisions = await db
-    .select({
-      decision: agentDecisions.decision,
-      confidence: agentDecisions.confidence,
-      createdAt: agentDecisions.createdAt,
-    })
-    .from(agentDecisions)
-    .where(eq(agentDecisions.agentId, agentId))
-    .orderBy(desc(agentDecisions.createdAt))
-    .limit(10);
+  // 5. Recent decisions were fetched in parallel with market data above.
+  const recentDecisions = recentDecisionsResult.status === 'fulfilled' ? recentDecisionsResult.value : [];
 
   // 6. Call LLM for trade decision
   const isAnthropicModel = effectiveLlmModel.startsWith('claude-');
