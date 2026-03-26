@@ -206,7 +206,7 @@ async function handleAgentWebSocket(request: Request, env: Env): Promise<Respons
   const cookieHeader = request.headers.get('cookie') ?? '';
   const token = parseCookieValue(cookieHeader, 'session');
   if (!token) return new Response('Unauthorized', { status: 401 });
-  const session = await getSession(env.CACHE, token).catch(() => null);
+  const session = await getSession(env.CACHE, token, env.DB).catch(() => null);
   if (!session) return new Response('Unauthorized', { status: 401 });
 
   // Verify agent ownership before proxying to DO

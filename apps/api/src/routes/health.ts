@@ -49,7 +49,7 @@ health.post('/cache/purge', async (c) => {
   const token = parseCookieValue(cookieHeader, 'session');
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-  const session = await getSession(c.env.CACHE, token);
+  const session = await getSession(c.env.CACHE, token, c.env.DB);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
   const db = drizzle(c.env.DB);

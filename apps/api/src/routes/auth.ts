@@ -12,6 +12,7 @@ import type { Env } from '../types/env.js';
 import { users } from '../db/schema.js';
 import {
   verifySiweAndCreateSession,
+  createNonce,
   createSession,
   getSession,
   deleteSession,
@@ -26,17 +27,9 @@ import { generateId, nowIso } from '../lib/utils.js';
 
 const authRoute = new Hono<{ Bindings: Env }>();
 
-const NONCE_TTL_SECS = 300; // 5 minutes
-
 /** GET /api/auth/nonce — generate and return a one-time sign-in nonce */
 authRoute.get('/nonce', async (c) => {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  const nonce = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  await c.env.CACHE.put(`nonce:${nonce}`, '1', { expirationTtl: NONCE_TTL_SECS });
+  const nonce = await createNonce(c.env.CACHE, c.env.DB);
   return c.json({ nonce });
 });
 
@@ -96,7 +89,7 @@ authRoute.get('/me', async (c) => {
   const token = parseCookieValue(cookieHeader, 'session');
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-  const session = await getSession(c.env.CACHE, token);
+  const session = await getSession(c.env.CACHE, token, c.env.DB);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
   const orm = drizzle(c.env.DB);
@@ -120,7 +113,7 @@ authRoute.get('/me', async (c) => {
 authRoute.post('/logout', async (c) => {
   const cookieHeader = c.req.header('cookie') ?? '';
   const token = parseCookieValue(cookieHeader, 'session');
-  if (token) await deleteSession(c.env.CACHE, token);
+  if (token) await deleteSession(c.env.CACHE, token, c.env.DB);
 
   c.header('Set-Cookie', buildExpiredSessionCookie());
   return c.json({ ok: true });
@@ -138,7 +131,7 @@ authRoute.post('/openrouter/exchange', async (c) => {
   const token = parseCookieValue(cookieHeader, 'session');
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-  const session = await getSession(c.env.CACHE, token);
+  const session = await getSession(c.env.CACHE, token, c.env.DB);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
   const body = await validateBody(c, OpenRouterExchangeSchema);
@@ -187,7 +180,7 @@ authRoute.delete('/openrouter/disconnect', async (c) => {
   const token = parseCookieValue(cookieHeader, 'session');
   if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-  const session = await getSession(c.env.CACHE, token);
+  const session = await getSession(c.env.CACHE, token, c.env.DB);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
   const orm = drizzle(c.env.DB);
@@ -230,7 +223,7 @@ authRoute.post('/dev-session', async (c) => {
     [user] = await orm.select().from(users).where(eq(users.walletAddress, PLAYWRIGHT_WALLET));
   }
 
-  const sessionToken = await createSession(c.env.CACHE, user.id, PLAYWRIGHT_WALLET);
+  const sessionToken = await createSession(c.env.CACHE, user.id, PLAYWRIGHT_WALLET, c.env.DB);
   const isHttps = c.req.url.startsWith('https://');
   c.header('Set-Cookie', buildSessionCookie(sessionToken, isHttps));
 

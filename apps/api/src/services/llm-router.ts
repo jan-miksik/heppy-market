@@ -294,9 +294,13 @@ export async function listFreeModels(
   cache: KVNamespace
 ): Promise<Array<{ id: string; name: string; context: number }>> {
   const cacheKey = 'llm:free-models';
-  const cached = await cache.get(cacheKey, 'text');
-  if (cached) {
-    return JSON.parse(cached) as Array<{ id: string; name: string; context: number }>;
+  try {
+    const cached = await cache.get(cacheKey, 'text');
+    if (cached) {
+      return JSON.parse(cached) as Array<{ id: string; name: string; context: number }>;
+    }
+  } catch (err) {
+    console.warn('[llm-router] free-model cache get failed:', err);
   }
 
   const response = await fetch('https://openrouter.ai/api/v1/models', {
@@ -318,9 +322,13 @@ export async function listFreeModels(
     .filter((m) => parseFloat(m.pricing.prompt) === 0)
     .map((m) => ({ id: m.id, name: m.name, context: m.context_length }));
 
-  await cache.put(cacheKey, JSON.stringify(freeModels), {
-    expirationTtl: 86400, // 24h — model list changes at most daily
-  });
+  try {
+    await cache.put(cacheKey, JSON.stringify(freeModels), {
+      expirationTtl: 86400, // 24h — model list changes at most daily
+    });
+  } catch (err) {
+    console.warn('[llm-router] free-model cache put failed:', err);
+  }
 
   return freeModels;
 }

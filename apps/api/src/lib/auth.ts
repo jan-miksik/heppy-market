@@ -12,6 +12,7 @@ import { generateId, nowIso } from './utils.js';
 const SESSION_TTL_SECS = 60 * 60 * 24 * 7; // 7 days
 const SESSION_HOT_CACHE_TTL_MS = 30_000; // short per-isolate cache to reduce KV reads
 const SESSION_HOT_CACHE_MAX_ENTRIES = 5_000;
+const NONCE_TTL_SECS = 300; // 5 minutes
 
 type SessionHotCacheEntry = {
   session: SessionData;
@@ -20,6 +21,8 @@ type SessionHotCacheEntry = {
 
 const sessionHotCache = new Map<string, SessionHotCacheEntry>();
 let sessionHotCacheLastCleanupMs = 0;
+let authTablesReady = false;
+let authTablesInitPromise: Promise<void> | null = null;
 
 function cleanupSessionHotCache(nowMs: number): void {
   if (nowMs - sessionHotCacheLastCleanupMs < 10_000) return;
@@ -41,6 +44,158 @@ function cleanupSessionHotCache(nowMs: number): void {
   }
 }
 
+async function ensureAuthTables(db: D1Database): Promise<void> {
+  if (authTablesReady) return;
+  if (!authTablesInitPromise) {
+    authTablesInitPromise = (async () => {
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS auth_sessions (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            wallet_address TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`
+        )
+        .run();
+      await db
+        .prepare(
+          `CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
+           ON auth_sessions (expires_at)`
+        )
+        .run();
+
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS auth_nonces (
+            nonce TEXT PRIMARY KEY,
+            expires_at INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`
+        )
+        .run();
+      await db
+        .prepare(
+          `CREATE INDEX IF NOT EXISTS idx_auth_nonces_expires_at
+           ON auth_nonces (expires_at)`
+        )
+        .run();
+      authTablesReady = true;
+    })().catch((err) => {
+      authTablesInitPromise = null;
+      throw err;
+    });
+  }
+  await authTablesInitPromise;
+}
+
+async function persistSessionDb(
+  db: D1Database,
+  token: string,
+  session: SessionData
+): Promise<void> {
+  await ensureAuthTables(db);
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO auth_sessions (token, user_id, wallet_address, expires_at)
+       VALUES (?, ?, ?, ?)`
+    )
+    .bind(token, session.userId, session.walletAddress, session.expiresAt)
+    .run();
+}
+
+async function readSessionDb(
+  db: D1Database,
+  token: string
+): Promise<SessionData | null> {
+  await ensureAuthTables(db);
+  const row = await db
+    .prepare(
+      `SELECT user_id AS userId, wallet_address AS walletAddress, expires_at AS expiresAt
+       FROM auth_sessions
+       WHERE token = ?`
+    )
+    .bind(token)
+    .first<SessionData>();
+  return row ?? null;
+}
+
+async function deleteSessionDb(db: D1Database, token: string): Promise<void> {
+  await ensureAuthTables(db);
+  await db.prepare(`DELETE FROM auth_sessions WHERE token = ?`).bind(token).run();
+}
+
+async function persistNonceDb(
+  db: D1Database,
+  nonce: string,
+  expiresAt: number
+): Promise<void> {
+  await ensureAuthTables(db);
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO auth_nonces (nonce, expires_at)
+       VALUES (?, ?)`
+    )
+    .bind(nonce, expiresAt)
+    .run();
+}
+
+async function consumeNonceDb(
+  db: D1Database,
+  nonce: string
+): Promise<boolean> {
+  await ensureAuthTables(db);
+  const now = Date.now();
+  const result = await db
+    .prepare(
+      `DELETE FROM auth_nonces
+       WHERE nonce = ? AND expires_at >= ?`
+    )
+    .bind(nonce, now)
+    .run();
+  const changes = Number(result.meta.changes ?? 0);
+  return changes > 0;
+}
+
+export async function createNonce(
+  cache: KVNamespace,
+  db: D1Database
+): Promise<string> {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const nonce = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  const expiresAt = Date.now() + NONCE_TTL_SECS * 1000;
+  await persistNonceDb(db, nonce, expiresAt);
+
+  try {
+    await cache.put(`nonce:${nonce}`, '1', { expirationTtl: NONCE_TTL_SECS });
+  } catch {
+    // KV is optional acceleration only.
+  }
+
+  return nonce;
+}
+
+export async function consumeNonce(
+  cache: KVNamespace,
+  db: D1Database,
+  nonce: string
+): Promise<boolean> {
+  const consumed = await consumeNonceDb(db, nonce);
+
+  try {
+    await cache.delete(`nonce:${nonce}`);
+  } catch {
+    // KV is optional acceleration only.
+  }
+
+  return consumed;
+}
+
 export interface SessionData {
   userId: string;
   walletAddress: string;
@@ -59,7 +214,8 @@ export interface AuthVariables {
 export async function createSession(
   cache: KVNamespace,
   userId: string,
-  walletAddress: string
+  walletAddress: string,
+  db?: D1Database
 ): Promise<string> {
   const token = generateId(); // 32-byte hex = 256-bit entropy
   const session: SessionData = {
@@ -68,9 +224,30 @@ export async function createSession(
     expiresAt: Date.now() + SESSION_TTL_SECS * 1000,
   };
   const key = `session:${token}`;
-  await cache.put(key, JSON.stringify(session), {
-    expirationTtl: SESSION_TTL_SECS,
-  });
+  let persisted = false;
+
+  if (db) {
+    try {
+      await persistSessionDb(db, token, session);
+      persisted = true;
+    } catch (err) {
+      console.error('[auth] failed to persist session in D1:', err);
+    }
+  }
+
+  try {
+    await cache.put(key, JSON.stringify(session), {
+      expirationTtl: SESSION_TTL_SECS,
+    });
+    persisted = true;
+  } catch {
+    // KV is optional acceleration only.
+  }
+
+  if (!persisted) {
+    throw new Error('Unable to persist session');
+  }
+
   sessionHotCache.set(key, {
     session,
     cachedUntil: Math.min(session.expiresAt, Date.now() + SESSION_HOT_CACHE_TTL_MS),
@@ -81,7 +258,8 @@ export async function createSession(
 /** Look up a session by token. Returns null if missing or expired. */
 export async function getSession(
   cache: KVNamespace,
-  token: string
+  token: string,
+  db?: D1Database
 ): Promise<SessionData | null> {
   // Reject obviously invalid tokens before hitting KV (prevents probing with empty/crafted strings)
   if (!token || token.length < 16 || token.length > 128 || !/^[0-9a-f]+$/.test(token)) return null;
@@ -96,12 +274,34 @@ export async function getSession(
   }
   if (hot) sessionHotCache.delete(key);
 
-  const raw = await cache.get(key, 'text');
-  if (!raw) return null;
   try {
-    const session = JSON.parse(raw) as SessionData;
+    const raw = await cache.get(key, 'text');
+    if (raw) {
+      const session = JSON.parse(raw) as SessionData;
+      if (session.expiresAt < now) {
+        await cache.delete(key).catch(() => {});
+        if (db) await deleteSessionDb(db, token).catch(() => {});
+        sessionHotCache.delete(key);
+        return null;
+      }
+      sessionHotCache.set(key, {
+        session,
+        cachedUntil: Math.min(session.expiresAt, now + SESSION_HOT_CACHE_TTL_MS),
+      });
+      return session;
+    }
+  } catch {
+    // KV unavailable; try durable fallback.
+  }
+
+  if (!db) return null;
+
+  try {
+    const session = await readSessionDb(db, token);
+    if (!session) return null;
     if (session.expiresAt < now) {
-      await cache.delete(key);
+      await deleteSessionDb(db, token).catch(() => {});
+      await cache.delete(key).catch(() => {});
       sessionHotCache.delete(key);
       return null;
     }
@@ -116,10 +316,17 @@ export async function getSession(
 }
 
 /** Delete a session (logout) */
-export async function deleteSession(cache: KVNamespace, token: string): Promise<void> {
+export async function deleteSession(
+  cache: KVNamespace,
+  token: string,
+  db?: D1Database
+): Promise<void> {
   const key = `session:${token}`;
   sessionHotCache.delete(key);
-  await cache.delete(key);
+  await Promise.all([
+    cache.delete(key).catch(() => {}),
+    db ? deleteSessionDb(db, token).catch(() => {}) : Promise.resolve(),
+  ]);
 }
 
 /** Build a Set-Cookie header value for the session token */
@@ -225,9 +432,9 @@ export async function verifySiweAndCreateSession(
     throw new Error(`SIWE domain "${parsed.domain}" is not allowed`);
   }
 
-  // Validate nonce exists (one-time use)
-  const nonceRaw = await cache.get(`nonce:${parsed.nonce}`, 'text');
-  if (!nonceRaw) throw new Error('Invalid or expired nonce');
+  // Validate and consume nonce (one-time use), backed by D1 (KV optional).
+  const nonceValid = await consumeNonce(cache, d1, parsed.nonce);
+  if (!nonceValid) throw new Error('Invalid or expired nonce');
 
   // Use publicClient.verifyMessage() which handles EOA (ECDSA), deployed smart
   // accounts (ERC-1271), and counterfactual smart accounts (ERC-6492).
@@ -251,9 +458,6 @@ export async function verifySiweAndCreateSession(
     throw new Error('Signature verification failed');
   }
   if (!isValid) throw new Error('Invalid signature');
-
-  // Consume nonce to prevent replay
-  await cache.delete(`nonce:${parsed.nonce}`);
 
   // Normalise address to lowercase
   const walletAddress = parsed.address.toLowerCase();
@@ -287,7 +491,7 @@ export async function verifySiweAndCreateSession(
   }
 
   const [user] = await orm.select().from(users).where(eq(users.id, userId));
-  const sessionToken = await createSession(cache, userId, walletAddress);
+  const sessionToken = await createSession(cache, userId, walletAddress, d1);
   return { user, sessionToken };
 }
 
@@ -295,7 +499,7 @@ export async function verifySiweAndCreateSession(
 
 type AnyContext = {
   req: { header: (k: string) => string | undefined };
-  env: { CACHE: KVNamespace };
+  env: { CACHE: KVNamespace; DB: D1Database };
   set: (k: string, v: unknown) => void;
   json: (body: unknown, status?: number) => Response;
 };
@@ -311,7 +515,7 @@ export function createAuthMiddleware() {
     const token = parseCookieValue(cookieHeader, 'session');
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-    const session = await getSession(c.env.CACHE, token);
+    const session = await getSession(c.env.CACHE, token, c.env.DB);
     if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
     c.set('userId', session.userId);

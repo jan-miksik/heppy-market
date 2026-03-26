@@ -150,14 +150,18 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
         return hot;
       }
 
-      const cached = await cache.get(cacheKey, 'text');
-      if (cached !== null) {
-        const parsed = schema.safeParse(JSON.parse(cached));
-        if (parsed.success) {
-          setHotCached(cacheKey, parsed.data);
-          console.log(`cache_hit service=dex-data layer=kv key=${cacheKey}`);
-          return parsed.data;
+      try {
+        const cached = await cache.get(cacheKey, 'text');
+        if (cached !== null) {
+          const parsed = schema.safeParse(JSON.parse(cached));
+          if (parsed.success) {
+            setHotCached(cacheKey, parsed.data);
+            console.log(`cache_hit service=dex-data layer=kv key=${cacheKey}`);
+            return parsed.data;
+          }
         }
+      } catch (err) {
+        console.warn(`cache_error service=dex-data op=get key=${cacheKey}`, err);
       }
     }
     console.log(`cache_miss service=dex-data key=${cacheKey} bypass=${bypassCache}`);
@@ -188,9 +192,13 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
 
     // Cache the raw JSON string
     setHotCached(cacheKey, parsed.data);
-    await cache.put(cacheKey, JSON.stringify(json), {
-      expirationTtl: CACHE_TTL_SECONDS,
-    });
+    try {
+      await cache.put(cacheKey, JSON.stringify(json), {
+        expirationTtl: CACHE_TTL_SECONDS,
+      });
+    } catch (err) {
+      console.warn(`cache_error service=dex-data op=put key=${cacheKey}`, err);
+    }
 
     return parsed.data;
   }
@@ -226,13 +234,17 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
         const hot = getHotCached<DexPair[]>(cacheKey);
         if (hot !== null) return hot;
 
-        const cached = await cache.get(cacheKey, 'text');
-        if (cached !== null) {
-          const parsed = z.array(PairSchema).safeParse(JSON.parse(cached));
-          if (parsed.success) {
-            setHotCached(cacheKey, parsed.data);
-            return parsed.data;
+        try {
+          const cached = await cache.get(cacheKey, 'text');
+          if (cached !== null) {
+            const parsed = z.array(PairSchema).safeParse(JSON.parse(cached));
+            if (parsed.success) {
+              setHotCached(cacheKey, parsed.data);
+              return parsed.data;
+            }
           }
+        } catch (err) {
+          console.warn(`cache_error service=dex-data op=get key=${cacheKey}`, err);
         }
       }
 
@@ -264,9 +276,13 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
         .slice(0, 3);
 
       setHotCached(cacheKey, sorted);
-      await cache.put(cacheKey, JSON.stringify(sorted), {
-        expirationTtl: TOP_PAIRS_CACHE_TTL,
-      });
+      try {
+        await cache.put(cacheKey, JSON.stringify(sorted), {
+          expirationTtl: TOP_PAIRS_CACHE_TTL,
+        });
+      } catch (err) {
+        console.warn(`cache_error service=dex-data op=put key=${cacheKey}`, err);
+      }
       return sorted;
     },
   };

@@ -152,14 +152,18 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
         return hot;
       }
 
-      const hit = await cache.get(cacheKey, 'text');
-      if (hit) {
-        const parsed = schema.safeParse(JSON.parse(hit));
-        if (parsed.success) {
-          setHotCached(cacheKey, parsed.data);
-          console.log(`cache_hit service=gecko-terminal layer=kv key=${cacheKey}`);
-          return parsed.data;
+      try {
+        const hit = await cache.get(cacheKey, 'text');
+        if (hit) {
+          const parsed = schema.safeParse(JSON.parse(hit));
+          if (parsed.success) {
+            setHotCached(cacheKey, parsed.data);
+            console.log(`cache_hit service=gecko-terminal layer=kv key=${cacheKey}`);
+            return parsed.data;
+          }
         }
+      } catch (err) {
+        console.warn(`cache_error service=gecko-terminal op=get key=${cacheKey}`, err);
       }
     }
     console.log(`cache_miss service=gecko-terminal key=${cacheKey} bypass=${bypassCache}`);
@@ -181,7 +185,11 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
       throw new Error(`GeckoTerminal schema mismatch: ${parsed.error.message.slice(0, 300)}`);
     }
     setHotCached(cacheKey, parsed.data);
-    await cache.put(cacheKey, JSON.stringify(json), { expirationTtl: CACHE_TTL });
+    try {
+      await cache.put(cacheKey, JSON.stringify(json), { expirationTtl: CACHE_TTL });
+    } catch (err) {
+      console.warn(`cache_error service=gecko-terminal op=put key=${cacheKey}`, err);
+    }
     return parsed.data;
   }
 
