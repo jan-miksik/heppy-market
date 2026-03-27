@@ -103,6 +103,12 @@ function extractJson(text: string): string {
 const DEFAULT_LLM_TIMEOUT_MS = 90_000;
 /** Shorter timeout used for emergency fallback models (lower quality bar, faster fail) */
 const EMERGENCY_MODEL_TIMEOUT_MS = 30_000;
+const LLM_LOG_PROMPT_PREVIEW_MAX_CHARS = 800;
+
+function previewPromptForLogs(text: string): string {
+  if (text.length <= LLM_LOG_PROMPT_PREVIEW_MAX_CHARS) return text;
+  return `${text.slice(0, LLM_LOG_PROMPT_PREVIEW_MAX_CHARS)}\n...[truncated ${text.length - LLM_LOG_PROMPT_PREVIEW_MAX_CHARS} chars]`;
+}
 
 /**
  * Get a structured trade decision from the LLM.
@@ -204,8 +210,8 @@ export async function getTradeDecision(
           console.log('[llm-router] === PROMPT SENT TO LLM ===');
           console.log('[llm-router] Model:', modelId);
           console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
-          console.log('[llm-router] --- USER PROMPT ---');
-          console.log(userPrompt);
+          console.log('[llm-router] User prompt preview:');
+          console.log(previewPromptForLogs(userPrompt));
           console.log('[llm-router] === END PROMPT ===');
         } else {
           console.log(`[llm-router] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`);

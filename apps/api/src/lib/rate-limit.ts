@@ -130,13 +130,15 @@ export function createRateLimitMiddleware<E extends { Bindings: { CACHE: KVNames
         ? await checkRateLimitMemory(cfg)
         : await checkRateLimit(c.env.CACHE, cfg);
 
+    const retryAfterSecs = Math.max(0, result.resetAt - Math.floor(Date.now() / 1000));
+
     if (!result.allowed) {
       return Response.json(
-        { error: 'Rate limit exceeded', retryAfter: result.resetAt - Math.floor(Date.now() / 1000) },
+        { error: 'Rate limit exceeded', retryAfter: retryAfterSecs },
         {
           status: 429,
           headers: {
-            'Retry-After': String(result.resetAt - Math.floor(Date.now() / 1000)),
+            'Retry-After': String(retryAfterSecs),
             'X-RateLimit-Limit': String(config.limit),
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': String(result.resetAt),
@@ -146,8 +148,9 @@ export function createRateLimitMiddleware<E extends { Bindings: { CACHE: KVNames
     }
 
     // Add rate limit headers
-    (c as any).header?.('X-RateLimit-Remaining', String(result.remaining));
-    (c as any).header?.('X-RateLimit-Reset', String(result.resetAt));
+    c.header('X-RateLimit-Limit', String(config.limit));
+    c.header('X-RateLimit-Remaining', String(result.remaining));
+    c.header('X-RateLimit-Reset', String(result.resetAt));
 
     return next();
   }) as MiddlewareHandler<E>;

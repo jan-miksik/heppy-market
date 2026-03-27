@@ -91,10 +91,15 @@ app.route('/api/auth', authRoute);
 
 // Auth middleware for protected routes
 const authMiddleware = createAuthMiddleware();
+app.use('/api/agents', authMiddleware as any);
 app.use('/api/agents/*', authMiddleware as any);
+app.use('/api/trades', authMiddleware as any);
 app.use('/api/trades/*', authMiddleware as any);
+app.use('/api/compare', authMiddleware as any);
 app.use('/api/compare/*', authMiddleware as any);
+app.use('/api/managers', authMiddleware as any);
 app.use('/api/managers/*', authMiddleware as any);
+app.use('/api/profiles', authMiddleware as any);
 app.use('/api/profiles/*', authMiddleware as any);
 
 // Protected routes
