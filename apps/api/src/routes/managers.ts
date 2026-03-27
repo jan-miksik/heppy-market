@@ -18,6 +18,15 @@ function formatManager(r: typeof agentManagers.$inferSelect) {
   };
 }
 
+export function safeParseManagerLogResult(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function requireManagerOwnership(
   db: ReturnType<typeof drizzle>,
   id: string,
@@ -303,7 +312,7 @@ managersRoute.get('/:id/logs', async (c) => {
     .offset(offset);
 
   return c.json({
-    logs: logs.map((l) => ({ ...l, result: JSON.parse(l.result) })),
+    logs: logs.map((l) => ({ ...l, result: safeParseManagerLogResult(l.result) })),
     page,
     limit,
   });
@@ -327,12 +336,8 @@ managersRoute.get('/:id/prompt-preview', async (c) => {
 
   let promptText: string | null = null;
   if (log?.result) {
-    try {
-      const parsed = JSON.parse(log.result) as Record<string, unknown>;
-      promptText = typeof parsed.llmPromptText === 'string' ? parsed.llmPromptText : null;
-    } catch {
-      promptText = null;
-    }
+    const parsed = safeParseManagerLogResult(log.result);
+    promptText = typeof parsed?.llmPromptText === 'string' ? parsed.llmPromptText : null;
   }
 
   return c.json({
