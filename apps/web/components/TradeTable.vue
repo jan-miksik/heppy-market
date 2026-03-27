@@ -93,12 +93,29 @@ function sortIcon(key: SortKey) {
   return sortDir.value === 'asc' ? '↑' : '↓';
 }
 
+function tradeSortValue(trade: Trade, key: SortKey): string | number {
+  switch (key) {
+    case 'pair':
+      return trade.pair;
+    case 'amountUsd':
+      return trade.amountUsd;
+    case 'confidenceBefore':
+      return trade.confidenceBefore;
+    case 'pnlPct':
+      return trade.pnlPct ?? -Infinity;
+    case 'pnlUsd':
+      return trade.pnlUsd ?? -Infinity;
+    case 'openedAt':
+      return trade.openedAt;
+  }
+}
+
 const sortedTrades = computed(() => {
-  if (!sortKey.value) return props.trades;
+  const key = sortKey.value;
+  if (!key) return props.trades;
   return [...props.trades].sort((a, b) => {
-    const k = sortKey.value!;
-    const av = (a as any)[k] ?? (k === 'pnlPct' || k === 'pnlUsd' ? -Infinity : '');
-    const bv = (b as any)[k] ?? (k === 'pnlPct' || k === 'pnlUsd' ? -Infinity : '');
+    const av = tradeSortValue(a, key);
+    const bv = tradeSortValue(b, key);
     const dir = sortDir.value === 'asc' ? 1 : -1;
     if (av < bv) return -1 * dir;
     if (av > bv) return 1 * dir;

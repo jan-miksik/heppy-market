@@ -249,6 +249,57 @@ import { getManagerProfile, DEFAULT_MANAGER_PROFILE_ID } from '@dex-agents/share
 import { parse as markedParse } from 'marked';
 import { splitManagerPromptSections } from '~/lib/manager-prompt';
 
+type ManagerDoStatus = {
+  deciding?: boolean;
+  lastDecisionMs?: number | null;
+  decisionInterval?: string;
+  tickCount?: number;
+  nextAlarmAt?: number | null;
+};
+
+type ManagerDetail = {
+  id: string;
+  name: string;
+  status: 'running' | 'paused' | 'stopped' | string;
+  profileId?: string | null;
+  config?: {
+    llmModel?: string;
+    decisionInterval?: string;
+    profileId?: string;
+    riskParams?: {
+      maxTotalDrawdown?: number;
+      maxAgents?: number;
+    };
+  };
+  doStatus?: ManagerDoStatus;
+};
+
+type ManagedAgent = {
+  id: string;
+  name: string;
+  status: string;
+  config?: {
+    pairs?: string[];
+  };
+};
+
+type ManagerLogResult = {
+  detail?: string;
+  error?: string;
+  llmPromptText?: string;
+  llmRawResponse?: string;
+};
+
+type ManagerLog = {
+  id: string;
+  action: string;
+  reasoning: string;
+  createdAt: string;
+  result?: ManagerLogResult | null;
+  llmPromptTokens?: number | null;
+  llmCompletionTokens?: number | null;
+};
+
 const route = useRoute();
 const router = useRouter();
 const id = route.params.id as string;
@@ -257,14 +308,14 @@ const actionLoading = ref(false);
 const showDeleteModal = ref(false);
 const deleteAgentsChoice = ref<'detach' | 'delete'>('detach');
 
-const { data: managerData, pending, refresh } = await useFetch<any>(`/api/managers/${id}`, {
+const { data: managerData, pending, refresh } = await useFetch<ManagerDetail>(`/api/managers/${id}`, {
   credentials: 'include',
 });
 const manager = computed(() => managerData.value ?? null);
 const doStatus = computed(() => manager.value?.doStatus ?? null);
 
 const personaEmoji = computed(() => {
-  const m = manager.value as { profileId?: string | null; config?: { profileId?: string } } | null;
+  const m = manager.value;
   if (!m) return '';
   const configProfileId = m.config?.profileId;
   const profileId = m.profileId ?? configProfileId ?? DEFAULT_MANAGER_PROFILE_ID;
@@ -272,15 +323,15 @@ const personaEmoji = computed(() => {
   return profile?.emoji ?? '';
 });
 
-const { data: agentsData, refresh: refreshAgents } = await useFetch<{ agents: any[] }>(`/api/managers/${id}/agents`, {
+const { data: agentsData, refresh: refreshAgents } = await useFetch<{ agents: ManagedAgent[] }>(`/api/managers/${id}/agents`, {
   credentials: 'include',
 });
 const managedAgents = computed(() => agentsData.value?.agents ?? []);
 
-const { data: logsData, refresh: refreshLogs } = await useFetch<{ logs: any[] }>(`/api/managers/${id}/logs`, {
+const { data: logsData, refresh: refreshLogs } = await useFetch<{ logs: ManagerLog[] }>(`/api/managers/${id}/logs`, {
   credentials: 'include',
 });
-const logs = ref<any[]>(logsData.value?.logs ?? []);
+const logs = ref<ManagerLog[]>(logsData.value?.logs ?? []);
 const hasMoreLogs = ref((logsData.value?.logs?.length ?? 0) === 20);
 
 const { data: tokenUsageData } = await useFetch<{ totalTokens: number }>(`/api/managers/${id}/token-usage`, {
@@ -349,7 +400,7 @@ const pollTimer = setInterval(async () => {
   const nowDeciding = doStatus.value?.deciding ?? false;
   if (prevDeciding && !nowDeciding) {
     // Decision just finished — reload logs + agents
-    const fresh = await $fetch<{ logs: any[] }>(`/api/managers/${id}/logs`, { credentials: 'include' });
+    const fresh = await $fetch<{ logs: ManagerLog[] }>(`/api/managers/${id}/logs`, { credentials: 'include' });
     logs.value = fresh.logs ?? [];
     hasMoreLogs.value = (fresh.logs?.length ?? 0) === 20;
     await refreshAgents();
@@ -474,7 +525,7 @@ async function doAction(action: 'start' | 'stop') {
 
 async function loadMoreLogs() {
   const page = Math.ceil(logs.value.length / 20) + 1;
-  const next = await $fetch<{ logs: any[] }>(`/api/managers/${id}/logs?page=${page}`, { credentials: 'include' });
+  const next = await $fetch<{ logs: ManagerLog[] }>(`/api/managers/${id}/logs?page=${page}`, { credentials: 'include' });
   const newLogs = next.logs ?? [];
   logs.value.push(...newLogs);
   hasMoreLogs.value = newLogs.length === 20;

@@ -79,7 +79,21 @@ definePageMeta({ ssr: false });
 
 const router = useRouter();
 
-const { data, pending, error } = await useFetch<{ managers: any[] }>('/api/managers', {
+type ManagerListItem = {
+  id: string;
+  name: string;
+  status: string;
+  profileId?: string | null;
+  agentCount?: number;
+  createdAt: string;
+  config: {
+    llmModel?: string;
+    decisionInterval?: string;
+    profileId?: string;
+  } | null;
+};
+
+const { data, pending, error } = await useFetch<{ managers: ManagerListItem[] }>('/api/managers', {
   credentials: 'include',
 });
 const managers = computed(() => data.value?.managers ?? []);
@@ -107,17 +121,8 @@ function sortIcon(key: SortKey) {
 
 const sortedManagers = computed(() => {
   return [...managers.value].sort((a, b) => {
-    let av: any, bv: any;
-    if (sortKey.value === 'decisionInterval') {
-      av = a.config?.decisionInterval ?? '';
-      bv = b.config?.decisionInterval ?? '';
-    } else if (sortKey.value === 'agentCount') {
-      av = a.agentCount ?? 0;
-      bv = b.agentCount ?? 0;
-    } else {
-      av = (a as any)[sortKey.value] ?? '';
-      bv = (b as any)[sortKey.value] ?? '';
-    }
+    const av = managerSortValue(a, sortKey.value);
+    const bv = managerSortValue(b, sortKey.value);
     const dir = sortDir.value === 'asc' ? 1 : -1;
     if (av < bv) return -1 * dir;
     if (av > bv) return 1 * dir;
@@ -125,7 +130,22 @@ const sortedManagers = computed(() => {
   });
 });
 
-function managerEmoji(m: any) {
+function managerSortValue(manager: ManagerListItem, key: SortKey): string | number {
+  switch (key) {
+    case 'decisionInterval':
+      return manager.config?.decisionInterval ?? '';
+    case 'agentCount':
+      return manager.agentCount ?? 0;
+    case 'name':
+      return manager.name;
+    case 'status':
+      return manager.status;
+    case 'createdAt':
+      return manager.createdAt;
+  }
+}
+
+function managerEmoji(m: ManagerListItem) {
   const configProfileId = m.config?.profileId;
   const profileId = m.profileId ?? configProfileId ?? DEFAULT_MANAGER_PROFILE_ID;
   return getManagerProfile(profileId)?.emoji ?? '🧠';
