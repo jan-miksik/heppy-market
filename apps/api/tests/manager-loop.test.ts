@@ -167,7 +167,6 @@ describe('buildManagerPrompt', () => {
       managerConfig: mockManagerConfig,
     });
     expect(prompt).toContain('Allowed Agent Analysis Intervals');
-    expect(prompt).toContain('"15m"');
     expect(prompt).toContain('"1h"');
     expect(prompt).toContain('"4h"');
     expect(prompt).toContain('"1d"');
@@ -176,18 +175,18 @@ describe('buildManagerPrompt', () => {
 
 describe('normalizeManagerAnalysisInterval', () => {
   it('keeps valid intervals unchanged', () => {
-    expect(normalizeManagerAnalysisInterval('15m')).toBe('15m');
     expect(normalizeManagerAnalysisInterval('1h')).toBe('1h');
     expect(normalizeManagerAnalysisInterval('4h')).toBe('4h');
     expect(normalizeManagerAnalysisInterval('1d')).toBe('1d');
   });
 
-  it('normalizes legacy short intervals to 15m', () => {
-    expect(normalizeManagerAnalysisInterval('1m')).toBe('15m');
-    expect(normalizeManagerAnalysisInterval('5m')).toBe('15m');
-    expect(normalizeManagerAnalysisInterval('60')).toBe('15m');
-    expect(normalizeManagerAnalysisInterval('300')).toBe('15m');
-    expect(normalizeManagerAnalysisInterval('900')).toBe('15m');
+  it('normalizes legacy short intervals to 1h', () => {
+    expect(normalizeManagerAnalysisInterval('1m')).toBe('1h');
+    expect(normalizeManagerAnalysisInterval('5m')).toBe('1h');
+    expect(normalizeManagerAnalysisInterval('15m')).toBe('1h');
+    expect(normalizeManagerAnalysisInterval('60')).toBe('1h');
+    expect(normalizeManagerAnalysisInterval('300')).toBe('1h');
+    expect(normalizeManagerAnalysisInterval('900')).toBe('1h');
   });
 
   it('normalizes invalid values to fallback', () => {

@@ -64,7 +64,7 @@ export default defineNuxtConfig({
     baseURL: '/',
     buildAssetsDir: '_nuxt',
     head: {
-      title: 'Heppy Market',
+      title: 'Something in loop',
       meta: [
         { name: 'description', content: 'AI-powered paper trading agents on Base chain DEXes' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

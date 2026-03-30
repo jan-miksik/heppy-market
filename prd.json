@@ -162,7 +162,7 @@
   {
     "category": "meta:orchestrator",
     "description": "Refactor Ralph loop into structured orchestrator (Node.js)",
-    "note": "Meta-task: this modifies the orchestrator that runs other tasks, not Heppy Market itself",
+    "note": "Meta-task: this modifies the orchestrator that runs other tasks, not Something in loop itself",
     "steps": [
       "Replace bash loop with Node.js orchestrator script",
       "Split logic into planner, executor, verifier modules",
@@ -175,7 +175,7 @@
   {
     "category": "meta:orchestrator",
     "description": "Implement structured AI coding agent workflow",
-    "note": "Meta-task: improvements to the Claude Code workflow, not Heppy Market application code",
+    "note": "Meta-task: improvements to the Claude Code workflow, not Something in loop application code",
     "steps": [
       "Separate prompts for planning and implementation",
       "Add explicit state machine (planning, implementing, verifying, fixing)",

@@ -73,7 +73,7 @@ describe('AgentConfigSchema — boundaries', () => {
   });
 
   it('accepts all valid analysisInterval values', () => {
-    for (const interval of ['15m', '1h', '4h', '1d']) {
+    for (const interval of ['1h', '4h', '1d']) {
       const r = AgentConfigSchema.safeParse({ name: 'Test', analysisInterval: interval });
       expect(r.success, `interval ${interval} should be valid`).toBe(true);
     }

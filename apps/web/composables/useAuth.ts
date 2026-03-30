@@ -113,7 +113,7 @@ export function useAuth() {
         nonce,
         uri: window.location.origin,
         version: '1',
-        statement: 'Sign in to Heppy Market',
+        statement: 'Sign in to Something in loop',
       });
 
       // 3. Sign with @wagmi/core — no Vue inject() needed

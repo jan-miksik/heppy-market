@@ -13,7 +13,7 @@ describe('parseSiweMessage', () => {
     'localhost wants you to sign in with your Ethereum account:',
     '0xDeadBeefDeadBeefDeadBeefDeadBeefDeadBeef',
     '',
-    'Sign in to Heppy Market',
+    'Sign in to Something in loop',
     '',
     'URI: http://localhost:3000',
     'Version: 1',
@@ -57,8 +57,8 @@ const ALLOWED_SIWE_DOMAINS = [
   'localhost:3000',
   'localhost:3001',
   'localhost:3002',
-  'heppy.market',
-  'dex-trading-agents.pages.dev',
+  'something-in-loop.market',
+  'something-in-loop.pages.dev',
 ];
 
 function isDomainAllowed(domain: string): boolean {
@@ -78,14 +78,14 @@ describe('SIWE domain validation', () => {
   });
 
   it('allows production domain', () => {
-    expect(isDomainAllowed('heppy.market')).toBe(true);
-    expect(isDomainAllowed('dex-trading-agents.pages.dev')).toBe(true);
+    expect(isDomainAllowed('something-in-loop.market')).toBe(true);
+    expect(isDomainAllowed('something-in-loop.pages.dev')).toBe(true);
   });
 
   it('rejects unknown domains', () => {
     expect(isDomainAllowed('evil.com')).toBe(false);
     expect(isDomainAllowed('phishing-site.io')).toBe(false);
-    expect(isDomainAllowed('heppy.market.evil.com')).toBe(false);
+    expect(isDomainAllowed('something-in-loop.market.evil.com')).toBe(false);
   });
 
   it('rejects empty domain', () => {
@@ -95,8 +95,8 @@ describe('SIWE domain validation', () => {
   it('does not allow suffix-only matches that are not subdomains', () => {
     // "notlocalhost" should NOT match "localhost"
     expect(isDomainAllowed('notlocalhost')).toBe(false);
-    // "heppy.market.evil.io" should not match "heppy.market"
-    expect(isDomainAllowed('heppy.market.evil.io')).toBe(false);
+    // "something-in-loop.market.evil.io" should not match "something-in-loop.market"
+    expect(isDomainAllowed('something-in-loop.market.evil.io')).toBe(false);
   });
 });
 

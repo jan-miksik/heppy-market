@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
+import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
 
 definePageMeta({ ssr: false });
 const { trades, stats, loading, error, fetchTrades, fetchStats } = useTrades();
@@ -99,8 +99,12 @@ watch([statusFilter, limitFilter], load);
     </div>
 
     <!-- Table -->
-    <div v-if="loading" style="text-align: center; padding: 48px;">
-      <span class="spinner" />
+    <div v-if="loading" class="page-loader">
+      <div class="page-loader-track">
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+      </div>
+      <span class="page-loader-label">Loading trades</span>
     </div>
     <div v-else-if="error" class="alert alert-error">{{ error }}</div>
     <div v-else class="card">

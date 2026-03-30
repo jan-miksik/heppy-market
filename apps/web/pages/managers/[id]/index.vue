@@ -1,7 +1,11 @@
 <template>
   <main class="page">
-    <div v-if="pending && !manager" style="text-align: center; padding: 48px;">
-      <span class="spinner" />
+    <div v-if="pending && !manager" class="page-loader">
+      <div class="page-loader-track">
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+      </div>
+      <span class="page-loader-label">Loading manager</span>
     </div>
 
     <template v-else-if="manager">
@@ -245,7 +249,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getManagerProfile, DEFAULT_MANAGER_PROFILE_ID } from '@dex-agents/shared';
+import { getManagerProfile, DEFAULT_MANAGER_PROFILE_ID } from '@something-in-loop/shared';
 import { parse as markedParse } from 'marked';
 import { splitManagerPromptSections } from '~/lib/manager-prompt';
 
@@ -689,7 +693,7 @@ async function loadMoreLogs() {
   word-break: break-word;
 }
 .chat-reasoning {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text);
 }

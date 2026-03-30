@@ -1,5 +1,5 @@
 {
-  "name": "dex-trading-agents",
+  "name": "something-in-loop",
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "workspaces": [
@@ -10,11 +10,11 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
     "build": "turbo run build",
-    "build:worker": "npm run build --workspace=@dex-agents/shared && node_modules/esbuild/bin/esbuild apps/api/src/index.ts --bundle --minify --outfile=apps/api/dist/worker.js --platform=browser --format=esm --external:cloudflare:workers",
+    "build:worker": "npm run build --workspace=@something-in-loop/shared && node_modules/esbuild/bin/esbuild apps/api/src/index.ts --bundle --minify --outfile=apps/api/dist/worker.js --platform=browser --format=esm --external:cloudflare:workers",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "deploy:api": "npm run deploy --workspace=@dex-agents/api -- --env production",
-    "deploy:web": "npm run build --workspace=@dex-agents/web && cd apps/web && npx wrangler pages deploy dist --project-name=heppy-market"
+    "deploy:api": "npm run deploy --workspace=@something-in-loop/api -- --env production",
+    "deploy:web": "npm run build --workspace=@something-in-loop/web && cd apps/web && npx wrangler pages deploy dist --project-name=something-in-loop"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.42",

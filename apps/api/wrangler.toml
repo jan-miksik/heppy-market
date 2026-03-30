@@ -1,7 +1,7 @@
 # Service-only Worker: do NOT add routes. Access only via Cloudflare Pages Service Binding.
 # No custom domain, no workers.dev exposure — keeps the API internal and more secure.
-name = "dex-trading-agents-api"
-# Built from monorepo root so node_modules and @dex-agents/shared resolve (see build command)
+name = "something-in-loop-api"
+# Built from monorepo root so node_modules and @something-in-loop/shared resolve (see build command)
 main = "dist/worker.js"
 compatibility_date = "2026-02-12"
 compatibility_flags = ["nodejs_compat"]
@@ -77,7 +77,7 @@ max_retries = 3
 dead_letter_queue = "llm-jobs-dlq"
 
 [env.production]
-name = "dex-trading-agents-api"
+name = "something-in-loop-api"
 # Replace with your production D1 database_id (from: wrangler d1 list)
 [[env.production.d1_databases]]
 binding = "DB"

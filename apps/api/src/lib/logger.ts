@@ -1,5 +1,5 @@
 /**
- * Structured logger for the Heppy Market agent system.
+ * Structured logger for the Something in loop agent system.
  *
  * Emits machine-readable key=value lines compatible with wrangler tail and
  * Cloudflare Logpush. Every log line includes a timestamp, level, service,

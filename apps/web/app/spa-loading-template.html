@@ -1,4 +1,18 @@
 <div style="position:fixed;inset:0;background:#0A0A0A;display:flex;align-items:center;justify-content:center;z-index:9999">
-  <div style="width:28px;height:28px;border:2px solid #2A2A2A;border-top-color:#FFB800;border-radius:50%;animation:__spa_spin 0.8s linear infinite"></div>
-  <style>@keyframes __spa_spin{to{transform:rotate(360deg)}}</style>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:20px">
+    <div style="width:10px;height:10px;background:#6BCB77;border-radius:50%;animation:__b 2s ease-in-out infinite;box-shadow:0 0 12px rgba(107,203,119,0.4)"></div>
+    <div style="display:flex;align-items:center;gap:3px;height:20px">
+      <span style="width:3px;height:6px;background:#FFB800;animation:__w 1.2s ease-in-out infinite;animation-delay:0s"></span>
+      <span style="width:3px;height:12px;background:#FFB800;animation:__w 1.2s ease-in-out infinite;animation-delay:0.1s"></span>
+      <span style="width:3px;height:18px;background:#FFB800;animation:__w 1.2s ease-in-out infinite;animation-delay:0.2s"></span>
+      <span style="width:3px;height:12px;background:#FFB800;animation:__w 1.2s ease-in-out infinite;animation-delay:0.3s"></span>
+      <span style="width:3px;height:6px;background:#FFB800;animation:__w 1.2s ease-in-out infinite;animation-delay:0.4s"></span>
+    </div>
+    <span style="font-family:'Space Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8A8580;animation:__l 1.4s steps(1) infinite">Initializing</span>
+  </div>
+  <style>
+    @keyframes __b{0%,100%{opacity:1;box-shadow:0 0 12px rgba(107,203,119,0.4)}50%{opacity:.3;box-shadow:0 0 4px rgba(107,203,119,0.1)}}
+    @keyframes __w{0%,100%{opacity:.3;transform:scaleY(.5)}50%{opacity:1;transform:scaleY(1)}}
+    @keyframes __l{0%,100%{opacity:1}50%{opacity:.4}}
+  </style>
 </div>

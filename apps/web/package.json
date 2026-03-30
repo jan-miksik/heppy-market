@@ -1,9 +1,9 @@
 {
-  "name": "@dex-agents/web",
+  "name": "@something-in-loop/web",
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "prebuild": "pnpm --filter @dex-agents/shared build",
+    "prebuild": "pnpm --filter @something-in-loop/shared build",
     "dev": "nuxt dev --port 3000",
     "build": "nuxt build",
     "preview": "nuxt preview",
@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dex-agents/shared": "workspace:*",
+    "@something-in-loop/shared": "workspace:*",
     "@reown/appkit": "^1.8.18",
     "@reown/appkit-adapter-wagmi": "^1.8.18",
     "@tanstack/vue-query": "^5.92.9",

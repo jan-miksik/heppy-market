@@ -74,12 +74,11 @@ describe('scheduler registry', () => {
     r.register('a1', '1h');
     r.register('a2', '4h');
     r.register('a3', '1h');
-    r.register('a4', '15m');
+    r.register('a4', '1d');
 
     expect(r.getByInterval('1h').sort()).toEqual(['a1', 'a3']);
     expect(r.getByInterval('4h')).toEqual(['a2']);
-    expect(r.getByInterval('15m')).toEqual(['a4']);
-    expect(r.getByInterval('1d')).toEqual([]);
+    expect(r.getByInterval('1d')).toEqual(['a4']);
   });
 
   it('sync rebuilds registry from provided list', () => {
@@ -87,12 +86,12 @@ describe('scheduler registry', () => {
     r.register('stale-agent', '1h');
 
     r.sync([
-      { agentId: 'a1', interval: '15m' },
-      { agentId: 'a2', interval: '1h' },
+      { agentId: 'a1', interval: '1h' },
+      { agentId: 'a2', interval: '4h' },
     ]);
 
     expect(r.size).toBe(2);
-    expect(r.list()).toEqual({ a1: '15m', a2: '1h' });
+    expect(r.list()).toEqual({ a1: '1h', a2: '4h' });
     // stale entry should be gone
     expect(r.list()['stale-agent']).toBeUndefined();
   });
@@ -112,15 +111,15 @@ describe('scheduler registry', () => {
   it('multiple agents with different intervals round-trip correctly', () => {
     const r = new SchedulerRegistry();
     const agents = [
-      { agentId: 'fast-1', interval: '15m' },
-      { agentId: 'fast-2', interval: '15m' },
       { agentId: 'hourly-1', interval: '1h' },
+      { agentId: 'hourly-2', interval: '1h' },
+      { agentId: 'four-hourly-1', interval: '4h' },
       { agentId: 'daily-1', interval: '1d' },
     ];
     for (const a of agents) r.register(a.agentId, a.interval);
 
-    expect(r.getByInterval('15m').length).toBe(2);
-    expect(r.getByInterval('1h').length).toBe(1);
+    expect(r.getByInterval('1h').length).toBe(2);
+    expect(r.getByInterval('4h').length).toBe(1);
     expect(r.getByInterval('1d').length).toBe(1);
     expect(r.size).toBe(4);
   });
@@ -138,8 +137,8 @@ describe('cron fallback logic', () => {
       .filter((agent) => {
         const config = JSON.parse(agent.config) as { analysisInterval?: string };
         const effectiveInterval =
-          config.analysisInterval === '1m' || config.analysisInterval === '5m'
-            ? '15m'
+          config.analysisInterval === '1m' || config.analysisInterval === '5m' || config.analysisInterval === '15m'
+            ? '1h'
             : (config.analysisInterval ?? '1h');
         return effectiveInterval === targetInterval;
       })
@@ -154,17 +153,17 @@ describe('cron fallback logic', () => {
     ];
     expect(matchAgentsByInterval(agents, '1h').sort()).toEqual(['a1', 'a3']);
     expect(matchAgentsByInterval(agents, '4h')).toEqual(['a2']);
-    expect(matchAgentsByInterval(agents, '15m')).toEqual([]);
+    expect(matchAgentsByInterval(agents, '1d')).toEqual([]);
   });
 
-  it('normalizes legacy 1m and 5m intervals to 15m', () => {
+  it('normalizes legacy short intervals to 1h', () => {
     const agents = [
       { id: 'legacy-1m', config: JSON.stringify({ analysisInterval: '1m' }) },
       { id: 'legacy-5m', config: JSON.stringify({ analysisInterval: '5m' }) },
-      { id: 'real-15m',  config: JSON.stringify({ analysisInterval: '15m' }) },
+      { id: 'legacy-15m',  config: JSON.stringify({ analysisInterval: '15m' }) },
     ];
-    const result = matchAgentsByInterval(agents, '15m');
-    expect(result.sort()).toEqual(['legacy-1m', 'legacy-5m', 'real-15m']);
+    const result = matchAgentsByInterval(agents, '1h');
+    expect(result.sort()).toEqual(['legacy-15m', 'legacy-1m', 'legacy-5m']);
   });
 
   it('defaults missing analysisInterval to 1h', () => {

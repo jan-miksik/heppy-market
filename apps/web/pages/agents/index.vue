@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
+import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
 
 definePageMeta({ ssr: false });
 const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent, updateAgent } = useAgents();
@@ -108,7 +108,6 @@ function sortedList(list: typeof agents.value) {
 const sortedAgents = computed(() => sortedList(agents.value));
 
 // Per-agent P&L (realized P&L from closed trades; synced with agent detail table)
-
 const agentPnl = ref<Record<string, { totalPnlUsd: number; totalPnlPct: number }>>({});
 
 const realizedPnlUsd = computed(() => {
@@ -152,6 +151,7 @@ async function loadAgentPerformance(agentId: string) {
     const agent = agents.value.find((a) => a.id === agentId);
     if (!agent) return;
     const startingBalance = agent.config.paperBalance;
+    // Use live trade history so refresh reflects the latest closed trades immediately.
     // Use live trade history so refresh reflects the latest closed trades immediately.
     const tradesRes = await request<{ trades: Array<{ status: 'open' | 'closed'; pnlUsd?: number | null }> }>(
       `/api/agents/${agentId}/trades`,
@@ -341,7 +341,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
 
     <div v-if="overviewError" class="alert alert-error" style="margin-bottom: 12px;">{{ overviewError }}</div>
 
-    <div class="stats-grid" style="margin-bottom: 16px;">
+    <div v-if="!loading" class="stats-grid" style="margin-bottom: 16px;">
       <div class="stat-card">
         <div class="stat-label">Total Agents</div>
         <div class="stat-value">{{ agents.length }}</div>
@@ -368,8 +368,12 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
       </div>
     </div>
 
-    <div v-if="loading" style="text-align: center; padding: 48px;">
-      <span class="spinner" />
+    <div v-if="loading" class="page-loader">
+      <div class="page-loader-track">
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+      </div>
+      <span class="page-loader-label">Loading agents</span>
     </div>
 
     <div v-else-if="error" class="alert alert-error">{{ error }}</div>

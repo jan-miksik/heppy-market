@@ -26,4 +26,6 @@ export interface Env {
   KEY_ENCRYPTION_SECRET?: string;
   /** Dev/test only. When set, enables POST /api/auth/dev-session for Playwright. Never set in production. */
   PLAYWRIGHT_SECRET?: string;
+  /** Optional debug flag to log full LLM prompts/responses. Keep unset/false in production. */
+  LOG_LLM_DEBUG?: string;
 }

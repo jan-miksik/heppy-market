@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ENTITY_NAME_MAX_CHARS, getAgentPersonaTemplate, resolveAgentProfileId } from '@dex-agents/shared';
+import { ENTITY_NAME_MAX_CHARS, getAgentPersonaTemplate, resolveAgentProfileId } from '@something-in-loop/shared';
 import type { CreateAgentPayload } from '~/composables/useAgents';
 import type { ProfileItem } from '~/composables/useProfiles';
 import { useAuth } from '~/composables/useAuth';
@@ -18,11 +18,8 @@ type ModelItem = {
 };
 
 const FREE_MODELS: ModelItem[] = [
-  { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 120B Super', ctx: '131K', price: '$0/$0', tier: 'free', desc: 'default free' },
-  { id: 'nvidia/nemotron-3-nano-30b-a3b:free', label: 'Nemotron 30B', ctx: '131K', price: '$0/$0', tier: 'free' },
+  { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 120B Super', ctx: '262K', price: '$0/$0', tier: 'free', desc: 'default free' },
   { id: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B', ctx: '262K', price: '$0/$0', tier: 'free', desc: 'strong reasoning' },
-  { id: 'stepfun/step-3.5-flash:free', label: 'Step 3.5 Flash', ctx: '256K', price: '$0/$0', tier: 'free' },
-  { id: 'minimax/minimax-m2.5:free', label: 'MiniMax M2.5', ctx: '197K', price: '$0/$0', tier: 'free' },
   { id: 'nvidia/nemotron-nano-9b-v2:free', label: 'Nemotron 9B', ctx: '128K', price: '$0/$0', tier: 'free' },
   { id: 'arcee-ai/trinity-large-preview:free', label: 'Trinity-Large', ctx: '131K', price: '$0/$0', tier: 'free' },
 ] as const;
@@ -31,10 +28,10 @@ const PAID_MODELS = [
   { id: 'minimax/minimax-m2.5',           label: 'MiniMax M2.5',          ctx: '196K', price: '$0.20/$1.20' },
   { id: 'mistralai/mistral-small-2603',   label: 'Mistral Small 2603',    ctx: '262K', price: '$0.15/$0.60' },
   { id: 'google/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite', ctx: '1M', price: '$0.25/$1.50' },
-  { id: 'deepseek/deepseek-v3.2',         label: 'DeepSeek V3.2',         ctx: '128K', price: '$0.25/$0.38' },
+  { id: 'deepseek/deepseek-v3.2',         label: 'DeepSeek V3.2',         ctx: '164K', price: '$0.26/$0.38' },
   { id: 'anthropic/claude-sonnet-4.6',    label: 'Claude Sonnet 4.6',     ctx: '1M',   price: '$3/$15' },
   { id: 'google/gemini-3.1-pro-preview',  label: 'Gemini 3.1 Pro',        ctx: '2M',   price: '$2/$12' },
-  { id: 'openai/gpt-5.4',                 label: 'GPT-5.4',               ctx: '1M',   price: '$2.50/$20' },
+  { id: 'openai/gpt-5.4',                 label: 'GPT-5.4',               ctx: '1M',   price: '$2.50/$15' },
   { id: 'anthropic/claude-opus-4.6',      label: 'Claude Opus 4.6',       ctx: '200K', price: '$5/$25' },
 ] as const;
 
@@ -233,10 +230,7 @@ function shortModelName(m: string): string {
   const PAID_MODEL_NAMES = Object.fromEntries(PAID_MODELS.map((p) => [p.id, p.label]));
   const n: Record<string, string> = {
     'nvidia/nemotron-3-super-120b-a12b:free': 'Nemotron-120B',
-    'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
     'qwen/qwen3-coder:free': 'Qwen3-Coder',
-    'stepfun/step-3.5-flash:free': 'Step-3.5',
-    'minimax/minimax-m2.5:free': 'MiniMax-M2.5',
     'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
     'arcee-ai/trinity-large-preview:free': 'Trinity-Large',
     'minimax/minimax-m2.5': 'MiniMax M2.5',
@@ -545,7 +539,6 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
           <div class="form-group">
             <label class="form-label">Analysis Interval</label>
             <select v-model="form.analysisInterval" class="form-select">
-              <option value="15m">Every 15 minutes</option>
               <option value="1h">Every hour</option>
               <option value="4h">Every 4 hours</option>
               <option value="1d">Daily</option>

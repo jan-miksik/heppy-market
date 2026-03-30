@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Agent } from '~/composables/useAgents';
-import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
+import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
 
 const props = defineProps<{
   agent: Agent;

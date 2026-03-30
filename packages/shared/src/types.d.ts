@@ -5,7 +5,7 @@ export type Chain = 'base';
 /** Supported DEXes */
 export type Dex = 'aerodrome' | 'uniswap-v3';
 /** Analysis intervals */
-export type AnalysisInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type AnalysisInterval = '1h' | '4h' | '1d';
 /** Trading strategies */
 export type Strategy = 'ema_crossover' | 'rsi_oversold' | 'macd_signal' | 'bollinger_bounce' | 'volume_breakout' | 'llm_sentiment' | 'combined';
 /** Trade side */

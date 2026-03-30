@@ -15,7 +15,7 @@ export declare const AgentConfigSchema: z.ZodObject<{
     stopLossPct: z.ZodDefault<z.ZodNumber>;
     takeProfitPct: z.ZodDefault<z.ZodNumber>;
     slippageSimulation: z.ZodDefault<z.ZodNumber>;
-    analysisInterval: z.ZodDefault<z.ZodEnum<["1m", "5m", "15m", "1h", "4h", "1d"]>>;
+    analysisInterval: z.ZodDefault<z.ZodEnum<["1h", "4h", "1d"]>>;
     strategies: z.ZodDefault<z.ZodArray<z.ZodEnum<["ema_crossover", "rsi_oversold", "macd_signal", "bollinger_bounce", "volume_breakout", "llm_sentiment", "combined"]>, "many">>;
     maxDailyLossPct: z.ZodDefault<z.ZodNumber>;
     cooldownAfterLossMinutes: z.ZodDefault<z.ZodNumber>;
@@ -34,7 +34,7 @@ export declare const AgentConfigSchema: z.ZodObject<{
     stopLossPct: number;
     takeProfitPct: number;
     slippageSimulation: number;
-    analysisInterval: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+    analysisInterval: "1h" | "4h" | "1d";
     strategies: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[];
     maxDailyLossPct: number;
     cooldownAfterLossMinutes: number;
@@ -55,7 +55,7 @@ export declare const AgentConfigSchema: z.ZodObject<{
     stopLossPct?: number | undefined;
     takeProfitPct?: number | undefined;
     slippageSimulation?: number | undefined;
-    analysisInterval?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | undefined;
+    analysisInterval?: "1h" | "4h" | "1d" | undefined;
     strategies?: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[] | undefined;
     maxDailyLossPct?: number | undefined;
     cooldownAfterLossMinutes?: number | undefined;
@@ -97,7 +97,7 @@ export declare const CreateAgentRequestSchema: z.ZodObject<{
     stopLossPct: z.ZodDefault<z.ZodNumber>;
     takeProfitPct: z.ZodDefault<z.ZodNumber>;
     slippageSimulation: z.ZodDefault<z.ZodNumber>;
-    analysisInterval: z.ZodDefault<z.ZodEnum<["1m", "5m", "15m", "1h", "4h", "1d"]>>;
+    analysisInterval: z.ZodDefault<z.ZodEnum<["1h", "4h", "1d"]>>;
     strategies: z.ZodDefault<z.ZodArray<z.ZodEnum<["ema_crossover", "rsi_oversold", "macd_signal", "bollinger_bounce", "volume_breakout", "llm_sentiment", "combined"]>, "many">>;
     maxDailyLossPct: z.ZodDefault<z.ZodNumber>;
     cooldownAfterLossMinutes: z.ZodDefault<z.ZodNumber>;
@@ -116,7 +116,7 @@ export declare const CreateAgentRequestSchema: z.ZodObject<{
     stopLossPct: number;
     takeProfitPct: number;
     slippageSimulation: number;
-    analysisInterval: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+    analysisInterval: "1h" | "4h" | "1d";
     strategies: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[];
     maxDailyLossPct: number;
     cooldownAfterLossMinutes: number;
@@ -137,7 +137,7 @@ export declare const CreateAgentRequestSchema: z.ZodObject<{
     stopLossPct?: number | undefined;
     takeProfitPct?: number | undefined;
     slippageSimulation?: number | undefined;
-    analysisInterval?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | undefined;
+    analysisInterval?: "1h" | "4h" | "1d" | undefined;
     strategies?: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[] | undefined;
     maxDailyLossPct?: number | undefined;
     cooldownAfterLossMinutes?: number | undefined;
@@ -158,7 +158,7 @@ export declare const UpdateAgentRequestSchema: z.ZodObject<{
     stopLossPct: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     takeProfitPct: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     slippageSimulation: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
-    analysisInterval: z.ZodOptional<z.ZodDefault<z.ZodEnum<["1m", "5m", "15m", "1h", "4h", "1d"]>>>;
+    analysisInterval: z.ZodOptional<z.ZodDefault<z.ZodEnum<["1h", "4h", "1d"]>>>;
     strategies: z.ZodOptional<z.ZodDefault<z.ZodArray<z.ZodEnum<["ema_crossover", "rsi_oversold", "macd_signal", "bollinger_bounce", "volume_breakout", "llm_sentiment", "combined"]>, "many">>>;
     maxDailyLossPct: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     cooldownAfterLossMinutes: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
@@ -178,7 +178,7 @@ export declare const UpdateAgentRequestSchema: z.ZodObject<{
     stopLossPct?: number | undefined;
     takeProfitPct?: number | undefined;
     slippageSimulation?: number | undefined;
-    analysisInterval?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | undefined;
+    analysisInterval?: "1h" | "4h" | "1d" | undefined;
     strategies?: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[] | undefined;
     maxDailyLossPct?: number | undefined;
     cooldownAfterLossMinutes?: number | undefined;
@@ -198,7 +198,7 @@ export declare const UpdateAgentRequestSchema: z.ZodObject<{
     stopLossPct?: number | undefined;
     takeProfitPct?: number | undefined;
     slippageSimulation?: number | undefined;
-    analysisInterval?: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | undefined;
+    analysisInterval?: "1h" | "4h" | "1d" | undefined;
     strategies?: ("rsi_oversold" | "ema_crossover" | "macd_signal" | "bollinger_bounce" | "combined" | "volume_breakout" | "llm_sentiment")[] | undefined;
     maxDailyLossPct?: number | undefined;
     cooldownAfterLossMinutes?: number | undefined;

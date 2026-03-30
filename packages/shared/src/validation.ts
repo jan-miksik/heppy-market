@@ -86,7 +86,7 @@ export const AgentConfigSchema = z.object({
 
   // Timeframe
   analysisInterval: z
-    .enum(['15m', '1h', '4h', '1d'])
+    .enum(['1h', '4h', '1d'])
     .default('1h'),
 
   // Strategies
@@ -150,7 +150,7 @@ export const CreateAgentRequestSchema = z.object({
   takeProfitPct: z.number().min(0.5).max(100).default(7),
   slippageSimulation: z.number().min(0).max(5).default(0.3),
   analysisInterval: z
-    .enum(['15m', '1h', '4h', '1d'])
+    .enum(['1h', '4h', '1d'])
     .default('1h'),
   strategies: z
     .array(
@@ -186,10 +186,7 @@ export const ManagerRiskParamsSchema = z.object({
 
 const FREE_MANAGER_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
   'qwen/qwen3-coder:free',
-  'stepfun/step-3.5-flash:free',
-  'minimax/minimax-m2.5:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'arcee-ai/trinity-large-preview:free',
 ] as const;

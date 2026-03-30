@@ -23,8 +23,8 @@ import { classifyApiError, logStructuredError } from '../lib/agent-errors.js';
 import { createLogger } from '../lib/logger.js';
 import { checkLlmRateLimit } from '../lib/global-rate-limiter.js';
 import { migrateAgentConfig } from '../lib/agent-config-migration.js';
-import type { AgentBehaviorConfig } from '@dex-agents/shared';
-import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@dex-agents/shared';
+import type { AgentBehaviorConfig } from '@something-in-loop/shared';
+import { AgentBehaviorConfigSchema, AgentConfigSchema } from '@something-in-loop/shared';
 import { resolveAgentPersonaMd } from './resolve-agent-persona.js';
 import type { CachedAgentRow } from './trading-agent.js';
 
@@ -778,6 +778,7 @@ export async function runAgentLoop(
         temperature: config.temperature,
         timeoutMs: 90_000,
         provider: llmProvider,
+        debugLogging: env.LOG_LLM_DEBUG === 'true',
       },
       tradeRequest,
     };
@@ -799,6 +800,7 @@ export async function runAgentLoop(
         temperature: config.temperature,
         timeoutMs: 90_000,
         provider: llmProvider,
+        debugLogging: env.LOG_LLM_DEBUG === 'true',
       },
       tradeRequest
     );

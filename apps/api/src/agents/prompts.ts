@@ -1,8 +1,8 @@
 /**
  * System prompts for trading agents and managers.
  */
-import type { AgentBehaviorConfig } from '@dex-agents/shared';
-import { BASE_AGENT_PROMPT, AGENT_ROLE_SECTION, buildBehaviorSection, buildConstraintsSection } from '@dex-agents/shared';
+import type { AgentBehaviorConfig } from '@something-in-loop/shared';
+import { BASE_AGENT_PROMPT, AGENT_ROLE_SECTION, buildBehaviorSection, buildConstraintsSection } from '@something-in-loop/shared';
 
 export { BASE_AGENT_PROMPT, AGENT_ROLE_SECTION };
 

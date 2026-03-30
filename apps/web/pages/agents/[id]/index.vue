@@ -3,7 +3,7 @@ definePageMeta({ ssr: false });
 import { parse as markedParse } from 'marked';
 import type { Trade } from '~/composables/useTrades';
 import { pollUntilFutureAlarm } from '~/utils/statusPolling';
-import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@dex-agents/shared';
+import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
 
 const route = useRoute();
 const id = computed(() => route.params.id as string);
@@ -81,6 +81,30 @@ const doStatus = ref<DoStatus | null>(null);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
 const isAnalyzing = ref(false);
+const analyzePhase = ref<'request' | 'polling' | 'refreshing'>('request');
+const analyzeElapsed = ref(0);
+let analyzeTimer: ReturnType<typeof setInterval> | null = null;
+
+function startAnalyzeTimer() {
+  analyzeElapsed.value = 0;
+  analyzeTimer = setInterval(() => { analyzeElapsed.value++; }, 1000);
+}
+function stopAnalyzeTimer() {
+  if (analyzeTimer) { clearInterval(analyzeTimer); analyzeTimer = null; }
+}
+
+const analyzeStatusText = computed(() => {
+  if (!isAnalyzing.value) return '';
+  const s = analyzeElapsed.value;
+  const elapsed = s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+  const phaseText: Record<string, string> = {
+    request: s < 5 ? 'Sending request…' : s < 15 ? 'Fetching market data…' : 'LLM reasoning…',
+    polling: 'Waiting for decision…',
+    refreshing: 'Loading results…',
+  };
+  return `${phaseText[analyzePhase.value]} (${elapsed})`;
+});
+
 const livePrices = ref<Record<string, number>>({});
 const livePricesLoading = ref(false);
 const livePricesError = ref<string | null>(null);
@@ -199,6 +223,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (countdownInterval) clearInterval(countdownInterval);
   if (cancelStatusPoll) cancelStatusPoll();
+  stopAnalyzeTimer();
 });
 
 async function loadAll() {
@@ -257,7 +282,7 @@ async function fetchLivePrices() {
 
 async function refreshDoStatus() {
   try {
-    doStatus.value = await request<DoStatus>(`/api/agents/${id.value}/status`);
+    doStatus.value = await request<DoStatus>(`/api/agents/${id.value}/status`, { fresh: true });
   } catch {
     // non-critical
   }
@@ -266,8 +291,8 @@ async function refreshDoStatus() {
 async function refreshAnalysisOutputs() {
   const [t, d, p] = await Promise.all([
     fetchAgentTrades(id.value),
-    request<{ decisions: AgentDecision[] }>(`/api/agents/${id.value}/decisions`),
-    request<{ snapshots: PerformanceSnapshot[] }>(`/api/agents/${id.value}/performance`),
+    request<{ decisions: AgentDecision[] }>(`/api/agents/${id.value}/decisions`, { fresh: true }),
+    request<{ snapshots: PerformanceSnapshot[] }>(`/api/agents/${id.value}/performance`, { fresh: true }),
   ]);
   trades.value = t;
   decisions.value = d.decisions;
@@ -281,6 +306,7 @@ async function waitForDecisionChange(previousDecisionId: string | null, timeoutM
       const res = await request<{ decisions: AgentDecision[] }>(`/api/agents/${id.value}/decisions`, {
         timeout: 30_000,
         silent: true,
+        fresh: true,
       });
       decisions.value = res.decisions;
       const latestDecisionId = res.decisions[0]?.id ?? null;
@@ -490,7 +516,9 @@ async function handleStop() {
 async function handleAnalyze() {
   if (isAnalyzing.value) return;
   isAnalyzing.value = true;
+  analyzePhase.value = 'request';
   analyzeError.value = null;
+  startAnalyzeTimer();
   const previousDecisionId = decisions.value[0]?.id ?? null;
   let pendingRun = false;
 
@@ -511,12 +539,13 @@ async function handleAnalyze() {
       }
     }
 
+    analyzePhase.value = 'polling';
     const hasNewDecision = await waitForDecisionChange(
       previousDecisionId,
       pendingRun ? ANALYZE_RESULT_WAIT_ON_PENDING_MS : ANALYZE_RESULT_WAIT_MS,
     );
 
-    // Always do one full refresh to keep all cards/charts in sync.
+    analyzePhase.value = 'refreshing';
     await refreshAnalysisOutputs();
     await Promise.all([refreshDoStatus(), fetchLivePrices()]);
 
@@ -524,7 +553,6 @@ async function handleAnalyze() {
       analyzeError.value = 'Analysis is still running in the background. No new decision yet — try again in a few seconds.';
     }
 
-    // Log the latest decision so silent failures are visible in the browser console
     const latest = decisions.value[0];
     if (latest) {
       const level = latest.confidence === 0 ? 'warn' : 'log';
@@ -535,6 +563,7 @@ async function handleAnalyze() {
     analyzeError.value = msg;
     console.error('[analyze] failed:', msg, err);
   } finally {
+    stopAnalyzeTimer();
     isAnalyzing.value = false;
   }
 }
@@ -696,8 +725,12 @@ function formatLatency(ms: number): string {
 
 <template>
   <main class="page">
-    <div v-if="loading" style="text-align: center; padding: 64px;">
-      <span class="spinner" style="width: 32px; height: 32px;" />
+    <div v-if="loading" class="page-loader">
+      <div class="page-loader-track">
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+      </div>
+      <span class="page-loader-label">Loading agent</span>
     </div>
 
     <div v-else-if="loadError" style="text-align: center; padding: 64px;">
@@ -728,13 +761,15 @@ function formatLatency(ms: number): string {
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button
-            class="btn btn-ghost btn-sm"
+            class="btn btn-sm"
+            :class="isAnalyzing ? 'btn-analyze-active' : 'btn-ghost'"
             :disabled="isAnalyzing"
             @click="handleAnalyze"
             title="Run one analysis cycle immediately — fetches market data, computes indicators, calls LLM for decision"
           >
-            <span v-if="isAnalyzing" class="spinner" style="width: 14px; height: 14px; margin-right: 4px;" />
-            {{ isAnalyzing ? 'Fetching data & reasoning…' : '⚡ Run Analysis' }}
+            <span v-if="isAnalyzing" class="analyze-pulse" />
+            <span v-if="isAnalyzing" class="analyze-status-text">{{ analyzeStatusText }}</span>
+            <template v-else>⚡ Run Analysis</template>
           </button>
           <NuxtLink :to="`/agents/${id}/edit`" class="btn btn-ghost btn-sm">✎ Edit</NuxtLink>
           <button v-if="agent.status !== 'running'" class="btn btn-success" @click="handleStart">
@@ -801,16 +836,22 @@ function formatLatency(ms: number): string {
           </div>
           <div class="stat-change">{{ closedTrades.length }} closed trades</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" :class="{ 'stat-card-active': isAnalyzing }" style="cursor: pointer;" @click="handleAnalyze">
           <div class="stat-label">Next Analysis</div>
           <div
             class="stat-value mono"
             :class="[
-              agent.status === 'running' ? 'positive' : 'neutral',
-              { 'next-analysis-imminent': isNextAnalysisImminent },
+              isAnalyzing ? 'accent' : agent.status === 'running' ? 'positive' : 'neutral',
+              { 'next-analysis-imminent': !isAnalyzing && isNextAnalysisImminent },
             ]"
           >
-            {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : '—' }}
+            <template v-if="isAnalyzing">
+              <span class="analyze-pulse" style="width: 6px; height: 6px;" />
+              running now
+            </template>
+            <template v-else>
+              {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : '—' }}
+            </template>
           </div>
           <div class="stat-change">{{ openTrades.length }} of {{ agent.config.maxOpenPositions }} positions open</div>
         </div>
@@ -823,7 +864,7 @@ function formatLatency(ms: number): string {
             {{ totalTokensUsed.toLocaleString('en') }} total
           </span>
           <span class="tokens-summary-split">
-            ({{ totalPromptTokens.toLocaleString('en') }} in / {{ totalCompletionTokens.toLocaleString('en') }} out)
+            ({{ totalPromptTokens.toLocaleString('en') }} ↑ / {{ totalCompletionTokens.toLocaleString('en') }} ↓)
           </span>
           <span class="tokens-summary-scope">· All analysis cycles</span>
         </div>
@@ -1011,11 +1052,11 @@ function formatLatency(ms: number): string {
                     class="mono"
                     style="font-size: 12px; font-weight: 600;"
                     :class="[
-                      agent.status === 'running' ? 'positive' : 'neutral',
-                      { 'next-analysis-imminent': isNextAnalysisImminent },
+                      isAnalyzing ? 'accent' : agent.status === 'running' ? 'positive' : 'neutral',
+                      { 'next-analysis-imminent': !isAnalyzing && isNextAnalysisImminent },
                     ]"
                   >
-                    {{ agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : 'stopped' }}
+                    {{ isAnalyzing ? 'running now' : agent.status === 'running' ? formatCountdown(secondsUntilNextAction) : 'stopped' }}
                   </span>
                 </div>
               </div>
@@ -1234,6 +1275,51 @@ function formatLatency(ms: number): string {
 </template>
 
 <style scoped>
+/* ── Analyze button active state ────────────────────────────────── */
+
+.btn-analyze-active {
+  background: var(--surface-2, #1a1a2e);
+  border: 1px solid var(--accent, #6366f1);
+  color: var(--text, #e2e8f0);
+  cursor: wait;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.analyze-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+  animation: analyze-blink 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.analyze-status-text {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+@keyframes analyze-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Stat card active (during analysis) ─────────────────────────── */
+
+.stat-card-active {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+}
+
+.accent {
+  color: var(--accent, #6366f1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* ── Analysis Log ───────────────────────────────────────────────── */
 
 .chat-feed {
@@ -1400,7 +1486,7 @@ span.prompt-pill:hover {
 }
 
 .chat-reasoning {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text);
 }

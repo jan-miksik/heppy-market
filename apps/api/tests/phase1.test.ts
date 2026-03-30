@@ -92,7 +92,7 @@ describe('Phase 1: Agent Config Validation', async () => {
       stopLossPct: 3,
       takeProfitPct: 6,
       strategies: ['rsi_oversold', 'ema_crossover'],
-      analysisInterval: '15m',
+      analysisInterval: '1h',
     });
     expect(result.success).toBe(true);
   });

@@ -1,6 +1,6 @@
-## Heppy Market – Project Overview
+## Something in loop – Project Overview
 
-**Heppy Market** (monorepo name `dex-trading-agents`) is an AI‑assisted paper‑trading platform for DEXes on the Base chain.
+**Something in loop** (monorepo name `something-in-loop`) is an AI‑assisted paper‑trading platform for DEXes on the Base chain.
 
 - **Frontend (`apps/web`)**
   - **Nuxt 4 SPA** (no SSR) with Vue 3 `<script setup>` and TypeScript.
@@ -41,7 +41,7 @@ The API Worker is **internal-only** (no public route); the browser only talks to
   - `compatibilityDate: '2026-02-17'`
 - Deploy script from repository root (`package.json`):
   - `npm run deploy:web` → builds the web app and runs
-    `npx wrangler pages deploy dist --project-name=heppy-market`.
+    `npx wrangler pages deploy dist --project-name=something-in-loop`.
 - **Pages Functions**:
   - `apps/web/server/api/[...path].ts` is a Nitro/Pages Function that:
     - Uses the **Cloudflare Service Binding** `API` when deployed on Pages (calls `cfEnv.API.fetch()`).
@@ -54,7 +54,7 @@ The API Worker is **internal-only** (no public route); the browser only talks to
   - Framework: **Hono** for routing and middleware.
   - Implements all `/api/*` endpoints (health, auth, agents, trades, managers, profiles, models list, etc.).
 - Wrangler configuration in `apps/api/wrangler.toml`:
-  - `name = "dex-trading-agents-api"`
+  - `name = "something-in-loop-api"`
   - `main = "dist/worker.js"`
   - `compatibility_date = "2026-02-12"`
   - `compatibility_flags = ["nodejs_compat"]`
@@ -106,7 +106,7 @@ The API Worker is **internal-only** (no public route); the browser only talks to
 ### 7. Service Bindings (internal-only API)
 
 - Service binding from Pages → Worker (see `docs/DEPLOY.md` and `apps/web/wrangler.toml`):
-  - `[[services]] binding = "API"`, `service = "dex-trading-agents-api"`.
+  - `[[services]] binding = "API"`, `service = "something-in-loop-api"`.
 - Pages Function (`apps/web/server/api/[...path].ts`) expects `event.context.cloudflare.env.API`:
   - When present (production on Pages), requests are routed internally:
     - Browser → Pages → Pages Function → `API.fetch` → Worker → D1/KV/DO.

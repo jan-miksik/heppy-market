@@ -4,7 +4,7 @@ import { eq, desc, inArray, sql } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agentManagers, agentManagerLogs, agents, trades, agentDecisions, performanceSnapshots } from '../db/schema.js';
-import { CreateManagerRequestSchema, UpdateManagerRequestSchema, UpdatePersonaSchema, getManagerPersonaTemplate } from '@dex-agents/shared';
+import { CreateManagerRequestSchema, UpdateManagerRequestSchema, UpdatePersonaSchema, getManagerPersonaTemplate } from '@something-in-loop/shared';
 import { validateBody } from '../lib/validation.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { normalizeManagerDecisionInterval, syncRunningManagerDecisionInterval } from '../lib/manager-interval-sync.js';

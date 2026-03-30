@@ -62,7 +62,7 @@ const defaultOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
-  'https://dex-trading-agents.pages.dev',
+  'https://something-in-loop.pages.dev',
 ];
 app.use(
   '*',
@@ -114,11 +114,9 @@ app.get('/api/models', async (c) => {
   if (!c.env.OPENROUTER_API_KEY) {
     return c.json({
       models: [
-        { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nvidia Nemotron 120B Super (free)', context: 131072 },
-        { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nvidia Nemotron Nano 30B (free)', context: 131072 },
+        { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nvidia Nemotron 120B Super (free)', context: 262144 },
         { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B (free)', context: 262000 },
-        { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash (free)', context: 256000 },
-        { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5 (free)', context: 196608 },
+        { id: 'nvidia/nemotron-nano-9b-v2:free', name: 'Nvidia Nemotron 9B (free)', context: 128000 },
         { id: 'arcee-ai/trinity-large-preview:free', name: 'Trinity Large Preview (free)', context: 131072 },
         { id: 'arcee-ai/trinity-mini:free', name: 'Trinity Mini (free)', context: 131072 },
         { id: 'nousresearch/hermes-3-llama-3.1-405b:free', name: 'Hermes 3 Llama 405B (free)', context: 131072 },
@@ -141,7 +139,7 @@ app.get('/api/models', async (c) => {
 // Root catch-all
 app.get('/', (c) =>
   c.json({
-    name: 'Heppy Market API',
+    name: 'Something in loop API',
     version: '0.1.0',
     docs: '/api/health',
     routes: [

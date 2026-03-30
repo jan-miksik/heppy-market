@@ -57,7 +57,7 @@ After `wrangler login`, you should see a success message. If a command fails wit
 From the repo root, build the shared package so the API can be built and deployed:
 
 ```bash
-npm run build --workspace=@dex-agents/shared
+npm run build --workspace=@something-in-loop/shared
 ```
 
 (Turbo also runs this automatically when you run `npm run build` from the root.)
@@ -136,16 +136,16 @@ The repo already has `apps/web/wrangler.toml` with:
 ```toml
 [[services]]
 binding = "API"
-service = "dex-trading-agents-api"
+service = "something-in-loop-api"
 ```
 
-If you deploy with `wrangler pages deploy dist` from `apps/web`, this binding is used. Ensure the Worker name `dex-trading-agents-api` matches `apps/api/wrangler.toml`.
+If you deploy with `wrangler pages deploy dist` from `apps/web`, this binding is used. Ensure the Worker name `something-in-loop-api` matches `apps/api/wrangler.toml`.
 
 **Option 2 — Cloudflare Dashboard (Git-based Pages)**  
 1. Workers & Pages → your Pages project → **Settings** → **Functions**.
 2. **Service bindings** → **Add**.
 3. **Variable name:** `API`  
-4. **Service:** choose `dex-trading-agents-api`.  
+4. **Service:** choose `something-in-loop-api`.  
 5. Save and redeploy the Pages project.
 
 ---
@@ -174,17 +174,17 @@ From repo root:
 
 ```bash
 # Build the web app (from root so workspaces resolve)
-npm run build --workspace=@dex-agents/web
+npm run build --workspace=@something-in-loop/web
 ```
 
 Then deploy the built output. Nuxt outputs to `apps/web/dist`. Use the [Pages direct upload](https://developers.cloudflare.com/pages/get-started/direct-upload/) flow, or:
 
 ```bash
 cd apps/web
-npx wrangler pages deploy dist --project-name=dex-trading-agents
+npx wrangler pages deploy dist --project-name=something-in-loop
 ```
 
-(Replace `dex-trading-agents` with your Pages project name if different.)
+(Replace `something-in-loop` with your Pages project name if different.)
 
 After the first deploy, add the **Service Binding** in the dashboard (step 1.6) if not using `apps/web/wrangler.toml`. You do not need `API_BASE_URL` in production when using the internal API.
 
@@ -204,7 +204,7 @@ After the first deploy, add the **Service Binding** in the dashboard (step 1.6) 
 | Step              | Command / action |
 |-------------------|-------------------|
 | **Wrangler login**| `wrangler login` (once; opens browser) |
-| Build shared      | `npm run build --workspace=@dex-agents/shared` (from repo root) |
+| Build shared      | `npm run build --workspace=@something-in-loop/shared` (from repo root) |
 | Create D1         | `wrangler d1 create trading-agents` (in `apps/api`) |
 | Create KV         | `wrangler kv namespace create "CACHE"` (in `apps/api`) |
 | Edit wrangler.toml| Set production `database_id` and KV `id` under `[env.production]` |
@@ -230,7 +230,7 @@ Convenience scripts are in the root `package.json`:
   Run `wrangler login` again and complete the browser flow. Session can expire.
 
 - **API deploy fails with "rootDir" or missing shared types**  
-  Build the shared package first: `npm run build --workspace=@dex-agents/shared`, then deploy the API.
+  Build the shared package first: `npm run build --workspace=@something-in-loop/shared`, then deploy the API.
 
 - **D1 migrations prompt about creating remote DB**  
   Use the same `database_name` as in your wrangler.toml and the `database_id` you copied from `wrangler d1 create`.

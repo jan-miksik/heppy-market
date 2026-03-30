@@ -3,7 +3,7 @@ import type { Env } from '../types/env.js';
 import { runManagerLoop } from './manager-loop.js';
 
 const VALID_DECISION_INTERVALS = new Set(['1h', '4h', '1d']);
-const VALID_SCHEDULER_INTERVALS = new Set(['15m', '1h', '4h', '1d']);
+const VALID_SCHEDULER_INTERVALS = new Set(['1h', '4h', '1d']);
 
 function normalizeDecisionInterval(interval: unknown, fallback = '1h'): string {
   if (typeof interval === 'string') {
@@ -167,7 +167,7 @@ export class AgentManagerDO extends DurableObject<Env> {
         return Response.json({ error: 'agentId and interval are required' }, { status: 400 });
       }
       if (!VALID_SCHEDULER_INTERVALS.has(body.interval)) {
-        return Response.json({ error: 'interval must be one of: 15m, 1h, 4h, 1d' }, { status: 400 });
+        return Response.json({ error: 'interval must be one of: 1h, 4h, 1d' }, { status: 400 });
       }
       const registry = await loadSchedulerAgents(this.ctx.storage);
       registry[body.agentId] = body.interval;

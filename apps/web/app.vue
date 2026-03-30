@@ -24,7 +24,7 @@ function truncate(addr: string): string {
     <nav class="navbar">
       <NuxtLink to="/agents" class="navbar-brand">
         <span class="dot" />
-        Heppy Market
+        Something in loop
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="navbar-nav">
@@ -79,7 +79,18 @@ function truncate(addr: string): string {
     <main class="app-main">
       <NuxtPage />
       <div v-if="!authResolved" class="app-loading-overlay" aria-live="polite" aria-busy="true">
-        <span class="spinner" />
+        <div class="init-loader">
+          <div class="init-beacon" />
+          <div class="init-bars">
+            <span class="init-bar" />
+            <span class="init-bar" />
+            <span class="init-bar" />
+            <span class="init-bar" />
+            <span class="init-bar" />
+          </div>
+          <span class="init-label">Initializing</span>
+          <span class="init-sub">restoring session · checking auth</span>
+        </div>
       </div>
     </main>
   </div>

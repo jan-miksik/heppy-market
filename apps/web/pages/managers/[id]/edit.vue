@@ -19,7 +19,13 @@
     </div>
 
     <div v-if="pending" class="edit-page__loading">
-      <span class="spinner" />
+      <div class="page-loader">
+        <div class="page-loader-track">
+          <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+          <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        </div>
+        <span class="page-loader-label">Loading config</span>
+      </div>
     </div>
     <template v-else-if="manager">
       <div v-if="saveError" class="edit-error">{{ saveError }}</div>

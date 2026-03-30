@@ -1,8 +1,8 @@
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { TradeDecisionSchema } from '@dex-agents/shared';
-import type { TradeDecision, AgentBehaviorConfig } from '@dex-agents/shared';
+import { TradeDecisionSchema } from '@something-in-loop/shared';
+import type { TradeDecision, AgentBehaviorConfig } from '@something-in-loop/shared';
 import { sleep } from '../lib/utils.js';
 import { classifyLlmError } from '../lib/agent-errors.js';
 import { BASE_AGENT_PROMPT, buildAnalysisPrompt } from '../agents/prompts.js';
@@ -33,6 +33,8 @@ export interface LLMRouterConfig {
   timeoutMs?: number;
   /** Override the provider. Defaults to 'openrouter'. Use 'anthropic' for Claude models with a sk-ant-* key. */
   provider?: 'openrouter' | 'anthropic';
+  /** When true, logs full prompt text for debugging (never enable in production). */
+  debugLogging?: boolean;
 }
 
 export interface TradeDecisionRequest {
@@ -154,7 +156,6 @@ export async function getTradeDecision(
   // Verified working as of 2026-02-24.
   const EMERGENCY_FREE_MODELS = [
     'qwen/qwen3-coder:free',
-    'minimax/minimax-m2.5:free',
     'arcee-ai/trinity-large-preview:free',
     'google/gemma-3-27b-it:free',
     'google/gemma-3-12b-it:free',
@@ -178,6 +179,7 @@ export async function getTradeDecision(
   let lastError: unknown;
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  const debugLogging = config.debugLogging === true;
 
   /** Whether an error is transient enough to warrant a per-model retry */
   function isTransientError(err: unknown): boolean {
@@ -207,12 +209,17 @@ export async function getTradeDecision(
           : openrouter!(modelId);
 
         if (modelAttempt === 0) {
-          console.log('[llm-router] === PROMPT SENT TO LLM ===');
           console.log('[llm-router] Model:', modelId);
           console.log('[llm-router] Prompt length (chars):', fullPrompt.length);
-          console.log('[llm-router] User prompt preview:');
-          console.log(previewPromptForLogs(userPrompt));
-          console.log('[llm-router] === END PROMPT ===');
+          if (debugLogging) {
+            console.log('[llm-router] === PROMPT SENT TO LLM ===');
+            console.log('[llm-router] --- USER PROMPT ---');
+            console.log(userPrompt);
+            console.log('[llm-router] === END PROMPT ===');
+          } else {
+            console.log('[llm-router] User prompt preview:');
+            console.log(previewPromptForLogs(userPrompt));
+          }
         } else {
           console.log(`[llm-router] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`);
         }
@@ -312,7 +319,7 @@ export async function listFreeModels(
   const response = await fetch('https://openrouter.ai/api/v1/models', {
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://dex-trading-agents.dev',
+      'HTTP-Referer': 'https://something-in-loop.dev',
     },
   });
 

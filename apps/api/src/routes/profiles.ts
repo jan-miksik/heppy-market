@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { behaviorProfiles } from '../db/schema.js';
-import { CreateBehaviorProfileSchema, AGENT_PROFILES, MANAGER_PROFILES, getAgentProfile, isAgentProfileId } from '@dex-agents/shared';
+import { CreateBehaviorProfileSchema, AGENT_PROFILES, MANAGER_PROFILES, getAgentProfile, isAgentProfileId } from '@something-in-loop/shared';
 import { validateBody } from '../lib/validation.js';
 import { generateId, nowIso } from '../lib/utils.js';
 

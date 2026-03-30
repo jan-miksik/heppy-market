@@ -30,7 +30,7 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^3.0.58
         version: 3.0.58(zod@3.25.76)
-      '@dex-agents/shared':
+      '@something-in-loop/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@openrouter/ai-sdk-provider':
@@ -79,7 +79,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@dex-agents/shared':
+      '@something-in-loop/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@reown/appkit':

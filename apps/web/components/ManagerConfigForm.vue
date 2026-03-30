@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AGENT_PROFILES, ENTITY_NAME_MAX_CHARS, SUPPORTED_BASE_PAIRS, getManagerPersonaTemplate } from '@dex-agents/shared';
+import { AGENT_PROFILES, ENTITY_NAME_MAX_CHARS, SUPPORTED_BASE_PAIRS, getManagerPersonaTemplate } from '@something-in-loop/shared';
 import { parse as markedParse } from 'marked';
 import type { ProfileItem } from '~/composables/useProfiles';
 import { useAuth } from '~/composables/useAuth';
@@ -50,11 +50,8 @@ type ModelItem = {
 };
 
 const FREE_MODELS: ModelItem[] = [
-  { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 120B Super', ctx: '131K', price: '$0/$0', tier: 'free', desc: 'default free' },
-  { id: 'nvidia/nemotron-3-nano-30b-a3b:free', label: 'Nemotron 30B', ctx: '131K', price: '$0/$0', tier: 'free' },
+  { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'Nemotron 120B Super', ctx: '262K', price: '$0/$0', tier: 'free', desc: 'default free' },
   { id: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B', ctx: '262K', price: '$0/$0', tier: 'free', desc: 'strong reasoning' },
-  { id: 'stepfun/step-3.5-flash:free', label: 'Step 3.5 Flash', ctx: '256K', price: '$0/$0', tier: 'free' },
-  { id: 'minimax/minimax-m2.5:free', label: 'MiniMax M2.5', ctx: '197K', price: '$0/$0', tier: 'free' },
   { id: 'nvidia/nemotron-nano-9b-v2:free', label: 'Nemotron 9B', ctx: '128K', price: '$0/$0', tier: 'free' },
   { id: 'arcee-ai/trinity-large-preview:free', label: 'Trinity-Large', ctx: '131K', price: '$0/$0', tier: 'free' },
 ] as const;
@@ -63,8 +60,8 @@ const PAID_MODELS = [
   { id: 'google/gemini-3.1-pro-preview',  label: 'Gemini 3.1 Pro',        ctx: '2M',   price: '$2/$12' },
   { id: 'anthropic/claude-sonnet-4.6',    label: 'Claude Sonnet 4.6',     ctx: '1M',   price: '$3/$15' },
   { id: 'google/gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite', ctx: '1M', price: '$0.25/$1.50' },
-  { id: 'openai/gpt-5.4',                 label: 'GPT-5.4',               ctx: '1M',   price: '$2.50/$20' },
-  { id: 'deepseek/deepseek-v3.2',         label: 'DeepSeek V3.2',         ctx: '128K', price: '$0.25/$0.38' },
+  { id: 'openai/gpt-5.4',                 label: 'GPT-5.4',               ctx: '1M',   price: '$2.50/$15' },
+  { id: 'deepseek/deepseek-v3.2',         label: 'DeepSeek V3.2',         ctx: '164K', price: '$0.26/$0.38' },
   { id: 'anthropic/claude-opus-4.6',      label: 'Claude Opus 4.6',       ctx: '200K', price: '$5/$25' },
   { id: 'minimax/minimax-m2.5',           label: 'MiniMax M2.5',          ctx: '196K', price: '$0.20/$1.20' },
   { id: 'mistralai/mistral-small-2603',   label: 'Mistral Small 2603',    ctx: '262K', price: '$0.15/$0.60' },
@@ -264,10 +261,7 @@ function restorePersona() {
 const PAID_MODEL_NAMES = Object.fromEntries(PAID_MODELS.map((p) => [p.id, p.label]));
 const MODEL_SHORT_NAMES: Record<string, string> = {
   'nvidia/nemotron-3-super-120b-a12b:free': 'Nemotron-120B',
-  'nvidia/nemotron-3-nano-30b-a3b:free': 'Nemotron-30B',
   'qwen/qwen3-coder:free': 'Qwen3-Coder',
-  'stepfun/step-3.5-flash:free': 'Step-3.5',
-  'minimax/minimax-m2.5:free': 'MiniMax-M2.5',
   'nvidia/nemotron-nano-9b-v2:free': 'Nemotron-9B',
   'arcee-ai/trinity-large-preview:free': 'Trinity-Large',
   'minimax/minimax-m2.5': 'MiniMax M2.5',
@@ -373,10 +367,7 @@ function renderMarkdown(text: string): string {
 const DEFAULT_FREE_AGENT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 const FREE_AGENT_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
   'qwen/qwen3-coder:free',
-  'stepfun/step-3.5-flash:free',
-  'minimax/minimax-m2.5:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'arcee-ai/trinity-large-preview:free',
 ] as const;
@@ -405,11 +396,10 @@ ${pairsAllowlist}
 
 ## Allowed Agent Analysis Intervals
 When creating or modifying agents, "analysisInterval" MUST be one of:
-- "15m"
 - "1h"
 - "4h"
 - "1d"
-Do not use unsupported legacy values like "1m", "5m", "30m", or numeric seconds/minutes.
+Do not use unsupported legacy values like "1m", "5m", "15m", "30m", or numeric seconds/minutes.
 
 ## Available LLM Models For Agents
 Use only these llmModel IDs when creating or modifying agents:
@@ -428,10 +418,10 @@ ${profileAllowlist}
 Evaluate each agent's performance and decide what actions to take this cycle.
 
 Valid actions:
-- "create_agent": spawn a new agent. Params: name, pairs, llmModel, temperature, analysisInterval (15m|1h|4h|1d), strategies, paperBalance; optional: profileId (from the list above — sets the agent's persona), personaMd (custom markdown persona, overrides profileId), stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, maxDailyLossPct, cooldownAfterLossMinutes. Choose risk parameters that reflect your own risk tolerance.
+- "create_agent": spawn a new agent. Params: name, pairs, llmModel, temperature, analysisInterval (1h|4h|1d), strategies, paperBalance; optional: profileId (from the list above — sets the agent's persona), personaMd (custom markdown persona, overrides profileId), stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, maxDailyLossPct, cooldownAfterLossMinutes. Choose risk parameters that reflect your own risk tolerance.
 - "start_agent": start a stopped or paused agent (provide agentId)
 - "pause_agent": pause an underperforming agent (provide agentId)
-- "modify_agent": change agent parameters (provide agentId + params). Params can include: name, pairs, llmModel, temperature, analysisInterval (15m|1h|4h|1d), strategies, paperBalance, stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, personaMd (markdown), profileId, etc.
+- "modify_agent": change agent parameters (provide agentId + params). Params can include: name, pairs, llmModel, temperature, analysisInterval (1h|4h|1d), strategies, paperBalance, stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, personaMd (markdown), profileId, etc.
 - "terminate_agent": permanently stop an agent (provide agentId)
 - "hold": no action needed (provide agentId, or omit for portfolio-level hold)
 

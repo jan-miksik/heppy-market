@@ -1,7 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ ssr: false });
 import { parse as markedParse } from 'marked';
-import { buildBehaviorSection, buildConstraintsSection, BASE_AGENT_PROMPT, buildJsonSchemaInstruction, AGENT_ROLE_SECTION } from '@dex-agents/shared';
+import { buildBehaviorSection, buildConstraintsSection, BASE_AGENT_PROMPT, buildJsonSchemaInstruction, AGENT_ROLE_SECTION } from '@something-in-loop/shared';
 import type { CreateAgentPayload } from '~/composables/useAgents';
 import AgentConfigForm from '~/components/AgentConfigForm.vue';
 

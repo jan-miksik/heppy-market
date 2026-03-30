@@ -45,7 +45,7 @@ function truncate(addr: string): string {
       <!-- Brand -->
       <div class="connect-brand">
         <span class="dot" />
-        <span class="brand-name">Heppy Market</span>
+        <span class="brand-name">Something in loop</span>
         <span class="beta-badge">Beta</span>
       </div>
 
@@ -61,8 +61,10 @@ function truncate(addr: string): string {
       <!-- Loading: session check in progress -->
       <Transition name="fade">
         <div v-if="!authResolved" class="connect-session-loading">
-          <span class="spinner spinner-sm" />
-          <span>Restoring session…</span>
+          <div class="connect-loader-dots">
+            <span /><span /><span />
+          </div>
+          <span>Restoring session</span>
         </div>
       </Transition>
 
@@ -192,16 +194,28 @@ function truncate(addr: string): string {
 .connect-session-loading {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
+  gap: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-muted);
+  animation: label-blink 1.4s steps(1) infinite;
 }
 
-.spinner-sm {
-  width: 14px;
-  height: 14px;
-  border-width: 2px;
+.connect-loader-dots {
+  display: flex;
+  gap: 3px;
 }
+.connect-loader-dots span {
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  animation: block-scan 1.6s ease-in-out infinite;
+}
+.connect-loader-dots span:nth-child(1) { animation-delay: 0s; }
+.connect-loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+.connect-loader-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 .step-label {
   font-size: 0.9rem;

@@ -14,8 +14,12 @@
       </div>
     </div>
 
-    <div v-if="pending" style="text-align: center; padding: 48px;">
-      <span class="spinner" />
+    <div v-if="pending" class="page-loader">
+      <div class="page-loader-track">
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+      </div>
+      <span class="page-loader-label">Loading managers</span>
     </div>
 
     <div v-else-if="error" class="alert alert-error">Failed to load managers.</div>
@@ -73,7 +77,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { getManagerProfile, DEFAULT_MANAGER_PROFILE_ID } from '@dex-agents/shared';
+import { getManagerProfile, DEFAULT_MANAGER_PROFILE_ID } from '@something-in-loop/shared';
 
 definePageMeta({ ssr: false });
 

@@ -14,7 +14,7 @@ import {
   getAgentPersonaTemplate,
   getDefaultAgentPersona,
   resolveAgentProfileId,
-} from '@dex-agents/shared';
+} from '@something-in-loop/shared';
 import { validateBody, ValidationError } from '../lib/validation.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { normalizePairsForDex } from '../lib/pairs.js';

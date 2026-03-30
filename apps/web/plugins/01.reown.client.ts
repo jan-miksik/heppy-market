@@ -40,9 +40,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     networks: [base],
     defaultNetwork: base,
     metadata: {
-      name: 'Heppy Market',
+      name: 'Something in loop',
       description: 'AI-powered paper trading agents on Base chain DEXes',
-      url: typeof window !== 'undefined' ? window.location.origin : 'https://heppy.market',
+      url: typeof window !== 'undefined' ? window.location.origin : 'https://something-in-loop.market',
       icons: [],
     },
     features: {

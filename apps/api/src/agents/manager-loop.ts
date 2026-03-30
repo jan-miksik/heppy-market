@@ -17,8 +17,8 @@ import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { normalizePairsForDex } from '../lib/pairs.js';
 import { normalizeManagerDecisionInterval } from '../lib/manager-interval-sync.js';
-import type { ManagerConfig } from '@dex-agents/shared';
-import { filterSupportedBasePairs, SUPPORTED_BASE_PAIRS, getAgentPersonaTemplate, getDefaultAgentPersona, AGENT_PROFILES } from '@dex-agents/shared';
+import type { ManagerConfig } from '@something-in-loop/shared';
+import { filterSupportedBasePairs, SUPPORTED_BASE_PAIRS, getAgentPersonaTemplate, getDefaultAgentPersona, AGENT_PROFILES } from '@something-in-loop/shared';
 
 const MANAGER_LLM_TIMEOUT_MS = 60_000; // 60s — generous for manager's larger prompt
 
@@ -88,10 +88,7 @@ const DEFAULT_FREE_AGENT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 
 const FREE_AGENT_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
   'qwen/qwen3-coder:free',
-  'stepfun/step-3.5-flash:free',
-  'minimax/minimax-m2.5:free',
   'nvidia/nemotron-nano-9b-v2:free',
   'arcee-ai/trinity-large-preview:free',
 ];
@@ -119,11 +116,11 @@ function normaliseAgentModel(requested: unknown, allowedModels: Set<string>): st
   return allowedModels.has(requested) ? requested : fallback;
 }
 
-const VALID_AGENT_ANALYSIS_INTERVALS = new Set(['15m', '1h', '4h', '1d']);
+const VALID_AGENT_ANALYSIS_INTERVALS = new Set(['1h', '4h', '1d']);
 const LEGACY_AGENT_INTERVAL_MAP: Record<string, string> = {
-  '60': '1m',
-  '300': '5m',
-  '900': '15m',
+  '60': '1h',
+  '300': '1h',
+  '900': '1h',
   '3600': '1h',
   '14400': '4h',
   '86400': '1d',
@@ -139,7 +136,7 @@ function normalizeRawAnalysisInterval(value: unknown): string | null {
   if (!interval) return null;
 
   if (LEGACY_AGENT_INTERVAL_MAP[interval]) interval = LEGACY_AGENT_INTERVAL_MAP[interval];
-  if (interval === '1m' || interval === '5m') interval = '15m';
+  if (interval === '1m' || interval === '5m' || interval === '15m') interval = '1h';
 
   return VALID_AGENT_ANALYSIS_INTERVALS.has(interval) ? interval : null;
 }
@@ -373,11 +370,10 @@ ${SUPPORTED_BASE_PAIRS.map((p: string) => `- "${p}"`).join('\n')}
 
 ## Allowed Agent Analysis Intervals
 When creating or modifying agents, "analysisInterval" MUST be one of:
-- "15m"
 - "1h"
 - "4h"
 - "1d"
-Do not use unsupported legacy values like "1m", "5m", "30m", or numeric seconds/minutes.
+Do not use unsupported legacy values like "1m", "5m", "15m", "30m", or numeric seconds/minutes.
 
 ## Available LLM Models For Agents
 Use only these llmModel IDs when creating or modifying agents:
@@ -396,10 +392,10 @@ ${AGENT_PROFILES.map((p) => `- "${p.id}" ${p.emoji} ${p.name}: ${p.description}`
 Evaluate each agent's performance and decide what actions to take this cycle.
 
 Valid actions:
-- "create_agent": spawn a new agent. Params: name, pairs, llmModel, temperature, analysisInterval (15m|1h|4h|1d), strategies, paperBalance; optional: profileId (from the list above — sets the agent's persona), personaMd (custom markdown persona, overrides profileId), stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, maxDailyLossPct, cooldownAfterLossMinutes. Choose risk parameters that reflect your own risk tolerance.
+- "create_agent": spawn a new agent. Params: name, pairs, llmModel, temperature, analysisInterval (1h|4h|1d), strategies, paperBalance; optional: profileId (from the list above — sets the agent's persona), personaMd (custom markdown persona, overrides profileId), stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, maxDailyLossPct, cooldownAfterLossMinutes. Choose risk parameters that reflect your own risk tolerance.
 - "start_agent": start a stopped or paused agent (provide agentId)
 - "pause_agent": pause an underperforming agent (provide agentId)
-- "modify_agent": change agent parameters (provide agentId + params). Params can include: name, pairs, llmModel, temperature, analysisInterval (15m|1h|4h|1d), strategies, paperBalance, stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, personaMd (markdown), profileId, etc.
+- "modify_agent": change agent parameters (provide agentId + params). Params can include: name, pairs, llmModel, temperature, analysisInterval (1h|4h|1d), strategies, paperBalance, stopLossPct, takeProfitPct, maxPositionSizePct, maxOpenPositions, personaMd (markdown), profileId, etc.
 - "terminate_agent": permanently stop an agent (provide agentId)
 - "hold": no action needed (provide agentId, or omit for portfolio-level hold)
 

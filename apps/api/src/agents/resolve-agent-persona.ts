@@ -1,4 +1,4 @@
-import { getAgentPersonaTemplate, getDefaultAgentPersona } from '@dex-agents/shared';
+import { getAgentPersonaTemplate, getDefaultAgentPersona } from '@something-in-loop/shared';
 
 function nonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;

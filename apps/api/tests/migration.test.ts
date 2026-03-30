@@ -76,9 +76,9 @@ describe('migrateAgentConfig — analysisInterval', () => {
     expect(result.analysisInterval).toBe('1h');
   });
 
-  it('maps "900" to "15m"', () => {
+  it('maps "900" to "1h"', () => {
     const result = migrateAgentConfig({ analysisInterval: '900' });
-    expect(result.analysisInterval).toBe('15m');
+    expect(result.analysisInterval).toBe('1h');
   });
 
   it('maps "14400" to "4h"', () => {
@@ -91,14 +91,19 @@ describe('migrateAgentConfig — analysisInterval', () => {
     expect(result.analysisInterval).toBe('1d');
   });
 
-  it('upgrades removed "1m" interval to "15m"', () => {
+  it('upgrades removed "1m" interval to "1h"', () => {
     const result = migrateAgentConfig({ analysisInterval: '1m' });
-    expect(result.analysisInterval).toBe('15m');
+    expect(result.analysisInterval).toBe('1h');
   });
 
-  it('upgrades removed "5m" interval to "15m"', () => {
+  it('upgrades removed "5m" interval to "1h"', () => {
     const result = migrateAgentConfig({ analysisInterval: '5m' });
-    expect(result.analysisInterval).toBe('15m');
+    expect(result.analysisInterval).toBe('1h');
+  });
+
+  it('upgrades removed "15m" interval to "1h"', () => {
+    const result = migrateAgentConfig({ analysisInterval: '15m' });
+    expect(result.analysisInterval).toBe('1h');
   });
 
   it('defaults unknown interval to "1h"', () => {

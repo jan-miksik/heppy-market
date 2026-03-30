@@ -9,9 +9,9 @@ import { PaperEngine } from '../src/services/paper-engine.js';
 /** Mirror of intervalToMs from agent-loop.ts for testing */
 function intervalToMs(interval: string): number {
   switch (interval) {
-    case '1m':  return 60_000;
-    case '5m':  return 5 * 60_000;
-    case '15m': return 15 * 60_000;
+    case '1m':
+    case '5m':
+    case '15m':
     case '1h':  return 60 * 60_000;
     case '4h':  return 4 * 60 * 60_000;
     case '1d':  return 24 * 60 * 60_000;
@@ -21,9 +21,9 @@ function intervalToMs(interval: string): number {
 
 describe('Phase 4: Interval scheduling', () => {
   it('converts interval strings to milliseconds', () => {
-    expect(intervalToMs('1m')).toBe(60_000);
-    expect(intervalToMs('5m')).toBe(300_000);
-    expect(intervalToMs('15m')).toBe(900_000);
+    expect(intervalToMs('1m')).toBe(3_600_000);
+    expect(intervalToMs('5m')).toBe(3_600_000);
+    expect(intervalToMs('15m')).toBe(3_600_000);
     expect(intervalToMs('1h')).toBe(3_600_000);
     expect(intervalToMs('4h')).toBe(14_400_000);
     expect(intervalToMs('1d')).toBe(86_400_000);

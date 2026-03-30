@@ -386,9 +386,8 @@ const ALLOWED_SIWE_DOMAINS = [
   'localhost:3000',
   'localhost:3001',
   'localhost:3002',
-  'heppy.market',
-  'heppy-market.pages.dev',
-  'dex-trading-agents.pages.dev',
+  'something-in-loop.market',
+  'something-in-loop.pages.dev',
 ];
 
 export interface VerifySiweOptions {

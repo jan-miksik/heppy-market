@@ -1,5 +1,5 @@
   ---                                                                                                                          
-  Critical Infrastructure Audit — Heppy Market                                                                                 
+  Critical Infrastructure Audit — Something in loop                                                                                 
                                                                                                                                
   ---                                                                                                                          
   🔴 HIGH RISK Issues (must fix before scale)                                                                                  

@@ -10,19 +10,19 @@
 
 /** Map of legacy analysisInterval string values to current enum values. */
 const LEGACY_INTERVAL_MAP: Record<string, string> = {
-  '60':    '1m',
-  '300':   '5m',
-  '900':   '15m',
+  '60':    '1h',
+  '300':   '1h',
+  '900':   '1h',
   '3600':  '1h',
   '14400': '4h',
   '86400': '1d',
 };
 
 /** Intervals that have been removed and should be upgraded to the minimum. */
-const REMOVED_INTERVALS = new Set(['1m', '5m']);
+const REMOVED_INTERVALS = new Set(['1m', '5m', '15m']);
 
 /** Valid analysis intervals in the current schema. */
-export const VALID_ANALYSIS_INTERVALS = new Set(['15m', '1h', '4h', '1d']);
+export const VALID_ANALYSIS_INTERVALS = new Set(['1h', '4h', '1d']);
 
 /** Valid strategy values in the current schema. */
 export const VALID_STRATEGIES = new Set([
@@ -40,7 +40,7 @@ export const VALID_STRATEGIES = new Set([
  *
  * Handles:
  * - Legacy analysisInterval stored as seconds strings (e.g. "3600" → "1h")
- * - Removed short intervals (1m, 5m → 15m)
+ * - Removed short intervals (1m, 5m, 15m → 1h)
  * - Unknown interval values → "1h" (global default)
  * - Legacy/unknown strategy enum values → "combined"
  * - Out-of-range numeric fields → clamped to schema bounds
@@ -57,8 +57,8 @@ export function migrateAgentConfig(rawConfig: Record<string, unknown>): Record<s
     let interval: string = config.analysisInterval;
     // Step 1: Map legacy seconds strings to enum
     if (LEGACY_INTERVAL_MAP[interval]) interval = LEGACY_INTERVAL_MAP[interval];
-    // Step 2: Upgrade removed intervals to 15m minimum
-    if (REMOVED_INTERVALS.has(interval)) interval = '15m';
+    // Step 2: Upgrade removed intervals to 1h minimum
+    if (REMOVED_INTERVALS.has(interval)) interval = '1h';
     // Step 3: Clamp unknown values to default
     if (!VALID_ANALYSIS_INTERVALS.has(interval)) interval = '1h';
     config.analysisInterval = interval;

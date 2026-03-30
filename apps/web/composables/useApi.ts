@@ -46,9 +46,9 @@ export function useApi() {
 
   async function request<T>(
     path: string,
-    options?: Record<string, unknown> & { silent?: boolean }
+    options?: Record<string, unknown> & { silent?: boolean; fresh?: boolean }
   ): Promise<T> {
-    const { silent, ...rest } = (options ?? {}) as Record<string, unknown> & { silent?: boolean };
+    const { silent, fresh, ...rest } = (options ?? {}) as Record<string, unknown> & { silent?: boolean; fresh?: boolean };
     const method = (rest?.method as string) ?? 'GET';
     try {
       const res = await $fetch<T>(`${base}${path}`, {
@@ -56,6 +56,7 @@ export function useApi() {
         timeout: (rest?.timeout as number) ?? DEFAULT_TIMEOUT_MS,
         headers: {
           'Content-Type': 'application/json',
+          ...(fresh ? { 'Cache-Control': 'no-cache' } : {}),
           ...((rest?.headers as Record<string, string>) ?? {}),
         },
       } as Parameters<typeof $fetch>[1]);
