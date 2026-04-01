@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { ManagerConfigSchema, CreateManagerRequestSchema } from './validation.js';
+import {
+  ManagerConfigSchema,
+  CreateManagerRequestSchema,
+  CreateAgentRequestSchema,
+  InitiaLinkRequestSchema,
+  InitiaSyncRequestSchema,
+} from './validation.js';
 import { filterSupportedBasePairs } from './pairs.js';
 
 describe('ManagerConfigSchema', () => {
@@ -30,7 +36,7 @@ describe('ManagerConfigSchema', () => {
     expect(result.temperature).toBe(0.7);
     expect(result.decisionInterval).toBe('1h');
     expect(result.riskParams.maxTotalDrawdown).toBe(0.2);
-    expect(result.riskParams.maxAgents).toBe(10);
+    expect(result.riskParams.maxAgents).toBe(3);
   });
 });
 
@@ -64,5 +70,53 @@ describe('filterSupportedBasePairs', () => {
         'AERO/USDC',
       ])
     ).toEqual(['WETH/USDC', 'AERO/USDC']);
+  });
+});
+
+describe('Initia agent schemas', () => {
+  it('accepts chain initia on create agent request', () => {
+    const result = CreateAgentRequestSchema.safeParse({
+      name: 'Initia Agent',
+      chain: 'initia',
+      initiaWalletAddress: 'init1abcdefghijklmn1234567890',
+      llmModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+      pairs: ['WETH/USDC'],
+      strategies: ['combined'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.chain).toBe('initia');
+      expect(result.data.initiaWalletAddress).toBe('init1abcdefghijklmn1234567890');
+    }
+  });
+
+  it('validates initia link payload', () => {
+    const result = InitiaLinkRequestSchema.safeParse({
+      initiaWalletAddress: 'init1abcdefghijklmn1234567890',
+      evmAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      txHash: '0xabcdef1234',
+      metadataPointer: {
+        agentId: 'agent_123',
+        version: 1,
+        configHash: '0xhash123456',
+        labels: { mode: 'hackathon' },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates initia sync payload', () => {
+    const result = InitiaSyncRequestSchema.safeParse({
+      state: {
+        walletAddress: 'init1abcdefghijklmn1234567890',
+        evmAddress: '0x1234567890abcdef1234567890abcdef12345678',
+        chainOk: true,
+        existsOnchain: true,
+        autoSignEnabled: false,
+        walletBalanceWei: '10000000000000000',
+        vaultBalanceWei: '5000000000000000',
+      },
+    });
+    expect(result.success).toBe(true);
   });
 });

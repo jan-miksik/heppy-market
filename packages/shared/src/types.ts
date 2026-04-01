@@ -14,7 +14,7 @@ export interface User {
 export type AutonomyLevel = 'full' | 'guided' | 'strict';
 
 /** Supported chains */
-export type Chain = 'base';
+export type Chain = 'base' | 'initia';
 
 /** Supported DEXes */
 export type Dex = 'aerodrome' | 'uniswap-v3';

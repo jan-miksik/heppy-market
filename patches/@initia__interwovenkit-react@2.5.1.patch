@@ -1,0 +1,32 @@
+diff --git a/dist/index.js b/dist/index.js
+index 980b531f24c3704437672f277404c6b567312f24..a0714d274e050b9ae81b268834e7721af0362f3d 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3456,13 +3456,14 @@ function bp(e, t, n, s) {
+     for (const y of m) {
+       if (y.type === "unknown") {
+         if (!y.amount || y.amount === "0") continue;
++        const N = u?.nativeAssets?.find((I) => I.denom === y.denom), I = Number(N?.decimals ?? 0), T = I > 0 ? me(String(y.amount), { decimals: I }) : y.amount;
+         r.push({
+-          symbol: y.denom,
++          symbol: N?.symbol || y.denom,
+           logoUrl: "",
+           denom: y.denom,
+           amount: y.amount,
+-          decimals: 0,
+-          quantity: y.amount,
++          decimals: I,
++          quantity: T,
+           value: void 0,
+           unlisted: !0,
+           chain: {
+@@ -3670,7 +3671,8 @@ function Ap() {
+         chainId: n.chainId,
+         chainName: n.chain_name,
+         prettyName: n.name || n.chain_name,
+-        logoUrl: n.logoUrl || ""
++        logoUrl: n.logoUrl || "",
++        nativeAssets: n.native_assets || []
+       });
+     }
+     return t;

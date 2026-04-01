@@ -2,7 +2,7 @@
  * Auth library — session management + SIWE verification + Hono middleware.
  * Sessions are stored in KV with a 7-day TTL (no JWT needed).
  */
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, defineChain, http, verifyMessage } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
@@ -386,16 +386,38 @@ const ALLOWED_SIWE_DOMAINS = [
   'localhost:3000',
   'localhost:3001',
   'localhost:3002',
+  'localhost:5173',
+  'localhost:4173',
+  '127.0.0.1',
+  '0.0.0.0',
   'something-in-loop.market',
   'something-in-loop.pages.dev',
 ];
+
+/**
+ * Validate SIWE domain.
+ * Allows explicit production domains and localhost/IP-based dev hosts.
+ */
+export function isAllowedSiweDomain(domain: string): boolean {
+  const normalized = domain.trim().toLowerCase();
+  if (!normalized) return false;
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/.test(normalized)) return true;
+
+  return ALLOWED_SIWE_DOMAINS.some(
+    (allowed) => normalized === allowed || normalized.endsWith(`.${allowed}`)
+  );
+}
 
 export interface VerifySiweOptions {
   message: string;
   signature: string;
   db: D1Database;
   cache: KVNamespace;
-  /** RPC URL for on-chain ERC-1271/ERC-6492 (smart account) signature verification */
+  /** Base RPC URL for on-chain ERC-1271/ERC-6492 (smart account) signature verification. */
+  baseRpcUrl?: string;
+  /** Initia rollup EVM RPC URL for SIWE chain IDs outside Base/Base Sepolia. */
+  initiaRpcUrl?: string;
+  /** Backward-compatible fallback RPC URL (legacy callers). */
   rpcUrl?: string;
   /** Optional profile fields from email/social logins */
   email?: string;
@@ -424,10 +446,7 @@ export async function verifySiweAndCreateSession(
   }
 
   // Validate domain to prevent phishing (signing on another site, replaying here)
-  const domainAllowed = ALLOWED_SIWE_DOMAINS.some(
-    (allowed) => parsed.domain === allowed || parsed.domain.endsWith(`.${allowed}`)
-  );
-  if (!domainAllowed) {
+  if (!isAllowedSiweDomain(parsed.domain)) {
     throw new Error(`SIWE domain "${parsed.domain}" is not allowed`);
   }
 
@@ -435,26 +454,65 @@ export async function verifySiweAndCreateSession(
   const nonceValid = await consumeNonce(cache, d1, parsed.nonce);
   if (!nonceValid) throw new Error('Invalid or expired nonce');
 
+  if (!Number.isInteger(parsed.chainId) || parsed.chainId <= 0) {
+    throw new Error('Invalid SIWE chain ID');
+  }
+
   // Use publicClient.verifyMessage() which handles EOA (ECDSA), deployed smart
   // accounts (ERC-1271), and counterfactual smart accounts (ERC-6492).
   // Standalone verifyMessage() only does ECDSA and will throw on Safe/AA wallets.
-  const chain = parsed.chainId === 84532 ? baseSepolia : base;
-  const rpcUrl = opts.rpcUrl ?? (parsed.chainId === 84532
-    ? 'https://sepolia.base.org'
-    : 'https://mainnet.base.org');
+  const fallbackRpc = opts.rpcUrl;
+  let chain: ReturnType<typeof defineChain> | typeof base | typeof baseSepolia;
+  let rpcUrl: string;
 
-  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  if (parsed.chainId === 8453) {
+    chain = base;
+    rpcUrl = opts.baseRpcUrl ?? fallbackRpc ?? 'https://mainnet.base.org';
+  } else if (parsed.chainId === 84532) {
+    chain = baseSepolia;
+    rpcUrl = opts.baseRpcUrl ?? fallbackRpc ?? 'https://sepolia.base.org';
+  } else {
+    rpcUrl = opts.initiaRpcUrl ?? fallbackRpc ?? 'http://localhost:8545';
+    chain = defineChain({
+      id: parsed.chainId,
+      name: `EVM Chain ${parsed.chainId}`,
+      network: `evm-${parsed.chainId}`,
+      nativeCurrency: {
+        name: 'Ether',
+        symbol: 'ETH',
+        decimals: 18,
+      },
+      rpcUrls: {
+        default: { http: [rpcUrl] },
+        public: { http: [rpcUrl] },
+      },
+    });
+  }
 
   let isValid = false;
   try {
-    isValid = await publicClient.verifyMessage({
+    // Fast path for regular EOAs: local signature verification with no RPC dependency.
+    isValid = await verifyMessage({
       address: parsed.address as `0x${string}`,
       message,
       signature: signature as `0x${string}`,
     });
-  } catch (err) {
-    console.error('[auth] verifyMessage error:', (err as Error)?.message);
-    throw new Error('Signature verification failed');
+  } catch {
+    // Ignore here and fall back to RPC-assisted smart account verification below.
+  }
+
+  if (!isValid) {
+    const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+    try {
+      isValid = await publicClient.verifyMessage({
+        address: parsed.address as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+    } catch (err) {
+      console.error('[auth] verifyMessage error:', (err as Error)?.message);
+      throw new Error('Signature verification failed');
+    }
   }
   if (!isValid) throw new Error('Invalid signature');
 

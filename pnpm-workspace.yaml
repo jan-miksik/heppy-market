@@ -1,3 +1,6 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - apps/*
+  - packages/*
+
+patchedDependencies:
+  '@initia/interwovenkit-react@2.5.1': patches/@initia__interwovenkit-react@2.5.1.patch

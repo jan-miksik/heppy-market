@@ -4,7 +4,7 @@
  * and input schema validation for sensitive endpoints.
  */
 import { describe, it, expect } from 'vitest';
-import { parseSiweMessage, parseCookieValue } from '../src/lib/auth.js';
+import { parseSiweMessage, parseCookieValue, isAllowedSiweDomain } from '../src/lib/auth.js';
 
 // ── SIWE message parsing ──────────────────────────────────────────────────────
 
@@ -52,51 +52,44 @@ describe('parseSiweMessage', () => {
 
 // ── SIWE domain validation ────────────────────────────────────────────────────
 
-const ALLOWED_SIWE_DOMAINS = [
-  'localhost',
-  'localhost:3000',
-  'localhost:3001',
-  'localhost:3002',
-  'something-in-loop.market',
-  'something-in-loop.pages.dev',
-];
-
-function isDomainAllowed(domain: string): boolean {
-  return ALLOWED_SIWE_DOMAINS.some(
-    (allowed) => domain === allowed || domain.endsWith(`.${allowed}`)
-  );
-}
-
 describe('SIWE domain validation', () => {
   it('allows localhost', () => {
-    expect(isDomainAllowed('localhost')).toBe(true);
+    expect(isAllowedSiweDomain('localhost')).toBe(true);
   });
 
   it('allows localhost with port', () => {
-    expect(isDomainAllowed('localhost:3000')).toBe(true);
-    expect(isDomainAllowed('localhost:3001')).toBe(true);
+    expect(isAllowedSiweDomain('localhost:3000')).toBe(true);
+    expect(isAllowedSiweDomain('localhost:3001')).toBe(true);
+    expect(isAllowedSiweDomain('localhost:5173')).toBe(true);
+    expect(isAllowedSiweDomain('localhost:4173')).toBe(true);
+  });
+
+  it('allows localhost ip variants', () => {
+    expect(isAllowedSiweDomain('127.0.0.1')).toBe(true);
+    expect(isAllowedSiweDomain('127.0.0.1:5173')).toBe(true);
+    expect(isAllowedSiweDomain('0.0.0.0:4173')).toBe(true);
   });
 
   it('allows production domain', () => {
-    expect(isDomainAllowed('something-in-loop.market')).toBe(true);
-    expect(isDomainAllowed('something-in-loop.pages.dev')).toBe(true);
+    expect(isAllowedSiweDomain('something-in-loop.market')).toBe(true);
+    expect(isAllowedSiweDomain('something-in-loop.pages.dev')).toBe(true);
   });
 
   it('rejects unknown domains', () => {
-    expect(isDomainAllowed('evil.com')).toBe(false);
-    expect(isDomainAllowed('phishing-site.io')).toBe(false);
-    expect(isDomainAllowed('something-in-loop.market.evil.com')).toBe(false);
+    expect(isAllowedSiweDomain('evil.com')).toBe(false);
+    expect(isAllowedSiweDomain('phishing-site.io')).toBe(false);
+    expect(isAllowedSiweDomain('something-in-loop.market.evil.com')).toBe(false);
   });
 
   it('rejects empty domain', () => {
-    expect(isDomainAllowed('')).toBe(false);
+    expect(isAllowedSiweDomain('')).toBe(false);
   });
 
   it('does not allow suffix-only matches that are not subdomains', () => {
     // "notlocalhost" should NOT match "localhost"
-    expect(isDomainAllowed('notlocalhost')).toBe(false);
+    expect(isAllowedSiweDomain('notlocalhost')).toBe(false);
     // "something-in-loop.market.evil.io" should not match "something-in-loop.market"
-    expect(isDomainAllowed('something-in-loop.market.evil.io')).toBe(false);
+    expect(isAllowedSiweDomain('something-in-loop.market.evil.io')).toBe(false);
   });
 });
 

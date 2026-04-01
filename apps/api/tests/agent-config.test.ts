@@ -124,6 +124,21 @@ describe('AgentConfigSchema — defaults', () => {
     expect(parsed.chain).toBe('base');
   });
 
+  it('accepts initia chain + initia metadata fields', () => {
+    const r = AgentConfigSchema.safeParse({
+      name: 'Initia Agent',
+      chain: 'initia',
+      initiaWalletAddress: 'init1abcdefghijklmn1234567890',
+      initiaMetadataHash: '0xabc123456789',
+      initiaMetadataVersion: 1,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.chain).toBe('initia');
+      expect(r.data.initiaWalletAddress).toBe('init1abcdefghijklmn1234567890');
+    }
+  });
+
   it('defaults allowFallback to false', () => {
     expect(parsed.allowFallback).toBe(false);
   });

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, or, isNull } from 'drizzle-orm';
+import { eq, desc, or, isNull, and, ne } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agents, trades, agentDecisions, performanceSnapshots, agentSelfModifications, users } from '../db/schema.js';
@@ -10,6 +10,8 @@ import {
   CreateAgentRequestSchema,
   DEFAULT_FREE_AGENT_MODEL,
   DEFAULT_AGENT_PROFILE_ID,
+  InitiaLinkRequestSchema,
+  InitiaSyncRequestSchema,
   UpdateAgentRequestSchema,
   UpdatePersonaSchema,
   getAgentPersonaTemplate,
@@ -53,10 +55,54 @@ async function notifyScheduler(
 }
 
 function formatAgent(r: typeof agents.$inferSelect) {
+  let initiaSyncState: Record<string, unknown> | null = null;
+  if (r.initiaSyncState) {
+    try {
+      initiaSyncState = JSON.parse(r.initiaSyncState) as Record<string, unknown>;
+    } catch {
+      initiaSyncState = null;
+    }
+  }
   return {
     ...r,
     config: JSON.parse(r.config),
+    initiaSyncState,
   };
+}
+
+function normalizeInitiaWalletAddress(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
+async function findInitiaWalletOwner(
+  db: ReturnType<typeof drizzle>,
+  initiaWalletAddress: string,
+): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.chain, 'initia'), eq(agents.initiaWalletAddress, initiaWalletAddress)))
+    .limit(1);
+  return row ?? null;
+}
+
+function parseInitiaSyncState(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return typeof parsed === 'object' && parsed ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isInitiaWalletUniqueError(err: unknown): boolean {
+  const message = (err as Error)?.message ?? String(err);
+  return message.includes('idx_agents_initia_wallet_unique')
+    || message.includes('UNIQUE constraint failed: agents.initia_wallet_address');
 }
 
 /** GET /api/agents — list agents owned by the authenticated user (+ legacy unowned) */
@@ -77,6 +123,15 @@ agentsRoute.post('/', async (c) => {
   const walletAddress = c.get('walletAddress');
   const db = drizzle(c.env.DB);
 
+  const chain = body.chain ?? 'base';
+  const initiaWalletAddress = normalizeInitiaWalletAddress(body.initiaWalletAddress);
+  if (chain === 'initia' && initiaWalletAddress) {
+    const existingOwner = await findInitiaWalletOwner(db, initiaWalletAddress);
+    if (existingOwner) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+  }
+
   const id = generateId('agent');
   const now = nowIso();
   const config = {
@@ -87,19 +142,30 @@ agentsRoute.post('/', async (c) => {
 
   const profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : null;
 
-  await db.insert(agents).values({
-    id,
-    name: body.name,
-    status: 'stopped',
-    autonomyLevel: 2,
-    config: JSON.stringify(config),
-    llmModel: body.llmModel,
-    ownerAddress: walletAddress,
-    profileId,
-    personaMd: body.personaMd ?? null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  try {
+    await db.insert(agents).values({
+      id,
+      name: body.name,
+      status: 'stopped',
+      autonomyLevel: 2,
+      chain,
+      config: JSON.stringify(config),
+      llmModel: body.llmModel,
+      ownerAddress: walletAddress,
+      profileId,
+      personaMd: body.personaMd ?? null,
+      initiaWalletAddress: chain === 'initia' ? initiaWalletAddress : null,
+      initiaMetadataHash: body.initiaMetadataHash ?? null,
+      initiaMetadataVersion: body.initiaMetadataVersion ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (err) {
+    if (isInitiaWalletUniqueError(err)) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+    throw err;
+  }
 
   const [created] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json(formatAgent(created), 201);
@@ -149,9 +215,34 @@ agentsRoute.patch('/:id', async (c) => {
   }
 
   const existingConfig = JSON.parse(existing.config);
+  const existingChain = existing.chain ?? ((existingConfig as { chain?: string }).chain ?? 'base');
+  const nextChain = typeof body.chain === 'string' ? body.chain : existingChain;
+  const nextInitiaWalletAddress = body.initiaWalletAddress !== undefined
+    ? normalizeInitiaWalletAddress(body.initiaWalletAddress)
+    : normalizeInitiaWalletAddress(existing.initiaWalletAddress);
+
+  if (nextChain === 'initia' && nextInitiaWalletAddress) {
+    const [walletOwner] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.chain, 'initia'),
+          eq(agents.initiaWalletAddress, nextInitiaWalletAddress),
+          ne(agents.id, id),
+        ),
+      )
+      .limit(1);
+    if (walletOwner) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+  }
+
   const mergedConfig = {
     ...existingConfig,
     ...body,
+    chain: nextChain,
+    ...(nextInitiaWalletAddress ? { initiaWalletAddress: nextInitiaWalletAddress } : {}),
     ...(typeof body.profileId === 'string' && { profileId: resolveAgentProfileId(body.profileId) }),
     ...(body.pairs !== undefined && { pairs: normalizePairsForDex(body.pairs) }),
   };
@@ -164,6 +255,7 @@ agentsRoute.patch('/:id', async (c) => {
     nextInterval !== prevInterval;
 
   const updates: Partial<typeof agents.$inferInsert> = {
+    chain: nextChain,
     config: JSON.stringify(mergedConfig),
     updatedAt: nowIso(),
   };
@@ -174,8 +266,18 @@ agentsRoute.patch('/:id', async (c) => {
     updates.profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : body.profileId ?? null;
   }
   if (body.personaMd !== undefined) updates.personaMd = body.personaMd ?? null;
+  if (body.initiaWalletAddress !== undefined) updates.initiaWalletAddress = nextInitiaWalletAddress;
+  if (body.initiaMetadataHash !== undefined) updates.initiaMetadataHash = body.initiaMetadataHash ?? null;
+  if (body.initiaMetadataVersion !== undefined) updates.initiaMetadataVersion = body.initiaMetadataVersion ?? null;
 
-  await db.update(agents).set(updates).where(eq(agents.id, id));
+  try {
+    await db.update(agents).set(updates).where(eq(agents.id, id));
+  } catch (err) {
+    if (isInitiaWalletUniqueError(err)) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+    throw err;
+  }
 
   const [updated] = await db.select().from(agents).where(eq(agents.id, id));
 
@@ -211,6 +313,158 @@ agentsRoute.patch('/:id', async (c) => {
   return c.json({
     ...formatAgent(updated),
     pendingRestart: existing.status === 'running',
+  });
+});
+
+/** POST /api/agents/:id/initia/link — attach onchain link metadata */
+agentsRoute.post('/:id/initia/link', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const body = await validateBody(c, InitiaLinkRequestSchema);
+  const db = drizzle(c.env.DB);
+
+  const existing = await requireOwnership(db, id, walletAddress);
+  if (!existing) return c.json({ error: 'Agent not found' }, 404);
+  if (existing.chain !== 'initia') {
+    return c.json({ error: 'Initia link is only supported for Initia agents.' }, 400);
+  }
+
+  const initiaWalletAddress = normalizeInitiaWalletAddress(body.initiaWalletAddress);
+  if (!initiaWalletAddress) {
+    return c.json({ error: 'Invalid Initia wallet address.' }, 400);
+  }
+
+  const [walletOwner] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.chain, 'initia'),
+        eq(agents.initiaWalletAddress, initiaWalletAddress),
+        ne(agents.id, id),
+      ),
+    )
+    .limit(1);
+  if (walletOwner) {
+    return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+  }
+
+  const now = nowIso();
+  const currentSync = parseInitiaSyncState(existing.initiaSyncState);
+  const mergedSync = {
+    ...currentSync,
+    walletAddress: initiaWalletAddress,
+    evmAddress: body.evmAddress ?? currentSync.evmAddress ?? null,
+    linkTxHash: body.txHash,
+    metadataPointer: body.metadataPointer,
+  };
+
+  try {
+    await db
+      .update(agents)
+      .set({
+        initiaWalletAddress,
+        initiaMetadataHash: body.metadataPointer.configHash,
+        initiaMetadataVersion: body.metadataPointer.version,
+        initiaLinkTxHash: body.txHash,
+        initiaLinkedAt: now,
+        initiaSyncState: JSON.stringify(mergedSync),
+        initiaLastSyncedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(agents.id, id));
+  } catch (err) {
+    if (isInitiaWalletUniqueError(err)) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+    throw err;
+  }
+
+  const [updated] = await db.select().from(agents).where(eq(agents.id, id));
+  return c.json(formatAgent(updated));
+});
+
+/** POST /api/agents/:id/initia/sync — persist latest wallet/onchain snapshot */
+agentsRoute.post('/:id/initia/sync', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const body = await validateBody(c, InitiaSyncRequestSchema);
+  const db = drizzle(c.env.DB);
+
+  const existing = await requireOwnership(db, id, walletAddress);
+  if (!existing) return c.json({ error: 'Agent not found' }, 404);
+  if (existing.chain !== 'initia') {
+    return c.json({ error: 'Initia sync is only supported for Initia agents.' }, 400);
+  }
+
+  const normalizedWalletAddress = normalizeInitiaWalletAddress(body.state.walletAddress);
+  if (normalizedWalletAddress) {
+    const [walletOwner] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.chain, 'initia'),
+          eq(agents.initiaWalletAddress, normalizedWalletAddress),
+          ne(agents.id, id),
+        ),
+      )
+      .limit(1);
+    if (walletOwner) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+  }
+
+  const now = nowIso();
+  const currentSync = parseInitiaSyncState(existing.initiaSyncState);
+  const mergedSync = {
+    ...currentSync,
+    ...body.state,
+    ...(normalizedWalletAddress ? { walletAddress: normalizedWalletAddress } : {}),
+  };
+
+  const updates: Partial<typeof agents.$inferInsert> = {
+    initiaSyncState: JSON.stringify(mergedSync),
+    initiaLastSyncedAt: now,
+    updatedAt: now,
+  };
+  if (normalizedWalletAddress) updates.initiaWalletAddress = normalizedWalletAddress;
+
+  try {
+    await db.update(agents).set(updates).where(eq(agents.id, id));
+  } catch (err) {
+    if (isInitiaWalletUniqueError(err)) {
+      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
+    }
+    throw err;
+  }
+
+  return c.json({ ok: true, state: mergedSync, syncedAt: now });
+});
+
+/** GET /api/agents/:id/initia/status */
+agentsRoute.get('/:id/initia/status', async (c) => {
+  const id = c.req.param('id');
+  const walletAddress = c.get('walletAddress');
+  const db = drizzle(c.env.DB);
+
+  const existing = await requireOwnership(db, id, walletAddress);
+  if (!existing) return c.json({ error: 'Agent not found' }, 404);
+  if (existing.chain !== 'initia') {
+    return c.json({ error: 'Initia status is only available for Initia agents.' }, 400);
+  }
+
+  const state = parseInitiaSyncState(existing.initiaSyncState);
+  return c.json({
+    agentId: existing.id,
+    chain: existing.chain,
+    initiaWalletAddress: existing.initiaWalletAddress,
+    metadataHash: existing.initiaMetadataHash,
+    metadataVersion: existing.initiaMetadataVersion,
+    linkTxHash: existing.initiaLinkTxHash,
+    linkedAt: existing.initiaLinkedAt,
+    lastSyncedAt: existing.initiaLastSyncedAt,
+    state,
   });
 });
 

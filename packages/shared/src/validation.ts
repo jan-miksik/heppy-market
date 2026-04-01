@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { DEFAULT_FREE_AGENT_MODEL } from './model-catalog.js';
 import { TRADING_INTERVALS } from './intervals.js';
 
+const CHAIN_SCHEMA = z.enum(['base', 'initia']);
+
 // ─── Behavior Config ────────────────────────────────────────────────────────
 
 export const AgentBehaviorConfigSchema = z.object({
@@ -70,7 +72,7 @@ export const AgentConfigSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.7),
 
   // Trading
-  chain: z.literal('base').default('base'),
+  chain: CHAIN_SCHEMA.default('base'),
   dexes: z
     .array(z.enum(['aerodrome', 'uniswap-v3']))
     .default(['aerodrome', 'uniswap-v3']),
@@ -108,6 +110,11 @@ export const AgentConfigSchema = z.object({
   maxDailyLossPct: z.number().min(1).max(50).default(10),
   cooldownAfterLossMinutes: z.number().min(0).max(1440).default(30),
 
+  // Initia extension metadata (optional)
+  initiaWalletAddress: z.string().trim().min(3).max(128).optional(),
+  initiaMetadataHash: z.string().trim().min(8).max(256).optional(),
+  initiaMetadataVersion: z.number().int().min(1).max(10_000).optional(),
+
   // Behavior (optional — falls back to defaults / profile)
   behavior: AgentBehaviorConfigSchema.optional(),
   profileId: z.string().optional(),
@@ -134,7 +141,7 @@ export const CreateAgentRequestSchema = z.object({
   allowFallback: z.boolean().default(false),
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
   temperature: z.number().min(0).max(2).default(0.7),
-  chain: z.literal('base').default('base'),
+  chain: CHAIN_SCHEMA.default('base'),
   dexes: z
     .array(z.enum(['aerodrome', 'uniswap-v3']))
     .default(['aerodrome', 'uniswap-v3']),
@@ -166,6 +173,11 @@ export const CreateAgentRequestSchema = z.object({
   maxDailyLossPct: z.number().min(1).max(50).default(10),
   cooldownAfterLossMinutes: z.number().min(0).max(1440).default(30),
 
+  // Initia extension metadata (optional)
+  initiaWalletAddress: z.string().trim().min(3).max(128).optional(),
+  initiaMetadataHash: z.string().trim().min(8).max(256).optional(),
+  initiaMetadataVersion: z.number().int().min(1).max(10_000).optional(),
+
   // Behavior (optional — falls back to defaults / profile)
   behavior: AgentBehaviorConfigSchema.optional(),
   profileId: z.string().optional(),
@@ -175,6 +187,37 @@ export const CreateAgentRequestSchema = z.object({
 });
 
 export const UpdateAgentRequestSchema = CreateAgentRequestSchema.partial();
+
+export const InitiaMetadataPointerSchema = z.object({
+  agentId: z.string().min(1).max(128),
+  version: z.number().int().min(1).max(10_000),
+  configHash: z.string().min(8).max(256),
+  labels: z.record(z.string(), z.string()).optional(),
+});
+
+export const InitiaLinkRequestSchema = z.object({
+  initiaWalletAddress: z.string().trim().min(3).max(128),
+  evmAddress: z.string().trim().min(3).max(128).optional(),
+  txHash: z.string().trim().min(6).max(128),
+  metadataPointer: InitiaMetadataPointerSchema,
+});
+
+export const InitiaSyncStateSchema = z.object({
+  walletAddress: z.string().trim().min(3).max(128).optional(),
+  evmAddress: z.string().trim().min(3).max(128).optional(),
+  chainOk: z.boolean().optional(),
+  existsOnchain: z.boolean().optional(),
+  autoSignEnabled: z.boolean().optional(),
+  walletBalanceWei: z.string().trim().min(1).max(128).optional(),
+  vaultBalanceWei: z.string().trim().min(1).max(128).optional(),
+  contractAddress: z.string().trim().min(1).max(128).optional(),
+  lastTxHash: z.string().trim().min(6).max(128).optional(),
+  error: z.string().trim().min(1).max(512).optional(),
+});
+
+export const InitiaSyncRequestSchema = z.object({
+  state: InitiaSyncStateSchema,
+});
 
 export const ManagerRiskParamsSchema = z.object({
   maxTotalDrawdown: z.number().min(0.01).max(1).default(0.2),
