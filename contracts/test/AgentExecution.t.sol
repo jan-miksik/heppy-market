@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {AgentVaultV2, IERC20Like} from "../src/AgentVaultV2.sol";
+import {Agent, IERC20Like} from "../src/Agent.sol";
 
 contract MockERC20 is IERC20Like {
     string public name;
@@ -72,8 +72,8 @@ contract MockTokenRouter {
     }
 }
 
-contract AgentVaultV2Test is Test {
-    AgentVaultV2 internal vault;
+contract AgentExecutionTest is Test {
+    Agent internal vault;
     MockERC20 internal usdc;
     MockERC20 internal weth;
     MockNativeRouter internal nativeRouter;
@@ -84,7 +84,7 @@ contract AgentVaultV2Test is Test {
     address internal executor = makeAddr("executor");
 
     function setUp() external {
-        vault = new AgentVaultV2();
+        vault = new Agent();
         usdc = new MockERC20("USD Coin", "USDC");
         weth = new MockERC20("Wrapped ETH", "WETH");
         nativeRouter = new MockNativeRouter();
@@ -184,7 +184,7 @@ contract AgentVaultV2Test is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                AgentVaultV2.DailyTradeValueLimitExceeded.selector,
+                Agent.DailyTradeValueLimitExceeded.selector,
                 agentId,
                 executor,
                 4 ether,
@@ -250,7 +250,7 @@ contract AgentVaultV2Test is Test {
         vm.prank(alice);
         vault.depositNative{value: 1 ether}(agentId);
 
-        vm.expectRevert(abi.encodeWithSelector(AgentVaultV2.NotAgentOwner.selector, agentId, bob));
+        vm.expectRevert(abi.encodeWithSelector(Agent.NotAgentOwner.selector, agentId, bob));
         vm.prank(bob);
         vault.withdrawNative(agentId, 1 ether, payable(bob));
     }
@@ -265,7 +265,7 @@ contract AgentVaultV2Test is Test {
         vm.stopPrank();
 
         bytes memory callData = abi.encodeCall(MockNativeRouter.spend, (bytes("no-autosign")));
-        vm.expectRevert(abi.encodeWithSelector(AgentVaultV2.AutoSignDisabled.selector, agentId));
+        vm.expectRevert(abi.encodeWithSelector(Agent.AutoSignDisabled.selector, agentId));
         vm.prank(executor);
         vault.executeTradeCall(agentId, address(nativeRouter), 1 ether, callData);
     }

@@ -17,7 +17,7 @@ export default defineNuxtPlugin(() => {
 
   const evmChainId = Number.parseInt(String(runtimeConfig.public.initiaEvmChainId || '2178983797612220'), 10);
   const chainId = String(runtimeConfig.public.initiaRollupChainId || 'pillow-rollup');
-  const defaultChainId = String(runtimeConfig.public.initiaBridgeSrcChainId || 'initiation-2');
+  const defaultChainId = chainId;
   const chainName = `${chainId} (Nuxt)`;
 
   try {
@@ -31,6 +31,12 @@ export default defineNuxtPlugin(() => {
       rpcUrl: String(runtimeConfig.public.initiaRpcUrl || 'http://localhost:26657'),
       indexerUrl: String(runtimeConfig.public.initiaIndexerUrl || 'http://localhost:8080'),
       contractAddress: String(runtimeConfig.public.initiaContractAddress || ''),
+      showcaseTokenAddress: String(runtimeConfig.public.initiaShowcaseTokenAddress || ''),
+      executorAddress: String(runtimeConfig.public.initiaExecutorAddress || ''),
+      showcaseTargetAddress: String(runtimeConfig.public.initiaShowcaseTargetAddress || ''),
+      maxTradeValueWei: String(runtimeConfig.public.initiaExecutorMaxTradeWei || '0'),
+      dailyTradeValueWei: String(runtimeConfig.public.initiaExecutorDailyLimitWei || '0'),
+      bridgeUrl: String(runtimeConfig.public.initiaBridgeUrl || 'https://bridge.testnet.initia.xyz'),
     });
     win.__initiaBridgeMounted = true;
     window.addEventListener('beforeunload', () => teardown(), { once: true });

@@ -14,7 +14,6 @@ const { fetchAgentTrades, closeTrade, pnlClass } = useTrades();
 const { request } = useApi();
 const { getAgentPersona, updateAgentPersona, resetAgentPersona } = useProfiles();
 const router = useRouter();
-const autoSignIntentByAgent = useState<Record<string, boolean>>('initia-auto-sign-intent-by-agent', () => ({}));
 
 const closingTrades = ref<Set<string>>(new Set());
 
@@ -170,23 +169,6 @@ const personaEmoji = computed(() => {
   const profile = getAgentProfile(profileId);
   return profile?.emoji ?? '';
 });
-
-const autoSignIntentEnabled = computed(() => Boolean(autoSignIntentByAgent.value[id.value]));
-const autoSignIntentLabel = computed(() => (
-  autoSignIntentEnabled.value ? '⚡ Auto-Sign ON (MVP)' : '⚡ Auto-Sign OFF (MVP)'
-));
-const autoSignIntentNote = computed(() => (
-  autoSignIntentEnabled.value
-    ? 'Intent enabled: this agent will support autonomous buy/sell signing once wired onchain.'
-    : 'Intent disabled: manual confirmation flow remains active for this agent.'
-));
-
-function toggleAutoSignIntent() {
-  autoSignIntentByAgent.value = {
-    ...autoSignIntentByAgent.value,
-    [id.value]: !autoSignIntentEnabled.value,
-  };
-}
 
 /** True when the analysis failed because the selected model is unavailable (no automatic fallback) */
 const isModelUnavailableError = computed(() => {
@@ -730,9 +712,6 @@ function formatLatency(ms: number): string {
             <span v-if="livePricesLoading" class="mono" style="opacity: 0.7;"> · fetching live prices…</span>
             <span v-else-if="livePricesError" class="mono" style="opacity: 0.7;"> · live price unavailable</span>
           </p>
-          <p class="page-subtitle" style="margin-top: 4px;">
-            {{ autoSignIntentNote }}
-          </p>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button
@@ -745,13 +724,6 @@ function formatLatency(ms: number): string {
             <span v-if="isAnalyzing" class="analyze-pulse" />
             <span v-if="isAnalyzing" class="analyze-status-text">{{ analyzeStatusText }}</span>
             <template v-else>⚡ Run Analysis</template>
-          </button>
-          <button
-            class="btn btn-ghost btn-sm"
-            :class="{ 'btn-autosign-on': autoSignIntentEnabled }"
-            @click="toggleAutoSignIntent"
-          >
-            {{ autoSignIntentLabel }}
           </button>
           <button v-if="agent.status !== 'running'" class="btn btn-success btn-sm" @click="handleStart">
             ▶ Start
@@ -790,6 +762,8 @@ function formatLatency(ms: number): string {
           <button class="btn btn-ghost btn-sm" @click="analyzeError = null" aria-label="Dismiss">✕</button>
         </div>
       </div>
+
+      <AgentFundPanel :agent-id="agent.id" :current-balance="agent.config.paperBalance" @done="(bal) => { if (agent) agent.config.paperBalance = bal; }" />
 
       <!-- Stats row -->
       <div class="stats-grid" style="margin-bottom: 8px;">

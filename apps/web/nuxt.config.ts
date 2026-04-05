@@ -44,7 +44,7 @@ export default defineNuxtConfig({
       // Initia MVP runtime config (used by connect page helpers)
       initiaRollupChainId: process.env.NUXT_PUBLIC_INITIA_ROLLUP_CHAIN_ID || 'pillow-rollup',
       initiaEvmChainId: process.env.NUXT_PUBLIC_INITIA_EVM_CHAIN_ID || '2178983797612220',
-      initiaContractAddress: process.env.NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS || '0x286D7241779329DB8c34995d3e8D3796e0d685D7',
+      initiaContractAddress: process.env.NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS || '0xFBF2300e65255b14d373c881dF3De3c7dd8b9b1d',
       initiaBridgeSrcChainId: process.env.NUXT_PUBLIC_INITIA_BRIDGE_SRC_CHAIN_ID || 'initiation-2',
       initiaBridgeSrcDenom: process.env.NUXT_PUBLIC_INITIA_BRIDGE_SRC_DENOM || 'uinit',
       initiaBridgeUrl: process.env.NUXT_PUBLIC_INITIA_BRIDGE_URL || 'https://bridge.testnet.initia.xyz',
@@ -53,6 +53,11 @@ export default defineNuxtConfig({
       initiaRpcUrl: process.env.NUXT_PUBLIC_INITIA_RPC_URL || 'http://localhost:26657',
       initiaIndexerUrl: process.env.NUXT_PUBLIC_INITIA_INDEXER_URL || 'http://localhost:8080',
       initiaWebUrl: process.env.NUXT_PUBLIC_INITIA_WEB_URL || 'http://localhost:5173',
+      initiaShowcaseTokenAddress: process.env.NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_ADDRESS || '',
+      initiaExecutorAddress: process.env.NUXT_PUBLIC_INITIA_EXECUTOR_ADDRESS || '',
+      initiaShowcaseTargetAddress: process.env.NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS || '',
+      initiaExecutorMaxTradeWei: process.env.NUXT_PUBLIC_INITIA_EXECUTOR_MAX_TRADE_WEI || '0',
+      initiaExecutorDailyLimitWei: process.env.NUXT_PUBLIC_INITIA_EXECUTOR_DAILY_LIMIT_WEI || '0',
     },
     // Server-only: upstream for API proxy when Service Binding is not present (e.g. local dev)
     apiUpstream: process.env.API_BASE_URL || 'http://localhost:8787',

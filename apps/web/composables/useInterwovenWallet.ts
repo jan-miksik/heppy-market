@@ -11,7 +11,7 @@ interface Eip1193Provider {
 interface InterwovenWindow extends Window {
   interwoven?: {
     ethereum?: Eip1193Provider;
-    openBridge?: (details?: { srcChainId?: string; srcDenom?: string }) => unknown;
+    openBridge?: (details?: { srcChainId?: string; srcDenom?: string; quantity?: string }) => unknown;
     openWallet?: () => unknown;
     open?: (view?: string) => unknown;
   };
@@ -21,10 +21,19 @@ interface InterwovenWindow extends Window {
   ethereum?: Eip1193Provider;
 }
 
+const DEFAULT_BRIDGE_SRC_CHAIN_ID = 'initiation-2';
+const DEFAULT_BRIDGE_SRC_DENOM = 'uinit';
+
 function normalizeHexAddress(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const value = raw.trim().toLowerCase();
   return /^0x[a-f0-9]{40}$/.test(value) ? value : null;
+}
+
+function normalizeBridgeOption(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  return value.length > 0 ? value : null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -177,20 +186,56 @@ export function useInterwovenWallet() {
     }
   }
 
-  async function openBridge(params?: { srcChainId?: string; srcDenom?: string }): Promise<void> {
+  async function openBridge(params?: { srcChainId?: string; srcDenom?: string; quantity?: string }): Promise<void> {
     const win = getInterwovenWindow();
     if (!win) return;
 
-    const srcChainId = params?.srcChainId ?? (runtimeConfig.public.initiaBridgeSrcChainId as string);
-    const srcDenom = params?.srcDenom ?? (runtimeConfig.public.initiaBridgeSrcDenom as string);
+    const srcChainId = normalizeBridgeOption(params?.srcChainId)
+      ?? normalizeBridgeOption(runtimeConfig.public.initiaBridgeSrcChainId)
+      ?? DEFAULT_BRIDGE_SRC_CHAIN_ID;
+    const srcDenom = normalizeBridgeOption(params?.srcDenom)
+      ?? normalizeBridgeOption(runtimeConfig.public.initiaBridgeSrcDenom)
+      ?? DEFAULT_BRIDGE_SRC_DENOM;
+    const quantity = normalizeBridgeOption(params?.quantity) ?? '0';
+    const bridgeUrl = normalizeBridgeOption(runtimeConfig.public.initiaBridgeUrl);
 
     if (typeof win.interwoven?.openBridge === 'function') {
-      await Promise.resolve(win.interwoven.openBridge({ srcChainId, srcDenom }));
+      try {
+        await Promise.resolve(win.interwoven.openBridge({ srcChainId, srcDenom, quantity }));
+        return;
+      } catch (err: unknown) {
+        const message = (err as Error)?.message ?? String(err);
+        if (message.includes('[BigNumber Error] Not a number')) {
+          try {
+            await Promise.resolve(win.interwoven.openBridge({ srcChainId, quantity: '0' }));
+            return;
+          } catch {
+            if (bridgeUrl) {
+              window.open(bridgeUrl, '_blank', 'noopener,noreferrer');
+              return;
+            }
+          }
+        }
+        throw err;
+      }
+    }
+
+    if (typeof win.interwoven?.open === 'function') {
+      await Promise.resolve(win.interwoven.open('bridge'));
       return;
     }
 
-    const bridgeUrl = runtimeConfig.public.initiaBridgeUrl as string;
-    window.open(bridgeUrl, '_blank', 'noopener,noreferrer');
+    if (typeof win.interwoven?.openWallet === 'function') {
+      await Promise.resolve(win.interwoven.openWallet());
+      return;
+    }
+
+    if (bridgeUrl) {
+      window.open(bridgeUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    throw new Error('Initia wallet bridge UI is unavailable in this environment.');
   }
 
   async function getChainId(): Promise<number> {

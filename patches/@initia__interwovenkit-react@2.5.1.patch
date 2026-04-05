@@ -82,3 +82,18 @@ index 980b531f24c3704437672f277404c6b567312f24..858402e01b8c063b18be609b6cfba327
  function Hp(e) {
    const [t] = e;
    return typeof t == "string" && t.startsWith(zp);
+@@ -6281,12 +6283,12 @@ const Q0 = () => {
+-  }, [D, pt, f, G, p]), cn = G ? pe(G.amount_out, { decimals: A.decimals }) : "0", ln = U(b).gt(0) && U(b).isEqualTo(
++  }, [D, pt, f, G, p]), cn = G ? pe(G.amount_out, { decimals: A.decimals }) : "0", ln = U(b || 0).gt(0) && U(b || 0).isEqualTo(
+     me(L?.amount, { decimals: L?.decimals ?? 0 })
+   ), Wr = (() => {
+     switch ($) {
+@@ -6306,7 +6308,7 @@ const Q0 = () => {
+       !t && /* @__PURE__ */ o(Sd, { label: Y, children: /* @__PURE__ */ o("span", { className: He.icon, children: /* @__PURE__ */ o(ts, { size: 12, "aria-hidden": "true" }) }) })
+     ] }) : null,
+     [t]
+-  ), Ys = U(b).gt(0) && re && ve.data && Ae.data && Ae.data.estimated_route_duration_seconds > ve.data.estimated_route_duration_seconds, jr = x(() => {
++  ), Ys = U(b || 0).gt(0) && re && ve.data && Ae.data && Ae.data.estimated_route_duration_seconds > ve.data.estimated_route_duration_seconds, jr = x(() => {
+     if (!G) return [];
+     const Y = op(G.amount_out, v);
+     return [

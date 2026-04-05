@@ -13,7 +13,10 @@ import type { ProfileItem } from '~/composables/useProfiles';
 import { useAuth } from '~/composables/useAuth';
 
 const { user } = useAuth();
+const { initConnect } = useOpenRouter();
+const route = useRoute();
 const isTester = computed(() => user.value?.role === 'tester');
+const openRouterRedirecting = ref(false);
 
 const hasOwnKey = computed(() => !!user.value?.openRouterKeySet);
 const dropdownModel = ref<string>(DEFAULT_FREE_AGENT_MODEL);
@@ -85,6 +88,7 @@ const props = defineProps<{
   initialValues?: Partial<CreateAgentPayload & { pairs: string[] }>;
   hidePersonaEditor?: boolean;
   hideFooter?: boolean;
+  hideBalanceInput?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -345,6 +349,15 @@ function restoreRole() {
 }
 
 defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, generatePersonaMd, openBehaviorSection, behaviorMd, isBehaviorCustomized, restoreBehavior, roleMd, isRoleCustomized, restoreRole });
+
+async function handleConnectOpenRouterFromCreate() {
+  openRouterRedirecting.value = true;
+  try {
+    await initConnect({ returnTo: route.fullPath || '/agents/create' });
+  } catch {
+    openRouterRedirecting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -442,7 +455,15 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
         >Browse all models at openrouter.ai/models ↗</a>
       </template>
       <p v-else class="model-nudge">
-        <NuxtLink to="/settings">Connect your OpenRouter key</NuxtLink> to unlock paid models.
+        <button
+          type="button"
+          class="model-nudge__link"
+          :disabled="openRouterRedirecting"
+          @click="handleConnectOpenRouterFromCreate"
+        >
+          {{ openRouterRedirecting ? 'Redirecting…' : 'Connect your OpenRouter key' }}
+        </button>
+        to unlock paid models.
       </p>
     </div>
 
@@ -532,7 +553,7 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
           </div>
 
           <div class="grid-2">
-            <div class="form-group">
+            <div v-if="!hideBalanceInput" class="form-group">
               <label class="form-label">Starting Balance (USDC)</label>
               <input v-model.number="form.paperBalance" type="number" class="form-input" min="100" max="1000000" step="100" />
             </div>
@@ -804,7 +825,22 @@ defineExpose({ personaMd, isPersonaCustomized, behavior, form, restorePersona, g
   color: var(--text-muted, #555);
   margin-top: 6px;
 }
-.model-nudge a { color: var(--accent, #7c6af7); }
+.model-nudge__link {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #7c6af7);
+  font: inherit;
+  cursor: pointer;
+}
+.model-nudge__link:hover {
+  text-decoration: underline;
+}
+.model-nudge__link:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
 /* Model picker — table dropdown */
 .model-picker { position: relative; }

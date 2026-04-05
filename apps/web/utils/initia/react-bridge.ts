@@ -1,4 +1,4 @@
-import React, { createElement, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import '@initia/interwovenkit-react/styles.css';
 import { createPublicClient, defineChain, encodeFunctionData, parseEther, toHex, http as viemHttp } from 'viem';
 import type {
   InitiaBridgeActionEventDetail,
+  InitiaBridgeOpenParams,
   InitiaBridgeResponseEventDetail,
   InitiaBridgeState,
   InitiaBridgeStateEventDetail,
@@ -25,6 +26,7 @@ declare global {
     __initiaBridgeApi?: {
       openConnect: () => Promise<void> | void;
       openWallet: () => Promise<void> | void;
+      openBridge: (params?: InitiaBridgeOpenParams) => Promise<void> | void;
       refresh: () => Promise<void> | void;
     };
   }
@@ -36,54 +38,168 @@ const AGENT_ABI = [
     name: 'createAgent',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'metadata', type: 'bytes' }],
-    outputs: [],
+    outputs: [{ name: 'agentId', type: 'uint256' }],
   },
   {
     type: 'function',
-    name: 'deposit',
+    name: 'ownerAgentIds',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ name: 'agentIds', type: 'uint256[]' }],
+  },
+  {
+    type: 'function',
+    name: 'getAgent',
+    stateMutability: 'view',
+    inputs: [{ name: 'agentId', type: 'uint256' }],
+    outputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'metadata', type: 'bytes' },
+      { name: 'nativeBalance', type: 'uint256' },
+      { name: 'exists', type: 'bool' },
+      { name: 'autoSignEnabled', type: 'bool' },
+      { name: 'paused', type: 'bool' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'depositNative',
     stateMutability: 'payable',
-    inputs: [],
+    inputs: [{ name: 'agentId', type: 'uint256' }],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'withdraw',
+    name: 'withdrawNative',
     stateMutability: 'nonpayable',
-    inputs: [{ name: 'amount', type: 'uint256' }],
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'to', type: 'address' },
+    ],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'enableAutoSign',
+    name: 'depositToken',
     stateMutability: 'nonpayable',
-    inputs: [],
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'disableAutoSign',
+    name: 'withdrawToken',
     stateMutability: 'nonpayable',
-    inputs: [],
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'to', type: 'address' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'tokenBalance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'token', type: 'address' },
+    ],
+    outputs: [{ name: 'balance', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'setAutoSignEnabled',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'enabled', type: 'bool' },
+    ],
     outputs: [],
   },
   {
     type: 'function',
     name: 'executeTick',
     stateMutability: 'nonpayable',
-    inputs: [],
+    inputs: [{ name: 'agentId', type: 'uint256' }],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'getAgent',
-    stateMutability: 'view',
-    inputs: [{ name: 'owner', type: 'address' }],
-    outputs: [
-      { name: 'metadata', type: 'bytes' },
-      { name: 'balance', type: 'uint256' },
-      { name: 'exists', type: 'bool' },
-      { name: 'autoSignEnabled', type: 'bool' },
+    name: 'setAllowedTarget',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'target', type: 'address' },
+      { name: 'allowed', type: 'bool' },
     ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'isTargetAllowed',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'target', type: 'address' },
+    ],
+    outputs: [{ name: 'allowed', type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'setExecutorApproval',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'executor', type: 'address' },
+      { name: 'canTick', type: 'bool' },
+      { name: 'canTrade', type: 'bool' },
+      { name: 'maxValuePerTradeWei', type: 'uint128' },
+      { name: 'dailyLimitWei', type: 'uint128' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'getExecutorApproval',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'executor', type: 'address' },
+    ],
+    outputs: [
+      { name: 'canTick', type: 'bool' },
+      { name: 'canTrade', type: 'bool' },
+      { name: 'maxValuePerTradeWei', type: 'uint128' },
+      { name: 'dailyLimitWei', type: 'uint128' },
+      { name: 'dayIndex', type: 'uint64' },
+      { name: 'spentTodayWei', type: 'uint128' },
+    ],
+  },
+] as const;
+
+const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'approve',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: 'ok', type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: 'balance', type: 'uint256' }],
   },
 ] as const;
 
@@ -97,11 +213,21 @@ export interface InitiaBridgeMountOptions {
   rpcUrl: string;
   indexerUrl: string;
   contractAddress: string;
+  showcaseTokenAddress?: string;
+  executorAddress?: string;
+  showcaseTargetAddress?: string;
+  maxTradeValueWei?: string;
+  dailyTradeValueWei?: string;
+  bridgeUrl?: string;
 }
 
 interface AgentState {
+  id: bigint | null;
   exists: boolean;
   balance: bigint;
+  showcaseTokenBalance: bigint;
+  walletShowcaseTokenBalance: bigint;
+  executorAuthorized: boolean;
   autoSignEnabled: boolean;
 }
 
@@ -154,6 +280,36 @@ function normalizeEvmAddress(raw: string | null | undefined): `0x${string}` | nu
   return /^0x[a-f0-9]{40}$/.test(value) ? (value as `0x${string}`) : null;
 }
 
+function normalizeEvmOptionAddress(raw: string | null | undefined): `0x${string}` | null {
+  return normalizeEvmAddress(raw);
+}
+
+function normalizeBridgeParam(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const value = raw.trim();
+  return value.length > 0 ? value : fallback;
+}
+
+function parseU128(raw: string | null | undefined): bigint {
+  if (!raw) return 0n;
+  try {
+    const n = BigInt(raw);
+    return n < 0n ? 0n : n;
+  } catch {
+    return 0n;
+  }
+}
+
+const EMPTY_AGENT_STATE: AgentState = {
+  id: null,
+  exists: false,
+  balance: 0n,
+  showcaseTokenBalance: 0n,
+  walletShowcaseTokenBalance: 0n,
+  executorAuthorized: false,
+  autoSignEnabled: false,
+};
+
 function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: ReturnType<typeof defineChain> }) {
   const { options, evmChain } = props;
   const {
@@ -161,27 +317,69 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     address: evmAddress,
     openConnect,
     openWallet,
+    openBridge,
     requestTxBlock,
+    requestTxSync,
     autoSign,
   } = useInterwovenKit();
   const normalizedInitiaAddress = useMemo(() => normalizeInitiaAddress(initiaAddress), [initiaAddress]);
   const normalizedEvmAddress = useMemo(() => normalizeEvmAddress(evmAddress), [evmAddress]);
+  const normalizedContractAddress = useMemo(
+    () => normalizeEvmOptionAddress(options.contractAddress),
+    [options.contractAddress],
+  );
+  const showcaseTokenAddress = useMemo(
+    () => normalizeEvmOptionAddress(options.showcaseTokenAddress),
+    [options.showcaseTokenAddress],
+  );
+  const executorAddress = useMemo(
+    () => normalizeEvmOptionAddress(options.executorAddress),
+    [options.executorAddress],
+  );
+  const showcaseTargetAddress = useMemo(
+    () => normalizeEvmOptionAddress(options.showcaseTargetAddress),
+    [options.showcaseTargetAddress],
+  );
+  const maxTradeValueWei = useMemo(() => parseU128(options.maxTradeValueWei), [options.maxTradeValueWei]);
+  const dailyTradeValueWei = useMemo(() => parseU128(options.dailyTradeValueWei), [options.dailyTradeValueWei]);
 
   const publicClient = useMemo(() => createPublicClient({
     chain: evmChain,
     transport: viemHttp(options.evmRpc),
   }), [evmChain, options.evmRpc]);
 
+  // Refs that are always current — updated synchronously on every render so
+  // callbacks in useEffect never see stale closures (avoids "Connect wallet first"
+  // errors when React state updates haven't committed before an action fires).
+  const initiaAddressRef = useRef(normalizedInitiaAddress);
+  initiaAddressRef.current = normalizedInitiaAddress;
+  const evmAddressRef = useRef(normalizedEvmAddress);
+  evmAddressRef.current = normalizedEvmAddress;
+
   const [chainOk, setChainOk] = useState(false);
   const [walletBalanceWei, setWalletBalanceWei] = useState<string | null>(null);
   const [agentState, setAgentState] = useState<AgentState>({
-    exists: false,
-    balance: 0n,
-    autoSignEnabled: false,
+    ...EMPTY_AGENT_STATE,
   });
+
+  const agentStateRef = useRef(agentState);
+  agentStateRef.current = agentState;
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const fetchLatestAgentId = useCallback(async (owner: `0x${string}`): Promise<bigint | null> => {
+    if (!normalizedContractAddress) return null;
+    const ids = await publicClient.readContract({
+      address: normalizedContractAddress,
+      abi: AGENT_ABI,
+      functionName: 'ownerAgentIds',
+      args: [owner],
+    });
+    if (!Array.isArray(ids) || ids.length === 0) return null;
+    const last = ids[ids.length - 1];
+    return typeof last === 'bigint' ? last : null;
+  }, [normalizedContractAddress, publicClient]);
 
   const refresh = useCallback(async () => {
     try {
@@ -191,25 +389,82 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       setChainOk(false);
     }
 
-    if (normalizedEvmAddress) {
+    let walletShowcaseTokenBalance = 0n;
+    if (normalizedEvmAddress && showcaseTokenAddress) {
       try {
-        const [metadata, balance, exists, autoSignEnabled] = await publicClient.readContract({
-          address: options.contractAddress as `0x${string}`,
-          abi: AGENT_ABI,
-          functionName: 'getAgent',
+        walletShowcaseTokenBalance = await publicClient.readContract({
+          address: showcaseTokenAddress,
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
           args: [normalizedEvmAddress],
         });
-        void metadata;
-        setAgentState({
-          exists: Boolean(exists),
-          balance: balance ?? 0n,
-          autoSignEnabled: Boolean(autoSignEnabled),
-        });
+      } catch {
+        walletShowcaseTokenBalance = 0n;
+      }
+    }
+
+    if (normalizedEvmAddress) {
+      try {
+        const activeAgentId = await fetchLatestAgentId(normalizedEvmAddress);
+
+        if (activeAgentId === null || !normalizedContractAddress) {
+          setAgentState({
+            ...EMPTY_AGENT_STATE,
+            walletShowcaseTokenBalance,
+          });
+        } else {
+          const [owner, metadata, nativeBalance, exists, autoSignEnabled, paused] = await publicClient.readContract({
+            address: normalizedContractAddress,
+            abi: AGENT_ABI,
+            functionName: 'getAgent',
+            args: [activeAgentId],
+          });
+          void owner;
+          void metadata;
+          void paused;
+          let showcaseTokenBalance = 0n;
+          if (showcaseTokenAddress && exists) {
+            try {
+              showcaseTokenBalance = await publicClient.readContract({
+                address: normalizedContractAddress,
+                abi: AGENT_ABI,
+                functionName: 'tokenBalance',
+                args: [activeAgentId, showcaseTokenAddress],
+              });
+            } catch {
+              showcaseTokenBalance = 0n;
+            }
+          }
+
+          let executorAuthorized = false;
+          if (executorAddress && exists) {
+            try {
+              const [canTick, canTrade] = await publicClient.readContract({
+                address: normalizedContractAddress,
+                abi: AGENT_ABI,
+                functionName: 'getExecutorApproval',
+                args: [activeAgentId, executorAddress],
+              });
+              executorAuthorized = Boolean(canTick) && Boolean(canTrade);
+            } catch {
+              executorAuthorized = false;
+            }
+          }
+
+          setAgentState({
+            id: activeAgentId,
+            exists: Boolean(exists),
+            balance: nativeBalance ?? 0n,
+            showcaseTokenBalance,
+            walletShowcaseTokenBalance,
+            executorAuthorized,
+            autoSignEnabled: Boolean(autoSignEnabled),
+          });
+        }
       } catch {
         setAgentState({
-          exists: false,
-          balance: 0n,
-          autoSignEnabled: false,
+          ...EMPTY_AGENT_STATE,
+          walletShowcaseTokenBalance,
         });
       }
 
@@ -221,13 +476,18 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       }
     } else {
       setAgentState({
-        exists: false,
-        balance: 0n,
-        autoSignEnabled: false,
+        ...EMPTY_AGENT_STATE,
       });
       setWalletBalanceWei(null);
     }
-  }, [normalizedEvmAddress, options.contractAddress, publicClient]);
+  }, [
+    executorAddress,
+    fetchLatestAgentId,
+    normalizedContractAddress,
+    normalizedEvmAddress,
+    publicClient,
+    showcaseTokenAddress,
+  ]);
 
   useEffect(() => {
     void refresh();
@@ -239,28 +499,29 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     };
   }, [refresh]);
 
-  useEffect(() => {
-    window.__initiaBridgeApi = {
-      openConnect: () => openConnect(),
-      openWallet: () => openWallet(),
-      refresh: () => refresh(),
-    };
-    return () => {
-      if (window.__initiaBridgeApi) {
-        delete window.__initiaBridgeApi;
-      }
-    };
-  }, [openConnect, openWallet, refresh]);
-
-  const doTx = useCallback(async (action: string, input: string, valueWeiHex?: string) => {
-    if (!normalizedInitiaAddress) throw new Error('Connect wallet first.');
+  const doContractTx = useCallback(async (
+    action: string,
+    contractAddress: `0x${string}`,
+    input: string,
+    valueWeiHex?: string,
+    autoSignEnabled?: boolean,
+  ) => {
+    // Use ref so we always read the latest address even if React hasn't
+    // committed a re-render since the wallet connected / state was refreshed.
+    const currentInitiaAddress = initiaAddressRef.current;
+    if (!currentInitiaAddress) throw new Error('Connect wallet first.');
     setBusyAction(action);
     setError(null);
     try {
-      const tx = await requestTxBlock({
+      // requestTxSync is used instead of requestTxBlock for local dev robustness —
+      // requestTxBlock can hang waiting for block confirmation when the local indexer
+      // is not reachable. feeDenom pre-selects the fee token to skip the fee-selection UI.
+      const tx = await (autoSignEnabled ? requestTxBlock : requestTxSync)({
         chainId: options.chainId,
-        messages: [buildMsgCall(normalizedInitiaAddress, options.contractAddress, input, valueWeiHex ?? '0x0')],
-      });
+        autoSign: autoSignEnabled,
+        feeDenom: 'GAS',
+        messages: [buildMsgCall(currentInitiaAddress, contractAddress, input, valueWeiHex ?? '0x0')],
+      } as any);
       const txHash = extractTxHash(tx);
       setLastTxHash(txHash);
       await refresh();
@@ -268,7 +529,64 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     } finally {
       setBusyAction(null);
     }
-  }, [normalizedInitiaAddress, options.chainId, options.contractAddress, refresh, requestTxBlock]);
+  }, [options.chainId, refresh, requestTxBlock, requestTxSync]);
+
+  const doAgentTx = useCallback(async (action: string, input: string, valueWeiHex?: string, autoSignEnabled?: boolean) => {
+    if (!normalizedContractAddress) throw new Error('Initia contract address is not configured.');
+    return doContractTx(action, normalizedContractAddress, input, valueWeiHex, autoSignEnabled);
+  }, [doContractTx, normalizedContractAddress]);
+
+  const requireAgentId = useCallback((): bigint => {
+    const current = agentStateRef.current;
+    if (current.id === null || !current.exists) {
+      throw new Error('Create an onchain agent first.');
+    }
+    return current.id;
+  }, []);
+
+  const safeOpenBridge = useCallback(async (rawParams?: InitiaBridgeOpenParams) => {
+    const srcChainId = normalizeBridgeParam(rawParams?.srcChainId, 'initiation-2');
+    const srcDenom = normalizeBridgeParam(rawParams?.srcDenom, 'uinit');
+    const quantity = normalizeBridgeParam(rawParams?.quantity, '0');
+    try {
+      await (openBridge as (p: { srcChainId: string; srcDenom: string; quantity: string }) => Promise<void>)({
+        srcChainId,
+        srcDenom,
+        quantity,
+      });
+      return;
+    } catch (err: unknown) {
+      const message = (err as Error)?.message ?? String(err);
+      if (message.includes('[BigNumber Error] Not a number')) {
+        try {
+          // Retry without denom preselection; some bridge builds fail while parsing
+          // a prefilled amount/denom state during modal initialization.
+          await (openBridge as (p: { srcChainId: string; quantity: string }) => Promise<void>)({ srcChainId, quantity: '0' });
+          return;
+        } catch {
+          if (options.bridgeUrl && typeof window !== 'undefined') {
+            window.open(options.bridgeUrl, '_blank', 'noopener,noreferrer');
+            return;
+          }
+        }
+      }
+      throw err;
+    }
+  }, [openBridge, options.bridgeUrl]);
+
+  useEffect(() => {
+    window.__initiaBridgeApi = {
+      openConnect: () => openConnect(),
+      openWallet: () => openWallet(),
+      openBridge: (params) => safeOpenBridge(params),
+      refresh: () => refresh(),
+    };
+    return () => {
+      if (window.__initiaBridgeApi) {
+        delete window.__initiaBridgeApi;
+      }
+    };
+  }, [openConnect, openWallet, refresh, safeOpenBridge]);
 
   useEffect(() => {
     const onAction = (event: Event) => {
@@ -284,6 +602,10 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
           case 'openWallet':
             await openWallet();
             return {};
+          case 'openBridge': {
+            await safeOpenBridge(params as InitiaBridgeOpenParams | undefined);
+            return {};
+          }
           case 'refresh':
             await refresh();
             return {};
@@ -295,73 +617,157 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'createAgent',
               args: [toHex(metadataBytes)],
             });
-            const txHash = await doTx('createAgentOnchain', input);
-            return { txHash };
+            const txHash = await doAgentTx('createAgentOnchain', input);
+            // requestTxSync returns after mempool acceptance only — poll until the agent
+            // actually exists on-chain (block confirmed) before resolving to Vue.
+            // fetchLatestAgentId reads ownerAgentIds via EVM JSON-RPC directly, so this
+            // poll is independent of the event bus and has no Vue-side timeout risk.
+            let latestAgentId: bigint | null = evmAddressRef.current
+              ? await fetchLatestAgentId(evmAddressRef.current).catch(() => null)
+              : null;
+            if (latestAgentId === null && evmAddressRef.current) {
+              const evmAddr = evmAddressRef.current;
+              const POLL_INTERVAL_MS = 1_500;
+              const CONFIRM_TIMEOUT_MS = 45_000;
+              const startedAt = Date.now();
+              while (latestAgentId === null && Date.now() - startedAt < CONFIRM_TIMEOUT_MS) {
+                await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+                latestAgentId = await fetchLatestAgentId(evmAddr).catch(() => null);
+              }
+            }
+            if (latestAgentId === null) {
+              throw new Error('Agent not confirmed on-chain within 45 seconds. Check your wallet for transaction status.');
+            }
+            await refresh();
+            return {
+              txHash,
+              onchainAgentId: latestAgentId.toString(),
+            };
           }
           case 'deposit': {
+            const agentId = requireAgentId();
             const amount = String(params?.amount ?? '0');
             const wei = parseEther(amount);
-            const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'deposit', args: [] });
-            const txHash = await doTx('deposit', input, `0x${wei.toString(16)}`);
-            return { txHash };
+            const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'depositNative', args: [agentId] });
+            const txHash = await doAgentTx('deposit', input, `0x${wei.toString(16)}`);
+            return { txHash, onchainAgentId: agentId.toString() };
           }
           case 'withdraw': {
+            const currentEvmAddrForWithdraw = evmAddressRef.current;
+            if (!currentEvmAddrForWithdraw) throw new Error('Connect wallet first.');
+            const agentId = requireAgentId();
             const amount = String(params?.amount ?? '0');
             const wei = parseEther(amount);
-            const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'withdraw', args: [wei] });
-            const txHash = await doTx('withdraw', input);
-            return { txHash };
+            const input = encodeFunctionData({
+              abi: AGENT_ABI,
+              functionName: 'withdrawNative',
+              args: [agentId, wei, currentEvmAddrForWithdraw],
+            });
+            const txHash = await doAgentTx('withdraw', input);
+            return { txHash, onchainAgentId: agentId.toString() };
+          }
+          case 'depositShowcaseToken': {
+            if (!showcaseTokenAddress) throw new Error('Showcase token address is not configured.');
+            if (!normalizedContractAddress) throw new Error('Initia contract address is not configured.');
+            const agentId = requireAgentId();
+            const amount = String(params?.amount ?? '0');
+            const wei = parseEther(amount);
+
+            const approveInput = encodeFunctionData({
+              abi: ERC20_ABI,
+              functionName: 'approve',
+              args: [normalizedContractAddress!, wei],
+            });
+            const approveTxHash = await doContractTx(
+              'depositShowcaseTokenApprove',
+              showcaseTokenAddress,
+              approveInput,
+            );
+
+            const depositInput = encodeFunctionData({
+              abi: AGENT_ABI,
+              functionName: 'depositToken',
+              args: [agentId, showcaseTokenAddress, wei],
+            });
+            const txHash = await doAgentTx('depositShowcaseToken', depositInput);
+            return { txHash, approveTxHash, onchainAgentId: agentId.toString() };
+          }
+          case 'withdrawShowcaseToken': {
+            if (!showcaseTokenAddress) throw new Error('Showcase token address is not configured.');
+            const currentEvmAddr = evmAddressRef.current;
+            if (!currentEvmAddr) throw new Error('Connect wallet first.');
+            const agentId = requireAgentId();
+            const amount = String(params?.amount ?? '0');
+            const wei = parseEther(amount);
+            const input = encodeFunctionData({
+              abi: AGENT_ABI,
+              functionName: 'withdrawToken',
+              args: [agentId, showcaseTokenAddress, wei, currentEvmAddr],
+            });
+            const txHash = await doAgentTx('withdrawShowcaseToken', input);
+            return { txHash, onchainAgentId: agentId.toString() };
+          }
+          case 'authorizeExecutor': {
+            if (!executorAddress) throw new Error('Executor address is not configured.');
+            const agentId = requireAgentId();
+
+            let whitelistTxHash: string | null = null;
+            if (showcaseTargetAddress) {
+              const whitelistInput = encodeFunctionData({
+                abi: AGENT_ABI,
+                functionName: 'setAllowedTarget',
+                args: [agentId, showcaseTargetAddress, true],
+              });
+              whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput);
+            }
+
+            const approvalInput = encodeFunctionData({
+              abi: AGENT_ABI,
+              functionName: 'setExecutorApproval',
+              args: [agentId, executorAddress, true, true, maxTradeValueWei, dailyTradeValueWei],
+            });
+            const txHash = await doAgentTx('authorizeExecutor', approvalInput);
+            return { txHash, whitelistTxHash, onchainAgentId: agentId.toString() };
           }
           case 'enableAutoSign': {
-            if (!normalizedInitiaAddress) throw new Error('Connect wallet first.');
+            if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
+            const agentId = requireAgentId();
             setBusyAction('enableAutoSign');
             try {
               await (autoSign as any)?.enable?.(options.chainId, { permissions: ['/minievm.evm.v1.MsgCall'] });
-              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'enableAutoSign', args: [] });
-              const tx = await requestTxBlock({
-                chainId: options.chainId,
-                messages: [buildMsgCall(normalizedInitiaAddress, options.contractAddress, input)],
-              });
-              const txHash = extractTxHash(tx);
-              setLastTxHash(txHash);
-              await refresh();
-              return { txHash };
+              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setAutoSignEnabled', args: [agentId, true] });
+              const txHash = await doAgentTx('enableAutoSign', input);
+              return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
             }
           }
           case 'disableAutoSign': {
-            if (!normalizedInitiaAddress) throw new Error('Connect wallet first.');
+            if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
+            const agentId = requireAgentId();
             setBusyAction('disableAutoSign');
             try {
               await (autoSign as any)?.disable?.(options.chainId);
-              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'disableAutoSign', args: [] });
-              const tx = await requestTxBlock({
-                chainId: options.chainId,
-                messages: [buildMsgCall(normalizedInitiaAddress, options.contractAddress, input)],
-              });
-              const txHash = extractTxHash(tx);
-              setLastTxHash(txHash);
-              await refresh();
-              return { txHash };
+              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setAutoSignEnabled', args: [agentId, false] });
+              const txHash = await doAgentTx('disableAutoSign', input);
+              return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
             }
           }
           case 'executeTick': {
-            if (!normalizedInitiaAddress) throw new Error('Connect wallet first.');
+            if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
+            const agentId = requireAgentId();
             setBusyAction('executeTick');
             try {
-              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'executeTick', args: [] });
-              const tx = await requestTxBlock({
-                chainId: options.chainId,
-                autoSign: agentState.autoSignEnabled || !!(autoSign as any)?.isEnabledByChain?.[options.chainId],
-                messages: [buildMsgCall(normalizedInitiaAddress, options.contractAddress, input)],
-              } as any);
-              const txHash = extractTxHash(tx);
-              setLastTxHash(txHash);
-              await refresh();
-              return { txHash };
+              const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'executeTick', args: [agentId] });
+              const txHash = await doAgentTx(
+                'executeTick',
+                input,
+                undefined,
+                agentStateRef.current.autoSignEnabled || !!(autoSign as any)?.isEnabledByChain?.[options.chainId],
+              );
+              return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
             }
@@ -387,16 +793,22 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       window.removeEventListener(INITIA_BRIDGE_ACTION_EVENT, onAction);
     };
   }, [
-    agentState.autoSignEnabled,
     autoSign,
-    doTx,
-    normalizedInitiaAddress,
+    dailyTradeValueWei,
+    doAgentTx,
+    doContractTx,
+    fetchLatestAgentId,
+    maxTradeValueWei,
+    normalizedContractAddress,
     openConnect,
     openWallet,
     options.chainId,
-    options.contractAddress,
     refresh,
-    requestTxBlock,
+    requireAgentId,
+    safeOpenBridge,
+    showcaseTargetAddress,
+    showcaseTokenAddress,
+    executorAddress,
   ]);
 
   useEffect(() => {
@@ -405,9 +817,13 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       chainOk,
       initiaAddress: normalizedInitiaAddress,
       evmAddress: normalizedEvmAddress,
+      onchainAgentId: agentState.id?.toString() ?? null,
       walletBalanceWei,
-      vaultBalanceWei: agentState.balance.toString(),
+      vaultBalanceWei: agentState.exists ? agentState.balance.toString() : null,
+      walletShowcaseTokenBalanceWei: normalizedEvmAddress ? agentState.walletShowcaseTokenBalance.toString() : null,
+      showcaseTokenBalanceWei: agentState.exists ? agentState.showcaseTokenBalance.toString() : null,
       agentExists: agentState.exists,
+      executorAuthorized: agentState.exists && agentState.executorAuthorized,
       autoSignEnabled: agentState.autoSignEnabled || !!autoSign?.isEnabledByChain?.[options.chainId],
       busyAction,
       lastTxHash,
@@ -417,7 +833,11 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
   }, [
     agentState.autoSignEnabled,
     agentState.balance,
+    agentState.executorAuthorized,
     agentState.exists,
+    agentState.id,
+    agentState.showcaseTokenBalance,
+    agentState.walletShowcaseTokenBalance,
     autoSign,
     busyAction,
     chainOk,

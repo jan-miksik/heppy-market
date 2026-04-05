@@ -11,6 +11,7 @@ export interface Agent {
   id: string;
   name: string;
   status: 'running' | 'stopped' | 'paused';
+  chain: 'base' | 'initia';
   llmModel: string;
   config: {
     pairs: string[];
@@ -34,6 +35,7 @@ export interface Agent {
 
 export interface CreateAgentPayload {
   name: string;  pairs?: string[];
+  chain?: 'base' | 'initia';
   paperBalance?: number;
   strategies?: string[];
   analysisInterval?: string;
@@ -48,6 +50,9 @@ export interface CreateAgentPayload {
   profileId?: string;
   personaMd?: string;
   behaviorMd?: string;
+  initiaWalletAddress?: string;
+  initiaMetadataHash?: string;
+  initiaMetadataVersion?: number;
 }
 
 export function useAgents() {

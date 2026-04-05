@@ -2,6 +2,7 @@ import { computed, readonly, ref } from 'vue';
 import type {
   InitiaBridgeAction,
   InitiaBridgeActionEventDetail,
+  InitiaBridgeOpenParams,
   InitiaBridgeResponseEventDetail,
   InitiaBridgeState,
   InitiaBridgeStateEventDetail,
@@ -12,7 +13,7 @@ import {
   INITIA_BRIDGE_STATE_EVENT,
 } from '~/utils/initia/bridge-types';
 
-const BRIDGE_ACTION_TIMEOUT_MS = 20_000;
+const BRIDGE_ACTION_TIMEOUT_MS = 90_000;
 const BRIDGE_READY_TIMEOUT_MS = 20_000;
 
 const initiaBridgeState = ref<InitiaBridgeState>({
@@ -20,9 +21,13 @@ const initiaBridgeState = ref<InitiaBridgeState>({
   chainOk: false,
   initiaAddress: null,
   evmAddress: null,
+  onchainAgentId: null,
   walletBalanceWei: null,
   vaultBalanceWei: null,
+  walletShowcaseTokenBalanceWei: null,
+  showcaseTokenBalanceWei: null,
   agentExists: false,
+  executorAuthorized: false,
   autoSignEnabled: false,
   busyAction: null,
   lastTxHash: null,
@@ -37,6 +42,7 @@ function getDirectBridgeApi() {
     __initiaBridgeApi?: {
       openConnect?: () => Promise<void> | void;
       openWallet?: () => Promise<void> | void;
+      openBridge?: (params?: InitiaBridgeOpenParams) => Promise<void> | void;
       refresh?: () => Promise<void> | void;
     };
   }).__initiaBridgeApi ?? null;
@@ -207,6 +213,22 @@ export function useInitiaBridge() {
     throw new Error('Initia wallet bridge is ready but openWallet API is missing.');
   }
 
+  async function openBridge(params?: InitiaBridgeOpenParams) {
+    await waitForBridgeReady();
+    const normalizedParams: InitiaBridgeOpenParams = {
+      ...params,
+      quantity: (params?.quantity?.trim() || '0'),
+    };
+    const direct = getDirectBridgeApi();
+    if (direct?.openBridge) {
+      await Promise.resolve(direct.openBridge(normalizedParams)).catch((err) => {
+        setBridgeError((err as Error)?.message ?? String(err));
+      });
+      return;
+    }
+    await sendBridgeAction({ action: 'openBridge', params: normalizedParams });
+  }
+
   async function refresh() {
     const direct = getDirectBridgeApi();
     if (direct?.refresh) {
@@ -216,10 +238,13 @@ export function useInitiaBridge() {
     await sendBridgeAction({ action: 'refresh' });
   }
 
-  async function createAgentOnchain(metadataPointer: Record<string, unknown>): Promise<{ txHash?: string | null }> {
+  async function createAgentOnchain(
+    metadataPointer: Record<string, unknown>,
+  ): Promise<{ txHash?: string | null; onchainAgentId?: string | null }> {
     const result = await sendBridgeAction({ action: 'createAgentOnchain', params: { metadataPointer } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
+      onchainAgentId: (result?.onchainAgentId as string | undefined) ?? null,
     };
   }
 
@@ -232,6 +257,27 @@ export function useInitiaBridge() {
 
   async function withdraw(amount: string): Promise<{ txHash?: string | null }> {
     const result = await sendBridgeAction({ action: 'withdraw', params: { amount } });
+    return {
+      txHash: (result?.txHash as string | undefined) ?? null,
+    };
+  }
+
+  async function depositShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'depositShowcaseToken', params: { amount } });
+    return {
+      txHash: (result?.txHash as string | undefined) ?? null,
+    };
+  }
+
+  async function withdrawShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'withdrawShowcaseToken', params: { amount } });
+    return {
+      txHash: (result?.txHash as string | undefined) ?? null,
+    };
+  }
+
+  async function authorizeExecutor(): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'authorizeExecutor' });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
@@ -264,10 +310,14 @@ export function useInitiaBridge() {
     isConnected,
     openConnect,
     openWallet,
+    openBridge,
     refresh,
     createAgentOnchain,
     deposit,
     withdraw,
+    depositShowcaseToken,
+    withdrawShowcaseToken,
+    authorizeExecutor,
     enableAutoSign,
     disableAutoSign,
     executeTick,

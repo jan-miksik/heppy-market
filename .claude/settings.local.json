@@ -88,7 +88,9 @@
       "Bash(jq -r '.result.node_info.network // \"\"\"\"UNREACHABLE\"\"\"\"')",
       "Bash(jq -r \".result.sync_info | \"\"height: \\\\\\(.latest_block_height\\), catching_up: \\\\\\(.catching_up\\)\"\"\")",
       "Bash(minitiad query:*)",
-      "Bash(jq -r \".balances[] | \"\"\\\\\\(.denom\\): \\\\\\(.amount\\)\"\"\")"
+      "Bash(jq -r \".balances[] | \"\"\\\\\\(.denom\\): \\\\\\(.amount\\)\"\"\")",
+      "Bash(npm show:*)",
+      "mcp__context7__resolve-library-id"
     ]
   },
   "sandbox": {

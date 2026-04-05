@@ -492,6 +492,7 @@ export async function runAgentLoop(
     dexes: config.dexes,
     strategies: config.strategies,
     slippageSimulation: config.slippageSimulation,
+    env,
     db,
     ctx,
     tickStart,

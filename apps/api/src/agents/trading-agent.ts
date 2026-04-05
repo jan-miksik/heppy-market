@@ -427,6 +427,7 @@ export class TradingAgentDO extends DurableObject<Env> {
           dexes: pendingCtx.dexes,
           strategies: pendingCtx.strategies,
           slippageSimulation: pendingCtx.slippageSimulation,
+          env: this.env,
           db,
           ctx: this.ctx,
           log,

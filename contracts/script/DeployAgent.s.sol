@@ -6,13 +6,23 @@ import {Agent} from "../src/Agent.sol";
 
 contract DeployAgent is Script {
     function run() external returns (address deployed) {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", uint256(0));
+        address deployer = address(0);
+        if (deployerPrivateKey != 0) {
+            deployer = vm.addr(deployerPrivateKey);
+            vm.startBroadcast(deployerPrivateKey);
+        } else {
+            deployer = vm.envOr("DEPLOYER", address(0));
+            if (deployer != address(0)) {
+                vm.startBroadcast(deployer);
+            } else {
+                vm.startBroadcast();
+            }
+        }
 
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
 
-        vm.startBroadcast(deployerPrivateKey);
         Agent agent = new Agent();
         vm.stopBroadcast();
 

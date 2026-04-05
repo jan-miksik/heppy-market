@@ -6,10 +6,33 @@ import AgentConfigForm from '~/components/AgentConfigForm.vue';
 import { renderMarkdown } from '~/utils/markdown';
 
 const router = useRouter();
-const { createAgent, startAgent } = useAgents();
+const { request } = useApi();
+const { createAgent, updateAgent } = useAgents();
+const {
+  state: initiaState,
+  openConnect,
+  openWallet,
+  openBridge,
+  refresh,
+  createAgentOnchain,
+  deposit,
+  withdraw,
+} = useInitiaBridge();
+
+// ── Step state ──────────────────────────────────────────────────────────────
+const step = ref<1 | 2>(1);
+const fundAmount = ref('10000');
+const createdAgentId = ref<string | null>(null);
+const currentPaperBalance = ref(0);
+const funding = ref(false);
+const withdrawing = ref(false);
+const bridging = ref(false);
+const fundingError = ref('');
+const fundingSuccess = ref('');
 
 const creating = ref(false);
 const createError = ref('');
+const onchainStatus = ref('');
 
 const showMdPreview = ref(false);
 const systemExpanded = ref(false);
@@ -23,6 +46,10 @@ const personaTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const roleTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const configFormRef = ref<InstanceType<typeof AgentConfigForm> | null>(null);
+const WALLET_STATE_TIMEOUT_MS = 30_000;
+const WALLET_STATE_POLL_MS = 250;
+const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
+const BRIDGE_SRC_DENOM = 'uinit';
 
 function autoResize(el: HTMLTextAreaElement | null) {
   if (!el) return;
@@ -30,14 +57,25 @@ function autoResize(el: HTMLTextAreaElement | null) {
   el.style.height = `${el.scrollHeight + 20}px`;
 }
 
+function formatWei(wei: string | null | undefined): string | null {
+  if (!wei) return null;
+  try {
+    const n = BigInt(wei);
+    const e18 = 1_000_000_000_000_000_000n;
+    const whole = n / e18;
+    const frac = n % e18;
+    return `${whole}.${frac.toString().padStart(18, '0').slice(0, 2)}`;
+  } catch { return null; }
+}
+
+const walletDisplay = computed(() => formatWei(initiaState.value.walletBalanceWei));
+
 // Live system prompt
 const liveSystemPrompt = computed(() => BASE_AGENT_PROMPT + buildJsonSchemaInstruction());
 
-// Compute live EDITABLE SETUP from form values
 const liveEditableSetup = computed(() => {
   const form = configFormRef.value;
   if (!form) return '';
-
   const roleSection = (form.isRoleCustomized && form.roleMd) ? form.roleMd : AGENT_ROLE_SECTION;
   const behaviorSection = (form.isBehaviorCustomized && form.behaviorMd)
     ? form.behaviorMd
@@ -50,7 +88,6 @@ const liveEditableSetup = computed(() => {
     stopLossPct: form.form.stopLossPct ?? 2,
     takeProfitPct: form.form.takeProfitPct ?? 3,
   });
-
   return [roleSection, behaviorSection, personaSection, constraintsSection].filter(Boolean).join('\n\n');
 });
 
@@ -83,7 +120,6 @@ function startEditingSetup() {
   editBehaviorText.value = configFormRef.value?.behaviorMd || liveBehaviorSection.value;
   editRoleText.value = configFormRef.value?.roleMd || AGENT_ROLE_SECTION;
   editingSetup.value = true;
-
   nextTick(() => {
     autoResize(behaviorTextareaRef.value);
     autoResize(personaTextareaRef.value);
@@ -91,62 +127,79 @@ function startEditingSetup() {
   });
 }
 
-function stopEditingSetup() {
-  editingSetup.value = false;
-}
+function stopEditingSetup() { editingSetup.value = false; }
 
 function onPersonaTextInput(event: Event) {
   const el = event.target as HTMLTextAreaElement;
   editPersonaText.value = el.value;
-  if (configFormRef.value) {
-    configFormRef.value.personaMd = el.value;
-    configFormRef.value.isPersonaCustomized = true;
-  }
+  if (configFormRef.value) { configFormRef.value.personaMd = el.value; configFormRef.value.isPersonaCustomized = true; }
   autoResize(el);
 }
-
 function resetPersona() {
-  if (configFormRef.value) {
-    configFormRef.value.restorePersona();
-    editPersonaText.value = configFormRef.value.personaMd ?? '';
-  }
+  if (configFormRef.value) { configFormRef.value.restorePersona(); editPersonaText.value = configFormRef.value.personaMd ?? ''; }
 }
-
 function onBehaviorTextInput(event: Event) {
   const el = event.target as HTMLTextAreaElement;
   editBehaviorText.value = el.value;
-  if (configFormRef.value) {
-    configFormRef.value.behaviorMd = el.value;
-    configFormRef.value.isBehaviorCustomized = true;
-  }
+  if (configFormRef.value) { configFormRef.value.behaviorMd = el.value; configFormRef.value.isBehaviorCustomized = true; }
   autoResize(el);
 }
-
 function resetBehavior() {
-  if (configFormRef.value) {
-    configFormRef.value.restoreBehavior();
-    editBehaviorText.value = liveBehaviorSection.value;
-  }
+  if (configFormRef.value) { configFormRef.value.restoreBehavior(); editBehaviorText.value = liveBehaviorSection.value; }
 }
-
 function onRoleTextInput(event: Event) {
   const el = event.target as HTMLTextAreaElement;
   editRoleText.value = el.value;
-  if (configFormRef.value) {
-    configFormRef.value.roleMd = el.value;
-    configFormRef.value.isRoleCustomized = true;
-  }
+  if (configFormRef.value) { configFormRef.value.roleMd = el.value; configFormRef.value.isRoleCustomized = true; }
   autoResize(el);
 }
-
 function resetRole() {
-  if (configFormRef.value) {
-    configFormRef.value.restoreRole();
-    editRoleText.value = AGENT_ROLE_SECTION;
+  if (configFormRef.value) { configFormRef.value.restoreRole(); editRoleText.value = AGENT_ROLE_SECTION; }
+}
+
+// ── Step navigation ────────────────────────────────────────────────────────
+
+function goToStep(s: 1 | 2) {
+  if (s === 2 && !createdAgentId.value) return;
+  createError.value = '';
+  step.value = s;
+}
+
+// ── Step 1: capture config ─────────────────────────────────────────────────
+
+async function handleNext(payload: Partial<CreateAgentPayload>) {
+  creating.value = true;
+  createError.value = '';
+  try {
+    await ensureWalletConnected();
+
+    if (!createdAgentId.value) {
+      const agent = await createAgent({
+        ...toCreateAgentPayload({ ...payload, paperBalance: 0 }),
+        chain: 'initia',
+        initiaWalletAddress: initiaState.value.initiaAddress ?? undefined,
+      });
+      createdAgentId.value = agent.id;
+      currentPaperBalance.value = 0;
+    }
+
+    await ensureOnchainAgent({ forceCreate: true });
+    await refresh();
+    await syncInitiaState('create-step-onchain');
+    step.value = 2;
+  } catch (e) {
+    createError.value = extractApiError(e);
+  } finally {
+    creating.value = false;
+    onchainStatus.value = '';
   }
 }
 
-// ── Create handler ──────────────────────────────────────────────────────
+function handleCancel() {
+  router.push('/agents');
+}
+
+// ── Step 2: fund agent ──────────────────────────────────────────────────────
 
 function toCreateAgentPayload(payload: Partial<CreateAgentPayload>): CreateAgentPayload {
   if (
@@ -168,26 +221,168 @@ function toCreateAgentPayload(payload: Partial<CreateAgentPayload>): CreateAgent
   return payload as CreateAgentPayload;
 }
 
-async function handleCreate(payload: Partial<CreateAgentPayload>) {
-  creating.value = true;
-  createError.value = '';
+function clearFundingFeedback() {
+  fundingError.value = '';
+  fundingSuccess.value = '';
+}
+
+function buildMetadataPointer() {
+  const agentId = createdAgentId.value ?? `pending-${Date.now()}`;
+  return {
+    agentId,
+    version: 1,
+    configHash: `cfg_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`,
+    labels: {
+      source: 'heppy-market',
+      flow: 'create-step-2',
+    },
+  };
+}
+
+async function syncInitiaState(trigger: string) {
+  if (!createdAgentId.value || !initiaState.value.initiaAddress) return;
   try {
-    const agent = await createAgent(toCreateAgentPayload(payload));
-    try {
-      await startAgent(agent.id);
-    } catch {
-      console.warn('Agent created but failed to auto-start');
-    }
-    router.push(`/agents/${agent.id}`);
-  } catch (e) {
-    createError.value = extractApiError(e);
-  } finally {
-    creating.value = false;
+    await request(`/api/agents/${createdAgentId.value}/initia/sync`, {
+      method: 'POST',
+      body: {
+        state: {
+          walletAddress: initiaState.value.initiaAddress,
+          evmAddress: initiaState.value.evmAddress ?? undefined,
+          onchainAgentId: initiaState.value.onchainAgentId ?? undefined,
+          chainOk: initiaState.value.chainOk,
+          existsOnchain: initiaState.value.agentExists,
+          autoSignEnabled: initiaState.value.autoSignEnabled,
+          walletBalanceWei: initiaState.value.walletBalanceWei ?? undefined,
+          walletShowcaseTokenBalanceWei: initiaState.value.walletShowcaseTokenBalanceWei ?? undefined,
+          showcaseTokenBalanceWei: initiaState.value.showcaseTokenBalanceWei ?? undefined,
+          vaultBalanceWei: initiaState.value.vaultBalanceWei ?? undefined,
+          lastTxHash: initiaState.value.lastTxHash ?? undefined,
+          syncTrigger: trigger,
+        },
+      },
+      silent: true,
+    });
+  } catch (err) {
+    console.warn('[create-flow] failed to sync initia state', err);
   }
 }
 
-function handleCancel() {
-  router.push('/agents');
+async function ensureWalletConnected() {
+  await refresh();
+  // Only initiaAddress is required — it's the bech32 sender used in all tx signing.
+  // evmAddress may be null if InterwovenKit hasn't resolved it for the current chain.
+  if (initiaState.value.initiaAddress) return;
+
+  await openConnect();
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < WALLET_STATE_TIMEOUT_MS) {
+    await refresh();
+    if (initiaState.value.initiaAddress) return;
+    await new Promise((resolve) => setTimeout(resolve, WALLET_STATE_POLL_MS));
+  }
+
+  throw new Error('Wallet connection was not detected. Finish wallet connect and try again.');
+}
+
+async function ensureOnchainAgent(opts?: { forceCreate?: boolean }) {
+  if (!opts?.forceCreate && initiaState.value.agentExists) return;
+
+  if (!initiaState.value.chainOk) {
+    throw new Error('Local rollup chain is not reachable. Ensure the chain is running at the configured RPC endpoint.');
+  }
+
+  const metadataPointer = buildMetadataPointer();
+  onchainStatus.value = 'Waiting for block confirmation…';
+  // createAgentOnchain blocks until the agent is confirmed on-chain (polls internally
+  // via EVM JSON-RPC for up to 45s), so Vue state is current when it resolves.
+  const { txHash } = await createAgentOnchain(metadataPointer);
+  onchainStatus.value = 'Agent confirmed onchain';
+
+  if (createdAgentId.value && initiaState.value.initiaAddress && txHash) {
+    try {
+      await request(`/api/agents/${createdAgentId.value}/initia/link`, {
+        method: 'POST',
+        body: {
+          initiaWalletAddress: initiaState.value.initiaAddress,
+          evmAddress: initiaState.value.evmAddress ?? undefined,
+          txHash,
+          metadataPointer,
+        },
+        silent: true,
+      });
+    } catch (err) {
+      console.warn('[create-flow] failed to persist initia link state', err);
+    }
+  }
+}
+
+async function handleDeposit() {
+  if (!createdAgentId.value) return;
+  const amt = Number(fundAmount.value);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    fundingError.value = 'Enter a valid amount greater than zero.';
+    return;
+  }
+  clearFundingFeedback();
+  funding.value = true;
+  try {
+    await ensureWalletConnected();
+    await ensureOnchainAgent();
+    const result = await deposit(String(amt));
+    await refresh();
+    currentPaperBalance.value += amt;
+    await updateAgent(createdAgentId.value, { paperBalance: currentPaperBalance.value });
+    await syncInitiaState('create-step-deposit');
+    fundingSuccess.value = `Deposited ${amt.toLocaleString()} GAS.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
+  } catch (e) {
+    fundingError.value = extractApiError(e);
+  } finally {
+    funding.value = false;
+  }
+}
+
+async function handleWithdraw() {
+  if (!createdAgentId.value) return;
+  const amt = Number(fundAmount.value);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    fundingError.value = 'Enter a valid amount greater than zero.';
+    return;
+  }
+  clearFundingFeedback();
+  withdrawing.value = true;
+  try {
+    await ensureWalletConnected();
+    await ensureOnchainAgent();
+    const result = await withdraw(String(amt));
+    await refresh();
+    currentPaperBalance.value = Math.max(0, currentPaperBalance.value - amt);
+    await updateAgent(createdAgentId.value, { paperBalance: currentPaperBalance.value });
+    await syncInitiaState('create-step-withdraw');
+    fundingSuccess.value = `Withdrew ${amt.toLocaleString()} GAS.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
+  } catch (e) {
+    fundingError.value = extractApiError(e);
+  } finally {
+    withdrawing.value = false;
+  }
+}
+
+async function handleBridge() {
+  clearFundingFeedback();
+  bridging.value = true;
+  try {
+    await ensureWalletConnected();
+    await openBridge({ srcChainId: BRIDGE_SRC_CHAIN_ID, srcDenom: BRIDGE_SRC_DENOM, quantity: '0' });
+  } catch (e) {
+    fundingError.value = extractApiError(e);
+  } finally {
+    bridging.value = false;
+  }
+}
+
+function handleOpenAgent() {
+  if (!createdAgentId.value) return;
+  router.push(`/agents/${createdAgentId.value}`);
 }
 </script>
 
@@ -195,32 +390,58 @@ function handleCancel() {
   <div class="edit-page">
     <!-- Sticky command bar -->
     <div class="edit-bar">
-      <NuxtLink to="/agents" class="edit-bar__back">&larr; back</NuxtLink>
-      <span class="edit-bar__sep">/</span>
-      <span class="edit-bar__name">New Agent</span>
-      <div class="edit-bar__actions">
-        <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
+      <NuxtLink to="/agents" class="edit-bar__back">← Agents</NuxtLink>
+
+      <!-- Centered step breadcrumbs -->
+      <nav class="edit-bar__steps">
         <button
-          type="submit"
-          form="agent-config-form"
-          class="edit-bar__save"
-          :disabled="creating"
+          class="step-item"
+          :class="{ 'step-item--active': step === 1, 'step-item--done': step > 1 }"
+          @click="goToStep(1)"
         >
-          <span v-if="creating" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
-          {{ creating ? 'Creating…' : 'Create Agent' }}
+          <span class="step-item__num">1</span>
+          <span class="step-item__label">Configure agent</span>
         </button>
+        <span class="step-arrow">→</span>
+        <button
+          class="step-item"
+          :class="{ 'step-item--active': step === 2, 'step-item--pending': !createdAgentId }"
+          :disabled="!createdAgentId"
+          @click="goToStep(2)"
+        >
+          <span class="step-item__num">2</span>
+          <span class="step-item__label">Fund agent</span>
+        </button>
+      </nav>
+
+      <div class="edit-bar__actions">
+        <template v-if="step === 1">
+          <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
+          <button type="submit" form="agent-config-form" class="edit-bar__save" :disabled="creating">
+            <span v-if="creating" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
+            {{ onchainStatus || (creating ? 'Creating…' : 'Create Agent →') }}
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="edit-bar__save" :disabled="!createdAgentId" @click="handleOpenAgent">
+            Open Agent
+          </button>
+        </template>
       </div>
     </div>
 
     <div v-if="createError" class="edit-error">{{ createError }}</div>
+    <div v-if="onchainStatus && !createError" class="edit-onchain-status">{{ onchainStatus }}</div>
 
-    <div class="edit-page__body">
+    <!-- ── Step 1: Config form + prompt preview (v-show keeps form mounted) ── -->
+    <div v-show="step === 1" class="edit-page__body">
       <div class="edit-page__left">
         <AgentConfigForm
           ref="configFormRef"
           hide-persona-editor
+          hide-balance-input
           :hide-footer="true"
-          @submit="handleCreate"
+          @submit="handleNext"
           @cancel="handleCancel"
         />
       </div>
@@ -242,127 +463,152 @@ function handleCancel() {
           </div>
 
           <div class="prompt-pills">
-            <!-- SYSTEM pill -->
             <button class="prompt-pill prompt-pill--system" @click="systemExpanded = !systemExpanded">
               <span>[SYSTEM]</span>
               <span class="pill-chevron">{{ systemExpanded ? '▾' : '▸' }}</span>
             </button>
             <div v-if="systemExpanded" class="pill-content">
-              <pre
-                v-if="!showMdPreview"
-                class="dec-code-block dec-code-block--scrollable"
-              >{{ liveSystemPrompt }}</pre>
+              <pre v-if="!showMdPreview" class="dec-code-block dec-code-block--scrollable">{{ liveSystemPrompt }}</pre>
               <!-- eslint-disable-next-line vue/no-v-html -->
-              <div
-                v-else
-                class="dec-code-block dec-code-block--scrollable"
-                v-html="renderMarkdown(liveSystemPrompt)"
-              />
+              <div v-else class="dec-code-block dec-code-block--scrollable" v-html="renderMarkdown(liveSystemPrompt)" />
             </div>
-
-            <!-- MARKET DATA pill (placeholder for create) -->
             <button class="prompt-pill prompt-pill--market" disabled style="opacity: 0.4; cursor: default;">
               <span>[MARKET DATA]</span>
               <span style="font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: 0;">&mdash; available after first run</span>
             </button>
           </div>
 
-          <!-- EDITABLE SETUP block -->
           <div class="prompt-section prompt-section--editable">
             <div class="prompt-section__toggle-row">
               <button class="prompt-section__toggle" style="flex:1">
                 <span class="prompt-section__label">[EDITABLE SETUP]</span>
               </button>
-              <button v-if="!editingSetup" class="btn btn-ghost btn-sm" style="margin-right:8px" @click="startEditingSetup">
-                Edit
-              </button>
-              <button v-else class="btn btn-ghost btn-sm" style="margin-right:8px" @click="stopEditingSetup">
-                Done
-              </button>
+              <button v-if="!editingSetup" class="btn btn-ghost btn-sm" style="margin-right:8px" @click="startEditingSetup">Edit</button>
+              <button v-else class="btn btn-ghost btn-sm" style="margin-right:8px" @click="stopEditingSetup">Done</button>
             </div>
 
-            <!-- View mode -->
-            <pre
-              v-if="!editingSetup && !showMdPreview"
-              class="prompt-section__content prompt-section__content--setup"
-            >{{ liveEditableSetup }}</pre>
+            <pre v-if="!editingSetup && !showMdPreview" class="prompt-section__content prompt-section__content--setup">{{ liveEditableSetup }}</pre>
             <!-- eslint-disable-next-line vue/no-v-html -->
-            <div
-              v-else-if="!editingSetup && showMdPreview"
-              class="prompt-section__content prompt-section__content--setup"
-              v-html="renderMarkdown(liveEditableSetup)"
-            />
+            <div v-else-if="!editingSetup && showMdPreview" class="prompt-section__content prompt-section__content--setup" v-html="renderMarkdown(liveEditableSetup)" />
 
-            <!-- Edit mode -->
             <template v-else>
               <div class="setup-part">
                 <div class="setup-part__label">
                   Role
                   <span v-if="isRoleCustomized" class="acf__custom-badge">Custom</span>
                   <span v-else class="setup-part__auto-tag">default</span>
-                  <button v-if="isRoleCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetRole">
-                    ↺ Reset
-                  </button>
+                  <button v-if="isRoleCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetRole">↺ Reset</button>
                 </div>
-                <textarea
-                  ref="roleTextareaRef"
-                  class="setup-part__textarea"
-                  :value="editRoleText"
-                  placeholder="Role section markdown…"
-                  @input="onRoleTextInput($event)"
-                />
+                <textarea ref="roleTextareaRef" class="setup-part__textarea" :value="editRoleText" placeholder="Role section markdown…" @input="onRoleTextInput($event)" />
               </div>
-
               <div class="setup-part">
                 <div class="setup-part__label">
                   Behavior profile
                   <span v-if="isBehaviorCustomized" class="acf__custom-badge">Custom</span>
                   <span v-else class="setup-part__auto-tag">auto-generated</span>
-                  <button v-if="isBehaviorCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetBehavior">
-                    ↺ Reset
-                  </button>
+                  <button v-if="isBehaviorCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetBehavior">↺ Reset</button>
                 </div>
-                <textarea
-                  ref="behaviorTextareaRef"
-                  class="setup-part__textarea"
-                  :value="editBehaviorText"
-                  placeholder="Behavior profile markdown…"
-                  @input="onBehaviorTextInput($event)"
-                />
+                <textarea ref="behaviorTextareaRef" class="setup-part__textarea" :value="editBehaviorText" placeholder="Behavior profile markdown…" @input="onBehaviorTextInput($event)" />
               </div>
-
               <div class="setup-part">
                 <div class="setup-part__label">
                   Persona
                   <span v-if="isPersonaCustomized" class="acf__custom-badge">Custom</span>
-                  <button v-if="isPersonaCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetPersona">
-                    ↺ Reset
-                  </button>
+                  <button v-if="isPersonaCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetPersona">↺ Reset</button>
                 </div>
-                <textarea
-                  ref="personaTextareaRef"
-                  class="setup-part__textarea"
-                  :value="editPersonaText"
-                  placeholder="Your persona markdown…"
-                  @input="onPersonaTextInput($event)"
-                />
+                <textarea ref="personaTextareaRef" class="setup-part__textarea" :value="editPersonaText" placeholder="Your persona markdown…" @input="onPersonaTextInput($event)" />
               </div>
-
               <div class="setup-part setup-part--readonly">
                 <div class="setup-part__label">Constraints <span class="setup-part__auto-tag">auto-generated</span></div>
-                <pre
-                  v-if="!showMdPreview"
-                  class="prompt-section__content"
-                >{{ liveConstraintsSection }}</pre>
+                <pre v-if="!showMdPreview" class="prompt-section__content">{{ liveConstraintsSection }}</pre>
                 <!-- eslint-disable-next-line vue/no-v-html -->
-                <div
-                  v-else
-                  class="prompt-section__content"
-                  v-html="renderMarkdown(liveConstraintsSection)"
-                />
+                <div v-else class="prompt-section__content" v-html="renderMarkdown(liveConstraintsSection)" />
               </div>
             </template>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 2: Fund ────────────────────────────────────────────────── -->
+    <div v-if="step === 2" class="fund-step">
+      <div class="fund-step__surface">
+        <div class="fund-step__header">
+          <span class="fund-step__title">Fund agent vault</span>
+          <span class="fund-step__badge">GAS = iUSD (demo)</span>
+        </div>
+
+        <p class="fund-step__desc">
+          Agent is created with zero balance by default. Fund from wallet, then continue to configure auto-sign and execution.
+        </p>
+
+        <div class="fund-step__wallet-row">
+          <span class="fund-step__bal-key">agent paper balance</span>
+          <span class="fund-step__bal-val">{{ currentPaperBalance.toLocaleString() }} iUSD-demo</span>
+        </div>
+
+        <div v-if="walletDisplay" class="fund-step__wallet-row">
+          <span class="fund-step__bal-key">wallet balance</span>
+          <span class="fund-step__bal-val">{{ walletDisplay }} GAS</span>
+        </div>
+
+        <div class="fund-step__input-row">
+          <input
+            v-model="fundAmount"
+            type="number"
+            min="0.0001"
+            step="0.0001"
+            class="fund-step__input"
+            placeholder="10"
+            :disabled="funding || withdrawing || bridging"
+            @focus="clearFundingFeedback"
+          >
+          <span class="fund-step__currency">GAS</span>
+        </div>
+
+        <div class="fund-step__actions">
+          <button
+            class="fund-step__btn fund-step__btn--primary"
+            :disabled="funding || withdrawing || bridging"
+            @click="handleDeposit"
+          >
+            <span v-if="funding" class="spinner" style="width:12px;height:12px;border-color:#0003;border-top-color:#0a0a0a" />
+            {{ funding ? 'Depositing…' : 'Deposit' }}
+          </button>
+          <button
+            class="fund-step__btn fund-step__btn--ghost"
+            :disabled="funding || withdrawing || bridging"
+            @click="handleWithdraw"
+          >
+            <span v-if="withdrawing" class="spinner" style="width:12px;height:12px;" />
+            {{ withdrawing ? 'Withdrawing…' : 'Withdraw' }}
+          </button>
+          <button
+            class="fund-step__btn fund-step__btn--bridge"
+            :disabled="funding || withdrawing || bridging"
+            @click="handleBridge"
+          >
+            <span v-if="bridging" class="spinner" style="width:12px;height:12px;" />
+            {{ bridging ? 'Opening…' : 'Bridge' }}
+          </button>
+        </div>
+
+        <div class="fund-step__meta">
+          <span class="fund-step__meta-item">○ auto-sign — placeholder</span>
+          <span class="fund-step__meta-sep">·</span>
+          <span class="fund-step__meta-item">GAS → iUSD (demo only)</span>
+        </div>
+
+        <div v-if="fundingSuccess" class="fund-step__success">{{ fundingSuccess }}</div>
+        <div v-if="fundingError" class="fund-step__error">{{ fundingError }}</div>
+
+        <div class="fund-step__bridge-note">
+          <div class="fund-step__bridge-note-title">Hackathon bridge note</div>
+          <p>
+            Local dev limitation: Interwoven Bridge resolves registered chain IDs only, so your local appchain or token route may not render.
+            We still keep bridge in this flow because it demonstrates the hackathon path: bridge assets from L1 to appchain, then deposit into the agent vault.
+            This improves onboarding speed, liquidity access, and immediate utility.
+          </p>
         </div>
       </div>
     </div>
@@ -379,47 +625,123 @@ function handleCancel() {
   gap: 20px;
 }
 
-/* ── Command bar ────────────────────────────────────────────────── */
+/* ── Command bar ──────────────────────────────────────────────────── */
 .edit-bar {
   position: sticky;
   top: 52px;
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 10px;
   padding: 10px 0;
   background: var(--bg, #0a0a0a);
   border-bottom: 1px solid var(--border, #1e1e1e);
 }
+
 .edit-bar__back {
-  font-size: 13px;
-  color: var(--accent, #7c6af7);
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #555);
   text-decoration: none;
   white-space: nowrap;
+  transition: color 0.12s;
+}
+.edit-bar__back:hover { color: var(--accent, #7c6af7); }
+
+/* Steps centered absolutely so they're always at 50% regardless of left/right content width */
+.edit-bar__steps {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none; /* reset on children */
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 0.12s;
+  opacity: 0.35;
+}
+.step-item:disabled { cursor: default; }
+.step-item:not(:disabled):hover { opacity: 0.65; }
+
+.step-item--active {
+  opacity: 1;
+}
+.step-item--done {
+  opacity: 0.55;
+}
+.step-item--done:not(:disabled):hover { opacity: 0.8; }
+.step-item--pending {
+  opacity: 0.25;
+}
+
+.step-item__num {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #2a2a2a);
   font-family: 'Space Mono', monospace;
-}
-.edit-bar__back:hover { text-decoration: underline; }
-.edit-bar__sep {
-  color: var(--border, #333);
-  font-size: 14px;
-}
-.edit-bar__name {
-  flex: 1;
-  font-size: 13px;
+  font-size: 9px;
   font-weight: 700;
-  color: var(--text, #e0e0e0);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: 'Space Mono', monospace;
-  letter-spacing: -0.01em;
+  color: var(--text-muted, #666);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
+.step-item--active .step-item__num {
+  border-color: var(--accent, #7c6af7);
+  background: color-mix(in srgb, var(--accent, #7c6af7) 15%, transparent);
+  color: var(--accent, #7c6af7);
+}
+.step-item--done .step-item__num {
+  border-color: #4ade80;
+  background: color-mix(in srgb, #4ade80 10%, transparent);
+  color: #4ade80;
+}
+
+.step-item__label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted, #666);
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+.step-item--active .step-item__label {
+  color: var(--text, #e0e0e0);
+}
+
+.step-arrow {
+  font-size: 11px;
+  color: var(--border, #333);
+  flex-shrink: 0;
+}
+
 .edit-bar__actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
+
 .edit-bar__cancel {
   padding: 6px 14px;
   background: none;
@@ -434,10 +756,8 @@ function handleCancel() {
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
-.edit-bar__cancel:hover {
-  border-color: #555;
-  color: #aaa;
-}
+.edit-bar__cancel:hover { border-color: #555; color: #aaa; }
+
 .edit-bar__save {
   display: inline-flex;
   align-items: center;
@@ -467,7 +787,20 @@ function handleCancel() {
   color: #e55;
 }
 
-/* ── Body layout ─────────────────────────────────────────────────── */
+.edit-onchain-status {
+  padding: 10px 14px;
+  background: color-mix(in srgb, #7c6af7 10%, transparent);
+  border: 1px solid color-mix(in srgb, #7c6af7 30%, transparent);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #a89ff7;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Step 1 body ────────────────────────────────────────────────── */
 .edit-page__body {
   display: flex;
   flex-direction: column;
@@ -477,14 +810,232 @@ function handleCancel() {
   margin: 0 auto;
   width: 100%;
 }
-.edit-page__left {
-  position: static;
-  max-height: none;
-  overflow: visible;
-}
+.edit-page__left { position: static; max-height: none; overflow: visible; }
 .edit-page__right { min-width: 0; }
 
-/* ── Prompt preview ──────────────────────────────────────────── */
+/* ── Step 2 fund ────────────────────────────────────────────────── */
+.fund-step {
+  max-width: 440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.fund-step__surface {
+  background: var(--surface, #141414);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fund-step__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fund-step__title {
+  flex: 1;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #555);
+}
+
+.fund-step__badge {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+.fund-step__desc {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted, #555);
+  margin: 0;
+}
+
+.fund-step__wallet-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--border, #2a2a2a) 20%, transparent);
+  border-radius: 3px;
+}
+
+.fund-step__bal-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #555);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fund-step__bal-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text, #e0e0e0);
+}
+
+.fund-step__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fund-step__input {
+  flex: 1;
+  height: 38px;
+  background: var(--bg, #0a0a0a);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 3px;
+  color: var(--text, #e0e0e0);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  padding: 0 12px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.fund-step__input:focus { border-color: var(--accent, #7c6af7); }
+.fund-step__input:disabled { opacity: 0.4; }
+
+.fund-step__currency {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #555);
+  white-space: nowrap;
+}
+
+.fund-step__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fund-step__btn {
+  flex: 1;
+  height: 34px;
+  border-radius: 3px;
+  border: 1px solid var(--border, #2a2a2a);
+  background: transparent;
+  color: var(--text, #e0e0e0);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: opacity 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.fund-step__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.fund-step__btn--primary {
+  background: #e0e0e0;
+  color: #0a0a0a;
+  border-color: transparent;
+}
+
+.fund-step__btn--primary:not(:disabled):hover {
+  background: #fff;
+}
+
+.fund-step__btn--ghost:not(:disabled):hover {
+  border-color: #555;
+  color: #fff;
+}
+
+.fund-step__btn--bridge {
+  color: #f59e0b;
+  border-color: color-mix(in srgb, #f59e0b 40%, var(--border, #2a2a2a));
+}
+
+.fund-step__btn--bridge:not(:disabled):hover {
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+}
+
+.fund-step__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border, #1e1e1e);
+}
+.fund-step__meta-item {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #444);
+}
+.fund-step__meta-sep {
+  color: var(--border, #333);
+  font-size: 10px;
+}
+
+.fund-step__success {
+  margin-top: -2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #22c55e;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.fund-step__error {
+  margin-top: -2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #ef4444;
+  line-height: 1.5;
+}
+
+.fund-step__bridge-note {
+  border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.fund-step__bridge-note-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f59e0b;
+  margin-bottom: 6px;
+}
+
+.fund-step__bridge-note p {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-muted, #a7a7a7);
+}
+
+/* ── Prompt preview ──────────────────────────────────────────────── */
 .prompt-preview {
   background: var(--surface, #141414);
   border: 1px solid var(--border, #2a2a2a);
@@ -502,11 +1053,7 @@ function handleCancel() {
   background: color-mix(in srgb, var(--border, #2a2a2a) 30%, transparent);
   gap: 12px;
 }
-.prompt-preview__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.prompt-preview__header-actions { display: flex; align-items: center; gap: 8px; }
 .prompt-preview__title {
   font-size: 11px;
   font-weight: 700;
@@ -515,10 +1062,7 @@ function handleCancel() {
   color: var(--text-muted, #555);
 }
 
-/* ── Prompt sections ─────────────────────────────────────────── */
-.prompt-section {
-  border-bottom: 1px solid var(--border, #1e1e1e);
-}
+.prompt-section { border-bottom: 1px solid var(--border, #1e1e1e); }
 .prompt-section:last-child { border-bottom: none; }
 .prompt-section--editable { flex: 1; }
 .prompt-section__toggle {
@@ -538,9 +1082,7 @@ function handleCancel() {
   text-align: left;
   gap: 8px;
 }
-.prompt-section__toggle:hover {
-  background: color-mix(in srgb, var(--border) 20%, transparent);
-}
+.prompt-section__toggle:hover { background: color-mix(in srgb, var(--border) 20%, transparent); }
 .prompt-section__toggle-row {
   display: flex;
   align-items: center;
@@ -558,18 +1100,9 @@ function handleCancel() {
   margin: 0;
   background: color-mix(in srgb, var(--border, #2a2a2a) 10%, transparent);
 }
-.prompt-section__content--setup {
-  overflow-y: auto;
-}
+.prompt-section__content--setup { overflow-y: auto; }
 
-/* Prompt pill rows */
-.prompt-pills {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px 8px 12px;
-}
-
+.prompt-pills { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 8px 12px; }
 .prompt-pill {
   display: flex;
   justify-content: flex-start;
@@ -591,15 +1124,8 @@ function handleCancel() {
 .prompt-pill:hover { opacity: 0.75; }
 .prompt-pill--system { color: var(--text-muted); }
 .prompt-pill--market { color: #f59e0b; }
-
-.pill-chevron {
-  flex-shrink: 0;
-  font-size: 12px;
-}
-
-.pill-content {
-  padding: 0 10px 8px 18px;
-}
+.pill-chevron { flex-shrink: 0; font-size: 12px; }
+.pill-content { padding: 0 10px 8px 18px; }
 
 .dec-code-block {
   font-family: 'JetBrains Mono', monospace;
@@ -613,19 +1139,11 @@ function handleCancel() {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.dec-code-block--scrollable {
-  overflow-y: auto;
-}
+.dec-code-block--scrollable { overflow-y: auto; }
 
-/* ── Setup edit parts ────────────────────────────────────────── */
-.setup-part {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border, #1e1e1e);
-}
+.setup-part { padding: 12px 16px; border-bottom: 1px solid var(--border, #1e1e1e); }
 .setup-part:last-child { border-bottom: none; }
-.setup-part--readonly .prompt-section__content {
-  opacity: 0.55;
-}
+.setup-part--readonly .prompt-section__content { opacity: 0.55; }
 .setup-part__label {
   font-size: 10px;
   font-weight: 700;
@@ -662,11 +1180,8 @@ function handleCancel() {
   box-sizing: border-box;
   transition: border-color 0.15s;
 }
-.setup-part__textarea:focus {
-  border-color: var(--accent, #7c6af7);
-}
+.setup-part__textarea:focus { border-color: var(--accent, #7c6af7); }
 
-/* Custom badge */
 .acf__custom-badge {
   font-size: 10px;
   font-weight: 600;
@@ -678,8 +1193,6 @@ function handleCancel() {
 }
 
 @media (max-width: 1000px) {
-  .edit-page__body {
-    max-width: 100%;
-  }
+  .edit-page__body { max-width: 100%; }
 }
 </style>

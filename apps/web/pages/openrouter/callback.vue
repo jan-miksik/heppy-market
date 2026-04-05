@@ -21,10 +21,10 @@ onMounted(async () => {
     return;
   }
   try {
-    await handleCallback(code, state);
+    const returnTo = await handleCallback(code, state);
     await fetchMe();
     status.value = 'success';
-    setTimeout(() => navigateTo('/settings'), 1500);
+    setTimeout(() => navigateTo(returnTo || '/settings'), 1500);
   } catch (err) {
     status.value = 'error';
     errorMsg.value = (err as Error).message ?? 'Exchange failed.';

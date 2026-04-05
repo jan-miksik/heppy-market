@@ -1,10 +1,13 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { agentDecisions, trades } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
+import { agentDecisions, agents, trades } from '../../db/schema.js';
 import { generateId, nowIso } from '../../lib/utils.js';
 import { normalizePairForDex } from '../../lib/pairs.js';
 import { createLogger } from '../../lib/logger.js';
 import { getTradeDecision } from '../../services/llm-router.js';
+import { tryExecuteInitiaTick } from '../../services/initia-executor.js';
 import { PaperEngine, type Position } from '../../services/paper-engine.js';
+import type { Env } from '../../types/env.js';
 import type { MarketDataItem, RecentDecision } from './types.js';
 
 export type ExecuteDecisionParams = {
@@ -20,11 +23,23 @@ export type ExecuteDecisionParams = {
   dexes: string[];
   strategies: string[];
   slippageSimulation: number;
+  env: Env;
   db: ReturnType<typeof drizzle>;
   ctx: DurableObjectState;
   tickStart?: number;
   log: ReturnType<typeof createLogger>;
 };
+
+function parseInitiaSyncState(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Execute a trade decision returned by the LLM.
@@ -46,6 +61,7 @@ export async function executeTradeDecision(
     dexes,
     strategies,
     slippageSimulation,
+    env,
     db,
     ctx,
     tickStart,
@@ -62,6 +78,18 @@ export async function executeTradeDecision(
   } else if (wantsTrade && !hasCapacity) {
     executionNote = `Execution: skipped (already at max open positions: ${engine.openPositions.length}/${maxOpenPositions}).`;
   }
+
+  const [agentRow] = await db
+    .select({
+      chain: agents.chain,
+      initiaSyncState: agents.initiaSyncState,
+    })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  const initiaSyncState = parseInitiaSyncState(agentRow?.initiaSyncState ?? null);
+  const shouldAttemptOnchain = agentRow?.chain === 'initia';
+  let executedPaperTrade = false;
 
   const decisionId = generateId('dec');
   await db.insert(agentDecisions).values({
@@ -153,6 +181,7 @@ export async function executeTradeDecision(
         position_size_pct: positionSizePct,
         confidence: decision.confidence,
       });
+      executedPaperTrade = true;
       broadcastAgentEvent(ctx, {
         type: 'trade',
         event: 'open',
@@ -170,6 +199,7 @@ export async function executeTradeDecision(
       log.error('trade_open_failed', { pair: targetPairName, side: decision.action, error: String(err) });
     }
   } else if (decision.action === 'close' && engine.openPositions.length > 0) {
+    let closedAnyPosition = false;
     for (const position of engine.openPositions) {
       const pairData = marketData.find((m) => m.pair === position.pair);
       if (!pairData) continue;
@@ -204,9 +234,23 @@ export async function executeTradeDecision(
           openPositions: engine.openPositions.length,
         });
         console.log(`[agent-loop] ${agentId}: Closed ${position.pair} PnL=${closed.pnlPct?.toFixed(2)}%`);
+        closedAnyPosition = true;
       } catch (err) {
         console.warn(`[agent-loop] ${agentId}: Failed to close position:`, err);
       }
+    }
+    if (closedAnyPosition) executedPaperTrade = true;
+  }
+
+  if (shouldAttemptOnchain && wantsTrade && meetsConfidence && executedPaperTrade) {
+    const onchainResult = await tryExecuteInitiaTick({
+      env,
+      log,
+      agentId,
+      syncState: initiaSyncState,
+    });
+    if (!onchainResult.executed) {
+      log.info('initia_tick_skipped', { reason: onchainResult.reason ?? 'unknown' });
     }
   }
 

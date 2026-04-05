@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, or, isNull, and, ne } from 'drizzle-orm';
+import { eq, desc, or, isNull } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import type { AuthVariables } from '../lib/auth.js';
 import { agents, trades, agentDecisions, performanceSnapshots, agentSelfModifications, users } from '../db/schema.js';
@@ -77,18 +77,6 @@ function normalizeInitiaWalletAddress(value: unknown): string | null {
   return trimmed.toLowerCase();
 }
 
-async function findInitiaWalletOwner(
-  db: ReturnType<typeof drizzle>,
-  initiaWalletAddress: string,
-): Promise<{ id: string } | null> {
-  const [row] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.chain, 'initia'), eq(agents.initiaWalletAddress, initiaWalletAddress)))
-    .limit(1);
-  return row ?? null;
-}
-
 function parseInitiaSyncState(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {
@@ -97,12 +85,6 @@ function parseInitiaSyncState(raw: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
-}
-
-function isInitiaWalletUniqueError(err: unknown): boolean {
-  const message = (err as Error)?.message ?? String(err);
-  return message.includes('idx_agents_initia_wallet_unique')
-    || message.includes('UNIQUE constraint failed: agents.initia_wallet_address');
 }
 
 /** GET /api/agents — list agents owned by the authenticated user (+ legacy unowned) */
@@ -125,12 +107,6 @@ agentsRoute.post('/', async (c) => {
 
   const chain = body.chain ?? 'base';
   const initiaWalletAddress = normalizeInitiaWalletAddress(body.initiaWalletAddress);
-  if (chain === 'initia' && initiaWalletAddress) {
-    const existingOwner = await findInitiaWalletOwner(db, initiaWalletAddress);
-    if (existingOwner) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-  }
 
   const id = generateId('agent');
   const now = nowIso();
@@ -142,30 +118,23 @@ agentsRoute.post('/', async (c) => {
 
   const profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : null;
 
-  try {
-    await db.insert(agents).values({
-      id,
-      name: body.name,
-      status: 'stopped',
-      autonomyLevel: 2,
-      chain,
-      config: JSON.stringify(config),
-      llmModel: body.llmModel,
-      ownerAddress: walletAddress,
-      profileId,
-      personaMd: body.personaMd ?? null,
-      initiaWalletAddress: chain === 'initia' ? initiaWalletAddress : null,
-      initiaMetadataHash: body.initiaMetadataHash ?? null,
-      initiaMetadataVersion: body.initiaMetadataVersion ?? null,
-      createdAt: now,
-      updatedAt: now,
-    });
-  } catch (err) {
-    if (isInitiaWalletUniqueError(err)) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-    throw err;
-  }
+  await db.insert(agents).values({
+    id,
+    name: body.name,
+    status: 'stopped',
+    autonomyLevel: 2,
+    chain,
+    config: JSON.stringify(config),
+    llmModel: body.llmModel,
+    ownerAddress: walletAddress,
+    profileId,
+    personaMd: body.personaMd ?? null,
+    initiaWalletAddress: chain === 'initia' ? initiaWalletAddress : null,
+    initiaMetadataHash: body.initiaMetadataHash ?? null,
+    initiaMetadataVersion: body.initiaMetadataVersion ?? null,
+    createdAt: now,
+    updatedAt: now,
+  });
 
   const [created] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json(formatAgent(created), 201);
@@ -221,23 +190,6 @@ agentsRoute.patch('/:id', async (c) => {
     ? normalizeInitiaWalletAddress(body.initiaWalletAddress)
     : normalizeInitiaWalletAddress(existing.initiaWalletAddress);
 
-  if (nextChain === 'initia' && nextInitiaWalletAddress) {
-    const [walletOwner] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.chain, 'initia'),
-          eq(agents.initiaWalletAddress, nextInitiaWalletAddress),
-          ne(agents.id, id),
-        ),
-      )
-      .limit(1);
-    if (walletOwner) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-  }
-
   const mergedConfig = {
     ...existingConfig,
     ...body,
@@ -270,14 +222,7 @@ agentsRoute.patch('/:id', async (c) => {
   if (body.initiaMetadataHash !== undefined) updates.initiaMetadataHash = body.initiaMetadataHash ?? null;
   if (body.initiaMetadataVersion !== undefined) updates.initiaMetadataVersion = body.initiaMetadataVersion ?? null;
 
-  try {
-    await db.update(agents).set(updates).where(eq(agents.id, id));
-  } catch (err) {
-    if (isInitiaWalletUniqueError(err)) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-    throw err;
-  }
+  await db.update(agents).set(updates).where(eq(agents.id, id));
 
   const [updated] = await db.select().from(agents).where(eq(agents.id, id));
 
@@ -334,21 +279,6 @@ agentsRoute.post('/:id/initia/link', async (c) => {
     return c.json({ error: 'Invalid Initia wallet address.' }, 400);
   }
 
-  const [walletOwner] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.chain, 'initia'),
-        eq(agents.initiaWalletAddress, initiaWalletAddress),
-        ne(agents.id, id),
-      ),
-    )
-    .limit(1);
-  if (walletOwner) {
-    return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-  }
-
   const now = nowIso();
   const currentSync = parseInitiaSyncState(existing.initiaSyncState);
   const mergedSync = {
@@ -359,26 +289,19 @@ agentsRoute.post('/:id/initia/link', async (c) => {
     metadataPointer: body.metadataPointer,
   };
 
-  try {
-    await db
-      .update(agents)
-      .set({
-        initiaWalletAddress,
-        initiaMetadataHash: body.metadataPointer.configHash,
-        initiaMetadataVersion: body.metadataPointer.version,
-        initiaLinkTxHash: body.txHash,
-        initiaLinkedAt: now,
-        initiaSyncState: JSON.stringify(mergedSync),
-        initiaLastSyncedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(agents.id, id));
-  } catch (err) {
-    if (isInitiaWalletUniqueError(err)) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-    throw err;
-  }
+  await db
+    .update(agents)
+    .set({
+      initiaWalletAddress,
+      initiaMetadataHash: body.metadataPointer.configHash,
+      initiaMetadataVersion: body.metadataPointer.version,
+      initiaLinkTxHash: body.txHash,
+      initiaLinkedAt: now,
+      initiaSyncState: JSON.stringify(mergedSync),
+      initiaLastSyncedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(agents.id, id));
 
   const [updated] = await db.select().from(agents).where(eq(agents.id, id));
   return c.json(formatAgent(updated));
@@ -398,22 +321,6 @@ agentsRoute.post('/:id/initia/sync', async (c) => {
   }
 
   const normalizedWalletAddress = normalizeInitiaWalletAddress(body.state.walletAddress);
-  if (normalizedWalletAddress) {
-    const [walletOwner] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.chain, 'initia'),
-          eq(agents.initiaWalletAddress, normalizedWalletAddress),
-          ne(agents.id, id),
-        ),
-      )
-      .limit(1);
-    if (walletOwner) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-  }
 
   const now = nowIso();
   const currentSync = parseInitiaSyncState(existing.initiaSyncState);
@@ -430,14 +337,7 @@ agentsRoute.post('/:id/initia/sync', async (c) => {
   };
   if (normalizedWalletAddress) updates.initiaWalletAddress = normalizedWalletAddress;
 
-  try {
-    await db.update(agents).set(updates).where(eq(agents.id, id));
-  } catch (err) {
-    if (isInitiaWalletUniqueError(err)) {
-      return c.json({ error: 'Only one Initia agent is allowed per Initia wallet in this hackathon mode.' }, 409);
-    }
-    throw err;
-  }
+  await db.update(agents).set(updates).where(eq(agents.id, id));
 
   return c.json({ ok: true, state: mergedSync, syncedAt: now });
 });

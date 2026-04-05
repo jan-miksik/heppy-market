@@ -81,7 +81,7 @@ export const AgentConfigSchema = z.object({
     .min(1)
     .max(10)
     .default(['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']),
-  paperBalance: z.number().min(100).max(1_000_000).default(10_000),
+  paperBalance: z.number().min(0).max(1_000_000).default(10_000),
   maxPositionSizePct: z.number().min(1).max(100).default(5),
   maxOpenPositions: z.number().min(1).max(10).default(3),
   stopLossPct: z.number().min(0.5).max(50).default(5),
@@ -150,7 +150,7 @@ export const CreateAgentRequestSchema = z.object({
     .min(1)
     .max(10)
     .default(['WETH/USDC', 'cbBTC/WETH', 'AERO/USDC']),
-  paperBalance: z.number().min(100).max(1_000_000).default(10_000),
+  paperBalance: z.number().min(0).max(1_000_000).default(10_000),
   maxPositionSizePct: z.number().min(1).max(100).default(5),
   maxOpenPositions: z.number().min(1).max(10).default(3),
   stopLossPct: z.number().min(0.5).max(50).default(5),
@@ -205,13 +205,18 @@ export const InitiaLinkRequestSchema = z.object({
 export const InitiaSyncStateSchema = z.object({
   walletAddress: z.string().trim().min(3).max(128).optional(),
   evmAddress: z.string().trim().min(3).max(128).optional(),
+  onchainAgentId: z.string().trim().min(1).max(64).optional(),
   chainOk: z.boolean().optional(),
   existsOnchain: z.boolean().optional(),
   autoSignEnabled: z.boolean().optional(),
+  executorAuthorized: z.boolean().optional(),
   walletBalanceWei: z.string().trim().min(1).max(128).optional(),
   vaultBalanceWei: z.string().trim().min(1).max(128).optional(),
+  walletShowcaseTokenBalanceWei: z.string().trim().min(1).max(128).optional(),
+  showcaseTokenBalanceWei: z.string().trim().min(1).max(128).optional(),
   contractAddress: z.string().trim().min(1).max(128).optional(),
   lastTxHash: z.string().trim().min(6).max(128).optional(),
+  syncTrigger: z.string().trim().min(1).max(64).optional(),
   error: z.string().trim().min(1).max(512).optional(),
 });
 
