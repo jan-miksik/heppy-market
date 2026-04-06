@@ -84,7 +84,7 @@ export default defineNuxtConfig({
     baseURL: '/',
     buildAssetsDir: '_nuxt',
     head: {
-      title: 'Something in loop',
+      title: 'initRoot',
       meta: [
         { name: 'description', content: 'AI-powered paper trading agents with Initia MVP integration' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

@@ -50,7 +50,7 @@ async function handleBridge() {
       <!-- Hero -->
       <section class="about-hero">
         <span class="about-eyebrow">about</span>
-        <h1 class="about-title">Almost There</h1>
+        <h1 class="about-title">initRoot</h1>
         <p class="about-desc">
           Autonomous AI trading agents on Initia. Deploy strategies, track performance,
           and let LLMs manage your portfolio in paper-trading mode — with on-chain vault

@@ -1,6 +1,6 @@
-## Something in loop – Project Overview
+## initRoot – Project Overview
 
-**Something in loop** (monorepo name `something-in-loop`) is an AI‑assisted paper‑trading platform for DEXes on the Base chain.
+**initRoot** (monorepo name `something-in-loop`) is an AI‑assisted paper‑trading platform for DEXes on the Base chain.
 
 - **Frontend (`apps/web`)**
   - **Nuxt 4 SPA** (no SSR) with Vue 3 `<script setup>` and TypeScript.

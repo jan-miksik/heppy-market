@@ -1,5 +1,5 @@
   ---                                                                                                                          
-  Critical Infrastructure Audit — Something in loop                                                                                 
+  Critical Infrastructure Audit — initRoot                                                                                 
                                                                                                                                
   ---                                                                                                                          
   🔴 HIGH RISK Issues (must fix before scale)                                                                                  

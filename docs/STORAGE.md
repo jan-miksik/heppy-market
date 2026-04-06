@@ -1,6 +1,6 @@
 # Storage Architecture
 
-Heppy Market runs entirely on Cloudflare primitives. Every storage choice was driven by one constraint: **Workers have no filesystem and no long-lived process memory** — so state must live in the right Cloudflare service depending on access pattern, consistency needs, and TTL.
+initRoot runs entirely on Cloudflare primitives. Every storage choice was driven by one constraint: **Workers have no filesystem and no long-lived process memory** — so state must live in the right Cloudflare service depending on access pattern, consistency needs, and TTL.
 
 ---
 

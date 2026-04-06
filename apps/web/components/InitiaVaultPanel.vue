@@ -147,7 +147,7 @@ async function handleCreateAgentOnchain() {
 
   await runAction('create', async () => {
     const metadataPointer = {
-      source: 'heppy-market',
+      source: 'initroot',
       createdAt: new Date().toISOString(),
     };
     return await createAgentOnchain(metadataPointer);

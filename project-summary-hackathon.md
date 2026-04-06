@@ -1,7 +1,7 @@
-# Heppy Market – Hackathon Project Summary
+# initRoot – Hackathon Project Summary
 
 ## One-liner
-Heppy Market is an edge-native, AI-assisted paper trading platform for DEX markets on Base, where autonomous agents analyze market data, make structured decisions, and simulate trades with strong safety and auditability.
+initRoot is an edge-native, AI-assisted paper trading platform for DEX markets on Base, where autonomous agents analyze market data, make structured decisions, and simulate trades with strong safety and auditability.
 
 ## What the project does
 - Users create and manage AI trading agents with configurable strategy, risk limits, and persona.
@@ -32,7 +32,7 @@ Heppy Market is an edge-native, AI-assisted paper trading platform for DEX marke
 - Easy to position across multiple tracks: AI Agents, Fintech, Web3/Base, Edge/Cloudflare, Real-time systems.
 
 ## Suggested submission angle
-Heppy Market demonstrates how to build trustworthy autonomous financial agents at the edge: low-latency execution, resilient state management, and transparent AI decisioning in a safe paper-trading environment.
+initRoot demonstrates how to build trustworthy autonomous financial agents at the edge: low-latency execution, resilient state management, and transparent AI decisioning in a safe paper-trading environment.
 
 ## Keywords for hackathon search
 AI trading agents, paper trading, Cloudflare Workers, Durable Objects, Base ecosystem, DEX analytics, autonomous systems, edge AI, real-time fintech, LLM orchestration

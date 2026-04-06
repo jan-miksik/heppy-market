@@ -1,5 +1,5 @@
 /**
- * Structured logger for the Something in loop agent system.
+ * Structured logger for the initRoot agent system.
  *
  * Emits machine-readable key=value lines compatible with wrangler tail and
  * Cloudflare Logpush. Every log line includes a timestamp, level, service,

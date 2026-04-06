@@ -2,7 +2,7 @@
 
 ## Overview
 
-Heppy Market is a Nuxt 4 SPA. InterwovenKit (the Initia wallet connector) is a **React-only library**. To bridge this gap, we embed a hidden React island directly inside the Nuxt app — a lightweight pattern that lets us use React components without rewriting the entire frontend.
+initRoot is a Nuxt 4 SPA. InterwovenKit (the Initia wallet connector) is a **React-only library**. To bridge this gap, we embed a hidden React island directly inside the Nuxt app — a lightweight pattern that lets us use React components without rewriting the entire frontend.
 
 ---
 

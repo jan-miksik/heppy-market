@@ -13,7 +13,7 @@ describe('parseSiweMessage', () => {
     'localhost wants you to sign in with your Ethereum account:',
     '0xDeadBeefDeadBeefDeadBeefDeadBeefDeadBeef',
     '',
-    'Sign in to Something in loop',
+    'Sign in to initRoot',
     '',
     'URI: http://localhost:3000',
     'Version: 1',

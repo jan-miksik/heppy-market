@@ -115,7 +115,7 @@ export function useAuth() {
         nonce,
         uri: window.location.origin,
         version: '1',
-        statement: 'Sign in to Something in loop',
+        statement: 'Sign in to initRoot',
       });
 
       // 3. Sign with Interwoven provider.

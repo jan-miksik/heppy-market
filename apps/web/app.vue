@@ -96,9 +96,7 @@ async function handleWalletClick() {
     <header v-if="isConnectRoute" class="shellbar shellbar--connect">
       <NuxtLink to="/connect" class="shellbar-brand">
         <span class="shellbar-dot" />
-        <span>HEPPY MARKET</span>
-        <span class="shellbar-sep">·</span>
-        <span>INITIA</span>
+        <span>initRoot</span>
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="shellbar-auth">
@@ -119,7 +117,7 @@ async function handleWalletClick() {
     <nav v-else class="navbar">
       <NuxtLink to="/agents" class="navbar-brand">
         <span class="dot" />
-        Something in loop
+        initRoot
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="navbar-nav">

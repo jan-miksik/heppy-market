@@ -146,7 +146,7 @@ app.get('/api/models', async (c) => {
 // Root catch-all
 app.get('/', (c) =>
   c.json({
-    name: 'Something in loop API',
+    name: 'initRoot API',
     version: '0.1.0',
     docs: '/api/health',
     routes: [

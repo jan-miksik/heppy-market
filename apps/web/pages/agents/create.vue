@@ -291,7 +291,7 @@ function buildMetadataPointer() {
     version: 1,
     configHash: `cfg_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 10)}`,
     labels: {
-      source: 'heppy-market',
+      source: 'initroot',
       flow: 'create-step-2',
     },
   };

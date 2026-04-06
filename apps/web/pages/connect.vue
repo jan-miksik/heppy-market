@@ -59,7 +59,7 @@ function handleConnect() {
   <main class="connect-page">
     <div class="connect-center">
       <div class="connect-card">
-        <p class="connect-label">Heppy Market</p>
+        <p class="connect-label">initRoot</p>
         <p class="connect-desc">
           Autonomous trading agents on Initia. Deploy strategies, track performance, and let AI manage your portfolio.
         </p>
