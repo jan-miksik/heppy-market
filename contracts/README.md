@@ -1,6 +1,6 @@
 ## Contracts
 
-This folder now uses a single `Agent.sol` contract as the source of truth.
+This folder includes the core `Agent.sol` contract plus the demo `iUSD-demo` token/faucet contracts.
 
 - `src/Agent.sol` (core implementation)
   - Multiple agents per user (ID-based vaults).
@@ -9,6 +9,10 @@ This folder now uses a single `Agent.sol` contract as the source of truth.
   - Per-agent target whitelist for trade calls.
   - Native + ERC-20 deposit/withdraw per agent.
   - Guarded execution primitives (`executeTick`, `executeTradeCall`, `executeTokenTrade`).
+- `src/IUSDDemoToken.sol` (test token used as `iUSD-demo`)
+  - 18 decimals, mintable by authorized minters.
+- `src/IUSDDemoFaucet.sol` (test faucet for `iUSD-demo`)
+  - Unlimited mint on demand for connected test wallets.
 
 ## Build / Test
 
@@ -22,9 +26,11 @@ forge test -vv
 ## Scripts
 
 - `script/DeployAgent.s.sol` (deploys `Agent`)
+- `script/DeployIUSDDemo.s.sol` (deploys `IUSDDemoToken` + `IUSDDemoFaucet`, and grants faucet minter role)
 
 Example:
 
 ```bash
 forge script script/DeployAgent.s.sol:DeployAgent --rpc-url <RPC_URL> --broadcast
+forge script script/DeployIUSDDemo.s.sol:DeployIUSDDemo --rpc-url <RPC_URL> --broadcast
 ```

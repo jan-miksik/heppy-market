@@ -262,6 +262,13 @@ export function useInitiaBridge() {
     };
   }
 
+  async function mintShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'mintShowcaseToken', params: { amount } });
+    return {
+      txHash: (result?.txHash as string | undefined) ?? null,
+    };
+  }
+
   async function depositShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
     const result = await sendBridgeAction({ action: 'depositShowcaseToken', params: { amount } });
     return {
@@ -315,6 +322,7 @@ export function useInitiaBridge() {
     createAgentOnchain,
     deposit,
     withdraw,
+    mintShowcaseToken,
     depositShowcaseToken,
     withdrawShowcaseToken,
     authorizeExecutor,

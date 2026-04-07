@@ -7,6 +7,7 @@ import { agentManagerLogs, agentManagers, agents, performanceSnapshots, trades, 
 import { decryptKey } from '../../lib/crypto.js';
 import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
+import { resolveCoinGeckoSpotUsdForPair } from '../../services/coingecko-price.js';
 import { generateId, nowIso } from '../../lib/utils.js';
 import { normalizeManagerDecisionInterval } from '../../lib/manager-interval-sync.js';
 import type { ManagerConfig } from '@something-in-loop/shared';
@@ -148,9 +149,19 @@ export async function runManagerLoop(managerId: string, env: Env, ctx: DurableOb
           priceUsd: getPriceUsd(basePair),
           priceChange: { h1: basePair.priceChange?.h1, h24: basePair.priceChange?.h24 },
         });
+        continue;
       }
     } catch {
       // skip
+    }
+
+    const coinGeckoSpot = await resolveCoinGeckoSpotUsdForPair(env, pairName);
+    if (coinGeckoSpot > 0) {
+      marketData.push({
+        pair: pairName,
+        priceUsd: coinGeckoSpot,
+        priceChange: {},
+      });
     }
   }
 

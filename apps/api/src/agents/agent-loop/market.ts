@@ -5,6 +5,7 @@ import { agentDecisions } from '../../db/schema.js';
 import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import type { DexPair } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
+import { resolveCoinGeckoSpotUsdForPair } from '../../services/coingecko-price.js';
 import { combineSignals, computeIndicators, evaluateSignals } from '../../services/indicators.js';
 import { classifyApiError, logStructuredError } from '../../lib/agent-errors.js';
 import { createLogger } from '../../lib/logger.js';
@@ -79,13 +80,14 @@ function buildIndicatorText(
 }
 
 async function fetchOnePair(params: {
+  env: Env;
   pairName: string;
   agentId: string;
   geckoSvc: ReturnType<typeof createGeckoTerminalService>;
   dexSvc: ReturnType<typeof createDexDataService>;
   log: ReturnType<typeof createLogger>;
 }): Promise<MarketDataItem | null> {
-  const { pairName, agentId, geckoSvc, dexSvc, log } = params;
+  const { env, pairName, agentId, geckoSvc, dexSvc, log } = params;
   const query = pairToSearchQuery(pairName);
   let priceUsd = 0;
   let pairAddress = '';
@@ -195,6 +197,18 @@ async function fetchOnePair(params: {
   }
 
   if (priceUsd === 0) {
+    try {
+      const coingeckoSpot = await resolveCoinGeckoSpotUsdForPair(env, pairName);
+      if (coingeckoSpot > 0) {
+        priceUsd = coingeckoSpot;
+        console.log(`[agent-loop] ${agentId}: CoinGecko spot fallback found @ $${priceUsd}`);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  if (priceUsd === 0) {
     log.warn('price_resolution_failed', { pair: pairName });
     return null;
   }
@@ -211,7 +225,7 @@ async function fetchOnePair(params: {
   return {
     pair: pairName,
     pairAddress,
-    dexScreenerUrl: `https://dexscreener.com/base/${pairAddress}`,
+    dexScreenerUrl: pairAddress ? `https://dexscreener.com/base/${pairAddress}` : '',
     priceUsd,
     priceChange,
     volume24h,
@@ -242,14 +256,14 @@ export async function fetchAgentMarketContext(params: {
   if (cachedRecentDecisions !== undefined) {
     recentDecisions = cachedRecentDecisions;
     pairResults = await Promise.allSettled(
-      pairsToFetch.map((pairName) => fetchOnePair({ pairName, agentId, geckoSvc, dexSvc, log })),
+      pairsToFetch.map((pairName) => fetchOnePair({ env, pairName, agentId, geckoSvc, dexSvc, log })),
     )
       .then((r) => ({ status: 'fulfilled' as const, value: r }))
       .catch((e) => ({ status: 'rejected' as const, reason: e }));
   } else {
     log.info('recent_decisions_cache_miss', { agentId });
     const [pairResultsRaw, dbDecisions] = await Promise.allSettled([
-      Promise.allSettled(pairsToFetch.map((pairName) => fetchOnePair({ pairName, agentId, geckoSvc, dexSvc, log }))),
+      Promise.allSettled(pairsToFetch.map((pairName) => fetchOnePair({ env, pairName, agentId, geckoSvc, dexSvc, log }))),
       db
         .select({
           decision: agentDecisions.decision,

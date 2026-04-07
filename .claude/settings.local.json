@@ -93,7 +93,9 @@
       "mcp__context7__resolve-library-id",
       "Bash(sqlite3:*)",
       "Bash(node_modules/esbuild/bin/esbuild apps/api/src/index.ts --bundle --outfile=/tmp/test-worker.js --platform=browser --format=esm --external:cloudflare:workers)",
-      "Bash(shasum -a 256)"
+      "Bash(shasum -a 256)",
+      "Bash(forge build:*)",
+      "Bash(forge test:*)"
     ]
   },
   "sandbox": {

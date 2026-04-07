@@ -43,9 +43,9 @@ contract AgentEntryPointTest is Test {
         vm.prank(alice);
         agent.depositNative{value: 4 ether}(agentId);
 
-        (, , uint256 nativeBalance, bool exists, bool autoSignEnabled, bool paused) = agent.getAgent(agentId);
+        (, , uint256 nativeBalance, bool exists, bool delegatedExecutionEnabled, bool paused) = agent.getAgent(agentId);
         assertTrue(exists);
-        assertFalse(autoSignEnabled);
+        assertFalse(delegatedExecutionEnabled);
         assertFalse(paused);
         assertEq(nativeBalance, 4 ether);
 
@@ -68,19 +68,19 @@ contract AgentEntryPointTest is Test {
         agent.withdrawNative(agentId, 0.2 ether, payable(bob));
     }
 
-    function test_setAutoSignEnabled() external {
-        uint256 agentId = _createAliceAgent(bytes("auto-sign"));
+    function test_setDelegatedExecutionEnabled() external {
+        uint256 agentId = _createAliceAgent(bytes("delegated-exec"));
 
         vm.prank(alice);
-        agent.setAutoSignEnabled(agentId, true);
+        agent.setDelegatedExecutionEnabled(agentId, true);
 
-        (, , , , bool autoSignEnabled, ) = agent.getAgent(agentId);
-        assertTrue(autoSignEnabled);
+        (, , , , bool delegatedExecutionEnabled, ) = agent.getAgent(agentId);
+        assertTrue(delegatedExecutionEnabled);
 
         vm.prank(alice);
-        agent.setAutoSignEnabled(agentId, false);
+        agent.setDelegatedExecutionEnabled(agentId, false);
 
-        (, , , , autoSignEnabled, ) = agent.getAgent(agentId);
-        assertFalse(autoSignEnabled);
+        (, , , , delegatedExecutionEnabled, ) = agent.getAgent(agentId);
+        assertFalse(delegatedExecutionEnabled);
     }
 }

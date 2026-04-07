@@ -10,6 +10,7 @@ export type InitiaBridgeActionName =
   | 'createAgentOnchain'
   | 'deposit'
   | 'withdraw'
+  | 'mintShowcaseToken'
   | 'depositShowcaseToken'
   | 'withdrawShowcaseToken'
   | 'authorizeExecutor'
@@ -78,6 +79,7 @@ export type InitiaBridgeAction =
   | { action: 'createAgentOnchain'; params: { metadataPointer: Record<string, unknown> } }
   | { action: 'deposit'; params: { amount: string } }
   | { action: 'withdraw'; params: { amount: string } }
+  | { action: 'mintShowcaseToken'; params: { amount: string } }
   | { action: 'depositShowcaseToken'; params: { amount: string } }
   | { action: 'withdrawShowcaseToken'; params: { amount: string } }
   | { action: 'authorizeExecutor' }

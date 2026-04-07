@@ -203,6 +203,16 @@ const ERC20_ABI = [
   },
 ] as const;
 
+const IUSD_FAUCET_ABI = [
+  {
+    type: 'function',
+    name: 'mint',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'amount', type: 'uint256' }],
+    outputs: [{ name: 'mintedAmount', type: 'uint256' }],
+  },
+] as const;
+
 export interface InitiaBridgeMountOptions {
   chainId: string;
   defaultChainId: string;
@@ -214,6 +224,7 @@ export interface InitiaBridgeMountOptions {
   indexerUrl: string;
   contractAddress: string;
   showcaseTokenAddress?: string;
+  showcaseTokenFaucetAddress?: string;
   executorAddress?: string;
   showcaseTargetAddress?: string;
   maxTradeValueWei?: string;
@@ -365,6 +376,10 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
   const showcaseTokenAddress = useMemo(
     () => normalizeEvmOptionAddress(options.showcaseTokenAddress),
     [options.showcaseTokenAddress],
+  );
+  const showcaseTokenFaucetAddress = useMemo(
+    () => normalizeEvmOptionAddress(options.showcaseTokenFaucetAddress),
+    [options.showcaseTokenFaucetAddress],
   );
   const executorAddress = useMemo(
     () => normalizeEvmOptionAddress(options.executorAddress),
@@ -707,6 +722,18 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
             const txHash = await doAgentTx('withdraw', input);
             return { txHash, onchainAgentId: agentId.toString() };
           }
+          case 'mintShowcaseToken': {
+            if (!showcaseTokenFaucetAddress) throw new Error('iUSD-demo faucet address is not configured.');
+            const amount = String(params?.amount ?? '0');
+            const wei = parseEther(amount);
+            const input = encodeFunctionData({
+              abi: IUSD_FAUCET_ABI,
+              functionName: 'mint',
+              args: [wei],
+            });
+            const txHash = await doContractTx('mintShowcaseToken', showcaseTokenFaucetAddress, input);
+            return { txHash };
+          }
           case 'depositShowcaseToken': {
             if (!showcaseTokenAddress) throw new Error('Showcase token address is not configured.');
             if (!normalizedContractAddress) throw new Error('Initia contract address is not configured.');
@@ -848,6 +875,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     requireAgentId,
     safeOpenBridge,
     showcaseTargetAddress,
+    showcaseTokenFaucetAddress,
     showcaseTokenAddress,
     executorAddress,
   ]);

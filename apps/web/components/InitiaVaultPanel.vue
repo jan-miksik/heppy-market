@@ -19,6 +19,7 @@ const {
   createAgentOnchain,
   deposit,
   withdraw,
+  mintShowcaseToken,
   depositShowcaseToken,
   withdrawShowcaseToken,
   authorizeExecutor,
@@ -29,10 +30,12 @@ const {
 
 const nativeAmount = ref('0.1');
 const tokenAmount = ref('10');
+const faucetAmount = ref('1000');
 const localBusy = ref<
   | 'create'
   | 'deposit'
   | 'withdraw'
+  | 'mintToken'
   | 'depositToken'
   | 'withdrawToken'
   | 'authorizeExecutor'
@@ -172,7 +175,7 @@ async function handleWithdrawNative() {
 
 async function handleDepositToken() {
   if (!checkAmount(tokenAmount.value)) {
-    actionError.value = 'Enter a valid showcase token amount > 0.';
+    actionError.value = 'Enter a valid iUSD-demo amount > 0.';
     return;
   }
   await runAction('depositToken', async () => await depositShowcaseToken(tokenAmount.value));
@@ -180,10 +183,18 @@ async function handleDepositToken() {
 
 async function handleWithdrawToken() {
   if (!checkAmount(tokenAmount.value)) {
-    actionError.value = 'Enter a valid showcase token amount > 0.';
+    actionError.value = 'Enter a valid iUSD-demo amount > 0.';
     return;
   }
   await runAction('withdrawToken', async () => await withdrawShowcaseToken(tokenAmount.value));
+}
+
+async function handleMintToken() {
+  if (!checkAmount(faucetAmount.value)) {
+    actionError.value = 'Enter a valid faucet mint amount > 0.';
+    return;
+  }
+  await runAction('mintToken', async () => await mintShowcaseToken(faucetAmount.value));
 }
 
 async function handleAuthorizeExecutor() {
@@ -220,11 +231,11 @@ async function handleExecuteTick() {
         <div class="vault-panel__value">{{ formatWei(initiaState.walletBalanceWei) }} GAS</div>
       </div>
       <div class="vault-panel__stat">
-        <div class="vault-panel__label">Deposited showcase</div>
+        <div class="vault-panel__label">Deposited iUSD-demo</div>
         <div class="vault-panel__value">{{ formatWei(initiaState.showcaseTokenBalanceWei) }}</div>
       </div>
       <div class="vault-panel__stat">
-        <div class="vault-panel__label">Wallet showcase</div>
+        <div class="vault-panel__label">Wallet iUSD-demo</div>
         <div class="vault-panel__value">{{ formatWei(initiaState.walletShowcaseTokenBalanceWei) }}</div>
       </div>
       <div class="vault-panel__stat">
@@ -285,15 +296,32 @@ async function handleExecuteTick() {
         min="0"
         step="0.0001"
         class="vault-panel__amount"
-        placeholder="Showcase amount"
+        placeholder="iUSD-demo amount"
       >
+
+      <input
+        v-model="faucetAmount"
+        type="number"
+        min="0"
+        step="0.0001"
+        class="vault-panel__amount"
+        placeholder="Faucet amount"
+      >
+
+      <button
+        class="btn btn-ghost btn-sm"
+        :disabled="busy || !connected"
+        @click="handleMintToken"
+      >
+        {{ localBusy === 'mintToken' ? 'Minting…' : 'Mint iUSD-demo' }}
+      </button>
 
       <button
         class="btn btn-success btn-sm"
         :disabled="busy || !connected || !hasAgent"
         @click="handleDepositToken"
       >
-        {{ localBusy === 'depositToken' ? 'Depositing…' : 'Deposit Token' }}
+        {{ localBusy === 'depositToken' ? 'Depositing…' : 'Deposit iUSD-demo' }}
       </button>
 
       <button
@@ -301,7 +329,7 @@ async function handleExecuteTick() {
         :disabled="busy || !connected || !hasAgent"
         @click="handleWithdrawToken"
       >
-        {{ localBusy === 'withdrawToken' ? 'Withdrawing…' : 'Withdraw Token' }}
+        {{ localBusy === 'withdrawToken' ? 'Withdrawing…' : 'Withdraw iUSD-demo' }}
       </button>
 
       <button

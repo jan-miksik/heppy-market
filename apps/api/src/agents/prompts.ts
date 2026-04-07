@@ -111,3 +111,101 @@ Based on the above data, what is your trading decision?`;
 }
 
 export { buildBehaviorSection, buildConstraintsSection };
+
+/**
+ * Build a spot-only analysis prompt for the LLM.
+ * Legal actions: OPEN_LONG (when FLAT), CLOSE_LONG (when LONG), HOLD (always).
+ * The LLM must NOT produce calldata, token addresses, selectors, or deadlines.
+ */
+export function buildSpotAnalysisPrompt(params: {
+  portfolioState: {
+    balance: number;
+    openPositions: number;
+    dailyPnlPct: number;
+    totalPnlPct: number;
+  };
+  currentSpotState: 'FLAT' | 'LONG';
+  marketData: {
+    pair: string;
+    priceUsd: number;
+    priceChange: Record<string, number | undefined>;
+    volume24h?: number;
+    liquidity?: number;
+    indicatorText: string;
+    dailyIndicatorText?: string;
+  }[];
+  lastDecisions: Array<{
+    decision: string;
+    confidence: number;
+    createdAt: string;
+  }>;
+  config: {
+    pairs: string[];
+    maxPositionSizePct: number;
+  };
+  behavior?: Partial<AgentBehaviorConfig>;
+  personaMd?: string | null;
+  behaviorMd?: string | null;
+  roleMd?: string | null;
+}): string {
+  const { portfolioState, currentSpotState, marketData, lastDecisions, config, behavior, personaMd, behaviorMd, roleMd } = params;
+
+  const maxPerTrade = (portfolioState.balance * config.maxPositionSizePct) / 100;
+  const fmtPrice = (p: number) => (p < 0.01 ? p.toFixed(6) : p.toFixed(2));
+
+  const legalActions =
+    currentSpotState === 'FLAT'
+      ? 'OPEN_LONG (enter position) or HOLD (wait)'
+      : 'CLOSE_LONG (exit position) or HOLD (keep holding)';
+
+  return `## Portfolio State (Spot-Only)
+Balance: $${portfolioState.balance.toFixed(2)} USDC
+Open positions: ${portfolioState.openPositions}
+Current spot state: ${currentSpotState}
+Max per trade: ${config.maxPositionSizePct}% ($${maxPerTrade.toFixed(0)})
+Daily P&L: ${portfolioState.dailyPnlPct >= 0 ? '+' : ''}${portfolioState.dailyPnlPct.toFixed(2)}%
+Total P&L: ${portfolioState.totalPnlPct >= 0 ? '+' : ''}${portfolioState.totalPnlPct.toFixed(2)}%
+
+## Market Data
+${marketData
+  .map(
+    (m) => `### ${m.pair}
+Price: $${fmtPrice(m.priceUsd)}
+5m change: ${m.priceChange.m5 !== undefined ? `${m.priceChange.m5 >= 0 ? '+' : ''}${m.priceChange.m5.toFixed(2)}%` : 'N/A'}
+1h change: ${m.priceChange.h1 !== undefined ? `${m.priceChange.h1 >= 0 ? '+' : ''}${m.priceChange.h1.toFixed(2)}%` : 'N/A'}
+6h change: ${m.priceChange.h6 !== undefined ? `${m.priceChange.h6 >= 0 ? '+' : ''}${m.priceChange.h6.toFixed(2)}%` : 'N/A'}
+24h change: ${m.priceChange.h24 !== undefined ? `${m.priceChange.h24 >= 0 ? '+' : ''}${m.priceChange.h24.toFixed(2)}%` : 'N/A'}
+Volume 24h: ${m.volume24h !== undefined ? `$${(m.volume24h / 1_000).toFixed(1)}K` : 'N/A'}
+Liquidity: ${m.liquidity !== undefined ? `$${(m.liquidity / 1_000_000).toFixed(2)}M` : 'N/A'}
+Short-term (48h hourly):
+${m.indicatorText}${m.dailyIndicatorText ? `\nDaily trend (30d):\n${m.dailyIndicatorText}` : ''}`
+  )
+  .join('\n\n')}
+
+## Recent Decisions (last ${lastDecisions.length})
+${lastDecisions
+  .map((d) => `- ${d.createdAt.slice(0, 16)}: ${d.decision} (confidence: ${d.confidence.toFixed(2)})`)
+  .join('\n') || 'No recent decisions'}
+
+${roleMd || AGENT_ROLE_SECTION}
+
+${behaviorMd ? behaviorMd + '\n\n' : behavior ? buildBehaviorSection(behavior) + '\n\n' : ''}${personaMd ? '## Your Persona\n' + personaMd + '\n\n' : ''}## Spot Trading Rules
+- You are operating in SPOT-ONLY mode (no shorts, no leverage).
+- Current state: **${currentSpotState}**
+- Legal actions right now: **${legalActions}**
+- Transition rules:
+  - FLAT + OPEN_LONG → LONG (you enter a long position)
+  - LONG + CLOSE_LONG → FLAT (you exit your position)
+  - Any state + HOLD → unchanged (you wait)
+  - LONG + OPEN_LONG is ILLEGAL — do not produce this.
+  - FLAT + CLOSE_LONG is ILLEGAL — do not produce this.
+- Set sizePct (0–100) only for OPEN_LONG; use 0 for CLOSE_LONG and HOLD.
+- Set maxSlippageBps to your acceptable slippage in basis points (e.g. 50 = 0.5%).
+- Do NOT produce calldata, token addresses, function selectors, deadlines, or wei amounts.
+
+## Constraints
+Allowed pairs: ${config.pairs.join(', ')}
+Max position size: ${config.maxPositionSizePct}% of balance
+
+Based on the above data, what is your spot trading decision?`;
+}

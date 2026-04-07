@@ -115,6 +115,13 @@ export const AgentConfigSchema = z.object({
   initiaMetadataHash: z.string().trim().min(8).max(256).optional(),
   initiaMetadataVersion: z.number().int().min(1).max(10_000).optional(),
 
+  // Initia spot-mode (V1 — only active when chain === 'initia')
+  spotMode: z.boolean().optional(),
+  dexPlatformId: z.string().optional(),
+  allowedTradeTokens: z.array(z.string()).optional(),
+  maxTradeNotionalUsd: z.number().min(0).optional(),
+  dailyTradeNotionalUsd: z.number().min(0).optional(),
+
   // Behavior (optional — falls back to defaults / profile)
   behavior: AgentBehaviorConfigSchema.optional(),
   profileId: z.string().optional(),
@@ -132,6 +139,16 @@ export const TradeDecisionSchema = z.object({
   targetPair: z.string().nullable().optional(),
   suggestedPositionSizePct: z.number().min(0).max(100).nullable().optional(),
 });
+
+export const SpotTradeDecisionSchema = z.object({
+  action: z.enum(['OPEN_LONG', 'CLOSE_LONG', 'HOLD']),
+  market: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  sizePct: z.number().min(0).max(100),
+  maxSlippageBps: z.number().int().min(0).max(10_000),
+  rationale: z.string().min(1).max(2000),
+});
+export type SpotTradeDecision = z.infer<typeof SpotTradeDecisionSchema>;
 
 export const CreateAgentRequestSchema = z.object({
   name: EntityNameSchema,
@@ -208,7 +225,7 @@ export const InitiaSyncStateSchema = z.object({
   onchainAgentId: z.string().trim().min(1).max(64).optional(),
   chainOk: z.boolean().optional(),
   existsOnchain: z.boolean().optional(),
-  autoSignEnabled: z.boolean().optional(),
+  delegatedExecutionEnabled: z.boolean().optional(),
   executorAuthorized: z.boolean().optional(),
   walletBalanceWei: z.string().trim().min(1).max(128).optional(),
   vaultBalanceWei: z.string().trim().min(1).max(128).optional(),

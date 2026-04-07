@@ -1,11 +1,11 @@
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { TradeDecisionSchema } from '@something-in-loop/shared';
-import type { TradeDecision, AgentBehaviorConfig } from '@something-in-loop/shared';
+import { TradeDecisionSchema, SpotTradeDecisionSchema } from '@something-in-loop/shared';
+import type { TradeDecision, SpotTradeDecision, AgentBehaviorConfig } from '@something-in-loop/shared';
 import { sleep } from '../lib/utils.js';
 import { classifyLlmError } from '../lib/agent-errors.js';
-import { BASE_AGENT_PROMPT, buildAnalysisPrompt } from '../agents/prompts.js';
+import { BASE_AGENT_PROMPT, buildAnalysisPrompt, buildSpotAnalysisPrompt } from '../agents/prompts.js';
 
 export function buildJsonSchemaInstruction(): string {
   return `
@@ -286,6 +286,223 @@ export async function getTradeDecision(
     }
 
     // Brief pause between different models
+    if (modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
+      await sleep(300);
+    }
+  }
+
+  const msg =
+    modelsToTry.length === 1
+      ? `Model "${modelsToTry[0]}" is unavailable. ${String(lastError)}`
+      : `Primary and fallback models failed. Last error: ${String(lastError)}`;
+  throw new Error(msg);
+}
+
+export function buildSpotJsonSchemaInstruction(): string {
+  return `
+IMPORTANT: Respond with ONLY a valid JSON object — no markdown, no code blocks, no explanation.
+The JSON must match this schema exactly:
+{
+  "action": "OPEN_LONG" | "CLOSE_LONG" | "HOLD",
+  "market": "<string — e.g. INIT/USDC>",
+  "confidence": <number 0.0–1.0>,
+  "sizePct": <number 0–100 — % of balance to use for OPEN_LONG; 0 for CLOSE_LONG/HOLD>,
+  "maxSlippageBps": <integer 0–10000 — acceptable slippage in basis points>,
+  "rationale": "<string — 1–2 sentence explanation>"
+}
+Do NOT include calldata, token addresses, function selectors, or deadlines — the backend generates those.`;
+}
+
+export interface SpotTradeDecisionRequest {
+  portfolioState: {
+    balance: number;
+    openPositions: number;
+    dailyPnlPct: number;
+    totalPnlPct: number;
+  };
+  currentSpotState: 'FLAT' | 'LONG';
+  marketData: Array<{
+    pair: string;
+    priceUsd: number;
+    priceChange: Record<string, number | undefined>;
+    volume24h?: number;
+    liquidity?: number;
+    indicatorText: string;
+    dailyIndicatorText?: string;
+  }>;
+  lastDecisions: Array<{
+    decision: string;
+    confidence: number;
+    createdAt: string;
+  }>;
+  config: {
+    pairs: string[];
+    maxPositionSizePct: number;
+  };
+  behavior?: Partial<AgentBehaviorConfig>;
+  personaMd?: string | null;
+  behaviorMd?: string | null;
+  roleMd?: string | null;
+}
+
+/**
+ * Get a structured spot trade decision from the LLM.
+ * Uses SpotTradeDecisionSchema (OPEN_LONG / CLOSE_LONG / HOLD).
+ * Mirrors getTradeDecision — same model-fallback and retry strategy.
+ */
+export async function getSpotTradeDecision(
+  config: LLMRouterConfig,
+  request: SpotTradeDecisionRequest,
+): Promise<
+  SpotTradeDecision & {
+    latencyMs: number;
+    tokensUsed?: number;
+    tokensIn?: number;
+    tokensOut?: number;
+    modelUsed: string;
+    llmPromptText: string;
+    llmRawResponse: string;
+  }
+> {
+  const isAnthropic = config.provider === 'anthropic';
+  const openrouter = isAnthropic ? null : createOpenRouter({ apiKey: config.apiKey });
+  const anthropic = isAnthropic ? createAnthropic({ apiKey: config.apiKey }) : null;
+  const systemPrompt = BASE_AGENT_PROMPT + buildSpotJsonSchemaInstruction();
+  const userPrompt = buildSpotAnalysisPrompt({
+    portfolioState: request.portfolioState,
+    currentSpotState: request.currentSpotState,
+    marketData: request.marketData,
+    lastDecisions: request.lastDecisions,
+    config: request.config,
+    behavior: request.behavior,
+    personaMd: request.personaMd,
+    behaviorMd: request.behaviorMd,
+    roleMd: request.roleMd,
+  });
+
+  const startTime = Date.now();
+  const timeoutMs = config.timeoutMs ?? DEFAULT_LLM_TIMEOUT_MS;
+
+  const EMERGENCY_FREE_MODELS = [
+    'qwen/qwen3-coder:free',
+    'arcee-ai/trinity-large-preview:free',
+    'google/gemma-3-27b-it:free',
+    'google/gemma-3-12b-it:free',
+    'google/gemma-3-4b-it:free',
+  ];
+
+  const primaryModels: string[] = [config.model];
+  if (config.allowFallback && config.fallbackModel && config.fallbackModel !== config.model) {
+    primaryModels.push(config.fallbackModel);
+  }
+  const emergencyModels: string[] = [];
+  if (config.allowFallback && !isAnthropic) {
+    for (const m of EMERGENCY_FREE_MODELS) {
+      if (!primaryModels.includes(m)) emergencyModels.push(m);
+    }
+  }
+  const modelsToTry = [...primaryModels, ...emergencyModels];
+  const primaryModelSet = new Set(primaryModels);
+
+  let lastError: unknown;
+  const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  const debugLogging = config.debugLogging === true;
+
+  function isTransientError(err: unknown): boolean {
+    const classified = classifyLlmError(err);
+    return (
+      classified.code === 'LLM_TIMEOUT' ||
+      classified.code === 'LLM_RATE_LIMIT' ||
+      classified.code === 'LLM_NETWORK_ERROR'
+    );
+  }
+
+  for (const modelId of modelsToTry) {
+    const effectiveTimeout = primaryModelSet.has(modelId) ? timeoutMs : EMERGENCY_MODEL_TIMEOUT_MS;
+    const MAX_MODEL_RETRIES = primaryModelSet.has(modelId) ? 2 : 1;
+    let modelAttempt = 0;
+
+    while (modelAttempt <= MAX_MODEL_RETRIES) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Model request timed out after ${effectiveTimeout / 1000}s`)),
+            effectiveTimeout,
+          ),
+        );
+
+        const modelInstance = isAnthropic ? anthropic!(modelId) : openrouter!(modelId);
+
+        if (modelAttempt === 0) {
+          console.log('[llm-router:spot] Model:', modelId);
+          console.log('[llm-router:spot] Prompt length (chars):', fullPrompt.length);
+          if (debugLogging) {
+            console.log('[llm-router:spot] === PROMPT SENT TO LLM ===');
+            console.log(userPrompt);
+            console.log('[llm-router:spot] === END PROMPT ===');
+          } else {
+            console.log('[llm-router:spot] User prompt preview:');
+            console.log(previewPromptForLogs(userPrompt));
+          }
+        } else {
+          console.log(
+            `[llm-router:spot] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`,
+          );
+        }
+
+        const result = await Promise.race([
+          generateText({
+            model: modelInstance,
+            prompt: fullPrompt,
+            ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+            maxRetries: 0,
+          }),
+          timeoutPromise,
+        ]);
+
+        const json = extractJson(result.text ?? '');
+        if (!json.trim()) throw new Error('Model returned empty response');
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(json);
+        } catch (parseErr) {
+          throw new Error(
+            `Model returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw length: ${json.length}`,
+          );
+        }
+        const object = SpotTradeDecisionSchema.parse(parsed);
+        const latencyMs = Date.now() - startTime;
+        const usage = (result as any).usage ?? {};
+
+        return {
+          ...object,
+          latencyMs,
+          tokensUsed: usage.totalTokens,
+          tokensIn: usage.inputTokens,
+          tokensOut: usage.outputTokens,
+          modelUsed: modelId,
+          llmPromptText: fullPrompt,
+          llmRawResponse: result.text ?? '',
+        };
+      } catch (err) {
+        lastError = err;
+        const isTransient = isTransientError(err);
+        const classified = classifyLlmError(err, { model: modelId, attempt: modelAttempt });
+        console.warn(
+          `[llm-router:spot] model=${modelId} attempt=${modelAttempt} error_code=${classified.code} message=${classified.message}`,
+        );
+
+        if (isTransient && modelAttempt < MAX_MODEL_RETRIES) {
+          const backoffMs = 500 * Math.pow(2, modelAttempt);
+          console.log(`[llm-router:spot] Transient error — retrying in ${backoffMs}ms`);
+          await sleep(backoffMs);
+          modelAttempt++;
+          continue;
+        }
+        break;
+      }
+    }
+
     if (modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
       await sleep(300);
     }

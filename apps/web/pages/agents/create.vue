@@ -18,6 +18,7 @@ const {
   createAgentOnchain,
   deposit,
   withdraw,
+  mintShowcaseToken,
   enableAutoSign,
   disableAutoSign,
 } = useInitiaBridge();
@@ -30,6 +31,8 @@ const currentPaperBalance = ref(0);
 const funding = ref(false);
 const withdrawing = ref(false);
 const bridging = ref(false);
+const mintingFaucet = ref(false);
+const faucetAmount = ref('1000');
 const autoSignBusy = ref<'enable' | 'disable' | null>(null);
 const autoSignStatusSinceMs = ref<number | null>(null);
 const autoSignNowMs = ref(Date.now());
@@ -73,6 +76,7 @@ function formatWei(wei: string | null | undefined): string | null {
 }
 
 const walletDisplay = computed(() => formatWei(initiaState.value.walletBalanceWei));
+const walletIusdDisplay = computed(() => formatWei(initiaState.value.walletShowcaseTokenBalanceWei));
 
 function formatElapsedShort(ms: number): string {
   const sec = Math.floor(ms / 1000);
@@ -513,6 +517,41 @@ async function handleBridge() {
   }
 }
 
+async function handleMintFaucet() {
+  const amt = Number(faucetAmount.value);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    showNotification({
+      type: 'error',
+      title: 'Invalid Faucet Amount',
+      message: 'Enter a valid faucet amount greater than zero.',
+    });
+    return;
+  }
+
+  clearFundingFeedback();
+  mintingFaucet.value = true;
+  try {
+    await ensureWalletConnected();
+    const result = await mintShowcaseToken(String(amt));
+    await refresh();
+    await syncInitiaState('create-step-mint-iusd-faucet');
+    showNotification({
+      type: 'success',
+      title: 'Faucet Mint Successful',
+      message: `Minted ${amt.toLocaleString()} iUSD-demo.${result.txHash ? ` tx: ${result.txHash}` : ''}`,
+    });
+  } catch (e) {
+    showNotification({
+      type: 'error',
+      title: 'Faucet Mint Failed',
+      message: extractApiError(e),
+      durationMs: 8_000,
+    });
+  } finally {
+    mintingFaucet.value = false;
+  }
+}
+
 async function handleToggleAutoSign() {
   if (!createdAgentId.value) return;
   const enabling = !initiaState.value.autoSignEnabled;
@@ -697,7 +736,7 @@ function handleOpenAgent() {
         </div>
 
         <p class="fund-step__desc">
-          Agent is created with zero balance by default. Fund from wallet, then continue to configure auto-sign and execution.
+          Agent is created with zero balance by default. Fund from wallet to proceed.
         </p>
 
         <div class="fund-step__wallet-row">
@@ -718,16 +757,46 @@ function handleOpenAgent() {
             step="0.0001"
             class="fund-step__input"
             placeholder="1000"
-            :disabled="funding || withdrawing || bridging || autoSignBusy !== null"
+            :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
             @focus="clearFundingFeedback"
           >
           <span class="fund-step__currency">GAS</span>
         </div>
 
+        <div v-if="walletIusdDisplay" class="fund-step__wallet-row">
+          <span class="fund-step__bal-key">wallet iUSD-demo</span>
+          <span class="fund-step__bal-val">{{ walletIusdDisplay }}</span>
+        </div>
+
+        <div class="fund-step__faucet">
+          <div class="fund-step__faucet-title">iUSD-demo faucet (test only)</div>
+          <div class="fund-step__input-row">
+            <input
+              v-model="faucetAmount"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              class="fund-step__input"
+              placeholder="1000"
+              :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
+              @focus="clearFundingFeedback"
+            >
+            <span class="fund-step__currency">iUSD-demo</span>
+          </div>
+          <button
+            class="fund-step__btn fund-step__btn--faucet"
+            :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
+            @click="handleMintFaucet"
+          >
+            <span v-if="mintingFaucet" class="spinner" style="width:12px;height:12px;" />
+            {{ mintingFaucet ? 'Minting…' : 'Mint Faucet Tokens' }}
+          </button>
+        </div>
+
         <div class="fund-step__actions">
           <button
             class="fund-step__btn fund-step__btn--primary"
-            :disabled="funding || withdrawing || bridging || autoSignBusy !== null"
+            :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
             @click="handleDeposit"
           >
             <span v-if="funding" class="spinner" style="width:12px;height:12px;border-color:#0003;border-top-color:#0a0a0a" />
@@ -735,7 +804,7 @@ function handleOpenAgent() {
           </button>
           <button
             class="fund-step__btn fund-step__btn--ghost"
-            :disabled="funding || withdrawing || bridging || autoSignBusy !== null"
+            :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
             @click="handleWithdraw"
           >
             <span v-if="withdrawing" class="spinner" style="width:12px;height:12px;" />
@@ -743,35 +812,11 @@ function handleOpenAgent() {
           </button>
           <button
             class="fund-step__btn fund-step__btn--bridge"
-            :disabled="funding || withdrawing || bridging || autoSignBusy !== null"
+            :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
             @click="handleBridge"
           >
             <span v-if="bridging" class="spinner" style="width:12px;height:12px;" />
             {{ bridging ? 'Opening…' : 'Bridge' }}
-          </button>
-        </div>
-
-        <div class="fund-step__autosign">
-          <div class="fund-step__autosign-copy">
-            <div class="fund-step__autosign-title-row">
-              <div class="fund-step__autosign-title">Auto-sign</div>
-              <span
-                class="fund-step__autosign-badge"
-                :class="initiaState.autoSignEnabled ? 'fund-step__autosign-badge--on' : 'fund-step__autosign-badge--off'"
-              >
-                {{ autoSignStatusBadgeText }}
-              </span>
-            </div>
-            <div class="fund-step__autosign-desc">Allow execute tick transactions without manual confirmation each time.</div>
-          </div>
-          <button
-            class="fund-step__btn fund-step__btn--autosign"
-            :class="{ 'fund-step__btn--autosign-on': initiaState.autoSignEnabled }"
-            :disabled="funding || withdrawing || bridging || autoSignBusy !== null"
-            @click="handleToggleAutoSign"
-          >
-            <span v-if="autoSignBusy" class="spinner" style="width:12px;height:12px;" />
-            {{ autoSignBusy ? (initiaState.autoSignEnabled ? 'Disabling…' : 'Enabling…') : (initiaState.autoSignEnabled ? 'Disable Auto-Sign' : 'Enable Auto-Sign') }}
           </button>
         </div>
 
@@ -1125,6 +1170,35 @@ function handleOpenAgent() {
 
 .fund-step__btn--bridge:not(:disabled):hover {
   background: color-mix(in srgb, #f59e0b 10%, transparent);
+}
+
+.fund-step__faucet {
+  border: 1px solid color-mix(in srgb, #4ade80 30%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #4ade80 9%, transparent);
+  border-radius: 4px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fund-step__faucet-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+
+.fund-step__btn--faucet {
+  border-color: color-mix(in srgb, #4ade80 45%, var(--border, #2a2a2a));
+  color: #4ade80;
+  background: color-mix(in srgb, #4ade80 10%, transparent);
+}
+
+.fund-step__btn--faucet:not(:disabled):hover {
+  background: color-mix(in srgb, #4ade80 16%, transparent);
 }
 
 .fund-step__autosign {

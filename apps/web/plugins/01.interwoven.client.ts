@@ -32,6 +32,7 @@ export default defineNuxtPlugin(() => {
       indexerUrl: String(runtimeConfig.public.initiaIndexerUrl || 'http://localhost:8080'),
       contractAddress: String(runtimeConfig.public.initiaContractAddress || ''),
       showcaseTokenAddress: String(runtimeConfig.public.initiaShowcaseTokenAddress || ''),
+      showcaseTokenFaucetAddress: String(runtimeConfig.public.initiaShowcaseTokenFaucetAddress || ''),
       executorAddress: String(runtimeConfig.public.initiaExecutorAddress || ''),
       showcaseTargetAddress: String(runtimeConfig.public.initiaShowcaseTargetAddress || ''),
       maxTradeValueWei: String(runtimeConfig.public.initiaExecutorMaxTradeWei || '0'),

@@ -198,7 +198,7 @@ function restoreBehavior() {
 
 // ─── Name helpers ──────────────────────────────────────────────────────────
 
-const AVAILABLE_PAIRS = ['WETH/USDC', 'cbBTC/USDC', 'AERO/WETH'] as const;
+const AVAILABLE_PAIRS = ['WETH/USDC', 'cbBTC/USDC', 'AERO/WETH', 'INIT/USDC'] as const;
 
 function togglePair(p: string) {
   form.pairs = form.pairs.includes(p) ? form.pairs.filter((x) => x !== p) : [...form.pairs, p];

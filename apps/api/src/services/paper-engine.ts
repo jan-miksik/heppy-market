@@ -1,4 +1,5 @@
 import { generateId, nowIso } from '../lib/utils.js';
+import type { SpotPositionState } from '../agents/spot-state-machine.js';
 
 export interface Position {
   id: string;
@@ -59,9 +60,11 @@ export interface PaperEngineState {
 export class PaperEngine {
   private state: PaperEngineState;
   private slippagePct: number;
+  private mode: 'long-short' | 'spot-only';
 
-  constructor(params: { balance: number; slippage: number }) {
+  constructor(params: { balance: number; slippage: number; mode?: 'long-short' | 'spot-only' }) {
     this.slippagePct = params.slippage / 100; // convert 0.3% → 0.003
+    this.mode = params.mode ?? 'long-short';
     this.state = {
       balance: params.balance,
       initialBalance: params.balance,
@@ -84,8 +87,20 @@ export class PaperEngine {
     return this.state.closedPositions;
   }
 
+  /** Returns LONG if there is an open buy position for the pair, FLAT otherwise. */
+  getCurrentSpotState(pair: string): SpotPositionState {
+    const openBuy = Array.from(this.state.openPositions.values()).find(
+      (p) => p.pair === pair && p.side === 'buy',
+    );
+    return openBuy ? 'LONG' : 'FLAT';
+  }
+
   /** Open a new paper position. Throws if constraints are violated. */
   openPosition(params: OpenPositionParams): Position {
+    if (this.mode === 'spot-only' && params.side === 'sell') {
+      throw new Error('spot-only mode: short positions are not allowed');
+    }
+
     if (params.amountUsd > this.state.balance) {
       throw new Error(
         `Insufficient balance: $${this.state.balance.toFixed(2)} < $${params.amountUsd.toFixed(2)}`
@@ -297,6 +312,7 @@ export class PaperEngine {
     dailyStartBalance: number;
     lastDailyReset: string;
     slippagePct: number;
+    mode: 'long-short' | 'spot-only';
   } {
     return {
       balance: this.state.balance,
@@ -306,6 +322,7 @@ export class PaperEngine {
       dailyStartBalance: this.state.dailyStartBalance,
       lastDailyReset: this.state.lastDailyReset,
       slippagePct: this.slippagePct * 100,
+      mode: this.mode,
     };
   }
 
@@ -314,6 +331,7 @@ export class PaperEngine {
     const engine = new PaperEngine({
       balance: data.balance,
       slippage: data.slippagePct,
+      mode: data.mode,
     });
     engine.state.initialBalance = data.initialBalance;
     engine.state.dailyStartBalance = data.dailyStartBalance;

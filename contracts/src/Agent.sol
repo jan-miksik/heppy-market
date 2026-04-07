@@ -10,24 +10,29 @@ interface IERC20Like {
 
 /// @title Agent
 /// @notice Multi-agent vault with delegated execution permissions.
-/// @dev Designed as a secure onchain execution layer for autonomous trading agents.
+/// @dev Designed as a secure onchain execution layer for autonomous spot trading agents.
+///
+/// Security property: the contract trusts the executor's tradeNotionalValueWei valuation
+/// (it is a delegated-execution risk limit, not a price oracle). The executor is
+/// responsible for supplying a value consistent with what the user authorized in
+/// setDelegatedExecutorApproval.
 contract Agent {
     struct AgentState {
         address owner;
         bytes metadata;
         uint256 nativeBalance;
         bool exists;
-        bool autoSignEnabled;
+        bool delegatedExecutionEnabled;
         bool paused;
     }
 
-    struct ExecutorApproval {
+    struct DelegatedExecutorApproval {
         bool canTick;
         bool canTrade;
-        uint128 maxValuePerTradeWei; // 0 = unlimited
-        uint128 dailyLimitWei;       // 0 = unlimited
+        uint128 maxTradeNotionalValueWei;    // 0 = unlimited
+        uint128 dailyTradeNotionalLimitWei;  // 0 = unlimited
         uint64 dayIndex;
-        uint128 spentTodayWei;
+        uint128 notionalSpentTodayWei;
     }
 
     uint256 public nextAgentId = 1;
@@ -35,14 +40,17 @@ contract Agent {
     mapping(uint256 => AgentState) private _agents;
     mapping(address => uint256[]) private _ownerAgentIds;
     mapping(uint256 => mapping(address => uint256)) private _tokenBalances;
-    mapping(uint256 => mapping(address => ExecutorApproval)) private _executorApprovals;
-    mapping(uint256 => mapping(address => bool)) private _allowedTargets;
+    mapping(uint256 => mapping(address => DelegatedExecutorApproval)) private _delegatedExecutorApprovals;
+    /// @dev Per-agent (dexContractAddress => (dexFunctionSelector => allowed))
+    mapping(uint256 => mapping(address => mapping(bytes4 => bool))) private _allowedDexCalls;
+    /// @dev Per-agent token allowlist for both input and output sides
+    mapping(uint256 => mapping(address => bool)) private _allowedTradeTokens;
 
     uint256 private _reentrancyState = 1;
 
     event AgentCreated(uint256 indexed agentId, address indexed owner, bytes metadata, uint256 timestamp);
     event MetadataUpdated(uint256 indexed agentId, bytes metadata);
-    event AutoSignUpdated(uint256 indexed agentId, bool enabled);
+    event DelegatedExecutionUpdated(uint256 indexed agentId, bool enabled);
     event AgentPaused(uint256 indexed agentId, bool paused);
 
     event NativeDeposited(uint256 indexed agentId, address indexed from, uint256 amount, uint256 newBalance);
@@ -50,35 +58,32 @@ contract Agent {
     event TokenDeposited(uint256 indexed agentId, address indexed token, address indexed from, uint256 amount, uint256 newBalance);
     event TokenWithdrawn(uint256 indexed agentId, address indexed token, address indexed to, uint256 amount, uint256 newBalance);
 
-    event AllowedTargetSet(uint256 indexed agentId, address indexed target, bool allowed);
-    event ExecutorApprovalSet(
+    event AllowedDexCallSet(uint256 indexed agentId, address indexed dexContractAddress, bytes4 indexed dexFunctionSelector, bool allowed);
+    event AllowedTradeTokenSet(uint256 indexed agentId, address indexed tokenAddress, bool allowed);
+    event DelegatedExecutorApprovalSet(
         uint256 indexed agentId,
         address indexed executor,
         bool canTick,
         bool canTrade,
-        uint128 maxValuePerTradeWei,
-        uint128 dailyLimitWei
+        uint128 maxTradeNotionalValueWei,
+        uint128 dailyTradeNotionalLimitWei
     );
-    event ExecutorRevoked(uint256 indexed agentId, address indexed executor);
+    event DelegatedExecutorRevoked(uint256 indexed agentId, address indexed executor);
 
     event TickExecuted(uint256 indexed agentId, address indexed caller, uint256 timestamp);
-    event TradeCallExecuted(
+    event TokenSpotTradeExecuted(
         uint256 indexed agentId,
-        address indexed executor,
-        address indexed target,
-        uint256 nativeValue,
-        bytes32 callDataHash
-    );
-    event TokenTradeExecuted(
-        uint256 indexed agentId,
-        address indexed executor,
-        address indexed target,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountInRequested,
-        uint256 amountInSpent,
-        uint256 amountOutReceived,
-        uint256 nativeValue
+        address indexed delegatedExecutor,
+        address indexed dexContractAddress,
+        bytes4  dexFunctionSelector,
+        address inputTokenAddress,
+        address outputTokenAddress,
+        uint256 maxInputAmount,
+        uint256 inputAmountSpent,
+        uint256 minOutputAmount,
+        uint256 outputAmountReceived,
+        uint256 tradeNotionalValueWei,
+        uint256 executionDeadline
     );
 
     event NativeReceived(address indexed from, uint256 amount);
@@ -87,15 +92,16 @@ contract Agent {
     error NotAgentOwner(uint256 agentId, address caller);
     error NotAuthorizedTickExecutor(uint256 agentId, address caller);
     error NotAuthorizedTradeExecutor(uint256 agentId, address caller);
-    error AutoSignDisabled(uint256 agentId);
+    error DelegatedExecutionDisabled(uint256 agentId);
     error AgentIsPaused(uint256 agentId);
     error ZeroAddress();
     error ZeroAmount();
-    error TargetNotAllowed(uint256 agentId, address target);
+    error DexCallNotAllowed(uint256 agentId, address dexContractAddress, bytes4 dexFunctionSelector);
+    error TradeTokenNotAllowed(uint256 agentId, address tokenAddress);
     error InsufficientNativeBalance(uint256 agentId, uint256 requested, uint256 available);
     error InsufficientTokenBalance(uint256 agentId, address token, uint256 requested, uint256 available);
-    error TradeValueLimitExceeded(uint256 agentId, address executor, uint256 attempted, uint256 maxPerTrade);
-    error DailyTradeValueLimitExceeded(uint256 agentId, address executor, uint256 attemptedTotal, uint256 dailyLimit);
+    error TradeNotionalLimitExceeded(uint256 agentId, address executor, uint256 attempted, uint256 limit);
+    error DailyTradeNotionalLimitExceeded(uint256 agentId, address executor, uint256 attemptedTotal, uint256 dailyLimit);
     error InvalidTokenPair(address tokenIn, address tokenOut);
     error SlippageExceeded(uint256 minAmountOut, uint256 actualAmountOut);
     error ExternalCallFailed(bytes reason);
@@ -103,6 +109,7 @@ contract Agent {
     error ERC20QueryFailed(address token);
     error ERC20OperationFailed(address token);
     error Reentrancy();
+    error ExecutionPlanExpired(uint256 executionDeadline, uint256 nowTs);
 
     modifier nonReentrant() {
         if (_reentrancyState != 1) revert Reentrancy();
@@ -127,7 +134,7 @@ contract Agent {
             metadata: metadata,
             nativeBalance: 0,
             exists: true,
-            autoSignEnabled: false,
+            delegatedExecutionEnabled: false,
             paused: false
         });
         _ownerAgentIds[msg.sender].push(agentId);
@@ -148,12 +155,12 @@ contract Agent {
             bytes memory metadata,
             uint256 nativeBalance,
             bool exists,
-            bool autoSignEnabled,
+            bool delegatedExecutionEnabled,
             bool paused
         )
     {
         AgentState storage a = _agents[agentId];
-        return (a.owner, a.metadata, a.nativeBalance, a.exists, a.autoSignEnabled, a.paused);
+        return (a.owner, a.metadata, a.nativeBalance, a.exists, a.delegatedExecutionEnabled, a.paused);
     }
 
     function hasAgent(uint256 agentId) external view returns (bool) {
@@ -216,10 +223,10 @@ contract Agent {
         emit MetadataUpdated(agentId, metadata);
     }
 
-    function setAutoSignEnabled(uint256 agentId, bool enabled) external {
+    function setDelegatedExecutionEnabled(uint256 agentId, bool enabled) external {
         AgentState storage a = _requireOwner(agentId);
-        a.autoSignEnabled = enabled;
-        emit AutoSignUpdated(agentId, enabled);
+        a.delegatedExecutionEnabled = enabled;
+        emit DelegatedExecutionUpdated(agentId, enabled);
     }
 
     function setPaused(uint256 agentId, bool paused) external {
@@ -228,76 +235,98 @@ contract Agent {
         emit AgentPaused(agentId, paused);
     }
 
-    function setAllowedTarget(uint256 agentId, address target, bool allowed) external {
+    /// @notice Allowlist or remove a (dexContractAddress, dexFunctionSelector) pair for an agent.
+    function setAllowedDexCall(
+        uint256 agentId,
+        address dexContractAddress,
+        bytes4 dexFunctionSelector,
+        bool allowed
+    ) external {
         _requireOwner(agentId);
-        if (target == address(0)) revert ZeroAddress();
-        _allowedTargets[agentId][target] = allowed;
-        emit AllowedTargetSet(agentId, target, allowed);
+        if (dexContractAddress == address(0)) revert ZeroAddress();
+        _allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector] = allowed;
+        emit AllowedDexCallSet(agentId, dexContractAddress, dexFunctionSelector, allowed);
     }
 
-    function isTargetAllowed(uint256 agentId, address target) external view returns (bool) {
-        return _allowedTargets[agentId][target];
+    function isDexCallAllowed(
+        uint256 agentId,
+        address dexContractAddress,
+        bytes4 dexFunctionSelector
+    ) external view returns (bool) {
+        return _allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector];
     }
 
-    /// @notice Configure delegated execution permissions for one agent.
-    function setExecutorApproval(
+    /// @notice Allowlist or remove a trade token (both input and output sides).
+    function setAllowedTradeToken(uint256 agentId, address tokenAddress, bool allowed) external {
+        _requireOwner(agentId);
+        if (tokenAddress == address(0)) revert ZeroAddress();
+        _allowedTradeTokens[agentId][tokenAddress] = allowed;
+        emit AllowedTradeTokenSet(agentId, tokenAddress, allowed);
+    }
+
+    function isTradeTokenAllowed(uint256 agentId, address tokenAddress) external view returns (bool) {
+        return _allowedTradeTokens[agentId][tokenAddress];
+    }
+
+    /// @notice Configure delegated execution permissions for one executor on one agent.
+    function setDelegatedExecutorApproval(
         uint256 agentId,
         address executor,
         bool canTick,
         bool canTrade,
-        uint128 maxValuePerTradeWei,
-        uint128 dailyLimitWei
+        uint128 maxTradeNotionalValueWei,
+        uint128 dailyTradeNotionalLimitWei
     ) external {
         _requireOwner(agentId);
         if (executor == address(0)) revert ZeroAddress();
 
-        ExecutorApproval storage approval = _executorApprovals[agentId][executor];
+        DelegatedExecutorApproval storage approval = _delegatedExecutorApprovals[agentId][executor];
         approval.canTick = canTick;
         approval.canTrade = canTrade;
-        approval.maxValuePerTradeWei = maxValuePerTradeWei;
-        approval.dailyLimitWei = dailyLimitWei;
+        approval.maxTradeNotionalValueWei = maxTradeNotionalValueWei;
+        approval.dailyTradeNotionalLimitWei = dailyTradeNotionalLimitWei;
 
         if (!canTrade) {
             approval.dayIndex = 0;
-            approval.spentTodayWei = 0;
+            approval.notionalSpentTodayWei = 0;
         }
 
-        emit ExecutorApprovalSet(
+        emit DelegatedExecutorApprovalSet(
             agentId,
             executor,
             canTick,
             canTrade,
-            maxValuePerTradeWei,
-            dailyLimitWei
+            maxTradeNotionalValueWei,
+            dailyTradeNotionalLimitWei
         );
     }
 
-    function revokeExecutor(uint256 agentId, address executor) external {
+    function revokeDelegatedExecutor(uint256 agentId, address executor) external {
         _requireOwner(agentId);
-        delete _executorApprovals[agentId][executor];
-        emit ExecutorRevoked(agentId, executor);
+        delete _delegatedExecutorApprovals[agentId][executor];
+        emit DelegatedExecutorRevoked(agentId, executor);
     }
 
-    function getExecutorApproval(uint256 agentId, address executor)
+    function getDelegatedExecutorApproval(uint256 agentId, address executor)
         external
         view
         returns (
             bool canTick,
             bool canTrade,
-            uint128 maxValuePerTradeWei,
-            uint128 dailyLimitWei,
+            uint128 maxTradeNotionalValueWei,
+            uint128 dailyTradeNotionalLimitWei,
             uint64 dayIndex,
-            uint128 spentTodayWei
+            uint128 notionalSpentTodayWei
         )
     {
-        ExecutorApproval storage approval = _executorApprovals[agentId][executor];
+        DelegatedExecutorApproval storage approval = _delegatedExecutorApprovals[agentId][executor];
         uint64 today = _todayIndex();
-        uint128 currentSpent = approval.dayIndex == today ? approval.spentTodayWei : 0;
+        uint128 currentSpent = approval.dayIndex == today ? approval.notionalSpentTodayWei : 0;
         return (
             approval.canTick,
             approval.canTrade,
-            approval.maxValuePerTradeWei,
-            approval.dailyLimitWei,
+            approval.maxTradeNotionalValueWei,
+            approval.dailyTradeNotionalLimitWei,
             approval.dayIndex,
             currentSpent
         );
@@ -311,120 +340,111 @@ contract Agent {
         emit TickExecuted(agentId, msg.sender, block.timestamp);
     }
 
-    /// @notice Execute an allowed external call using the agent's native balance.
-    function executeTradeCall(
-        uint256 agentId,
-        address target,
-        uint256 nativeValue,
-        bytes calldata callData
-    ) external nonReentrant returns (bytes memory returnData) {
-        AgentState storage a = _requireAgent(agentId);
-        if (a.paused) revert AgentIsPaused(agentId);
-        if (target == address(0)) revert ZeroAddress();
-        if (!_allowedTargets[agentId][target]) revert TargetNotAllowed(agentId, target);
-        if (a.nativeBalance < nativeValue) revert InsufficientNativeBalance(agentId, nativeValue, a.nativeBalance);
-
-        _consumeTradeAllowance(agentId, a, msg.sender, nativeValue);
-
-        uint256 nativeBefore = address(this).balance;
-        if (nativeBefore < nativeValue) revert NativeAccountingInvariant();
-
-        a.nativeBalance -= nativeValue;
-
-        (bool ok, bytes memory data) = target.call{value: nativeValue}(callData);
-        if (!ok) revert ExternalCallFailed(data);
-        returnData = data;
-
-        uint256 expectedAfter = nativeBefore - nativeValue;
-        uint256 nativeAfter = address(this).balance;
-        if (nativeAfter < expectedAfter) revert NativeAccountingInvariant();
-
-        // Credit any native refund back into the same agent vault.
-        if (nativeAfter > expectedAfter) {
-            uint256 refunded = nativeAfter - expectedAfter;
-            a.nativeBalance += refunded;
-        }
-
-        emit TradeCallExecuted(agentId, msg.sender, target, nativeValue, keccak256(callData));
-    }
-
-    /// @notice Execute an allowed external call that spends agent ERC-20 balance.
+    /// @notice Execute a spot ERC-20 swap using the agent's token balances.
+    /// @param agentId         Agent vault to trade from.
+    /// @param dexContractAddress  Address of the DEX router.
+    /// @param dexFunctionSelector The 4-byte selector; must match dexCallData[0:4] and be in the allowlist.
+    /// @param inputTokenAddress   Token the agent is selling.
+    /// @param outputTokenAddress  Token the agent is buying.
+    /// @param maxInputAmount      Maximum input tokens to spend (vault must hold this balance).
+    /// @param minOutputAmount     Minimum output tokens required (slippage guard).
+    /// @param tradeNotionalValueWei Risk-limit value; trusted from executor, not oracle-verified.
+    /// @param executionDeadline   Unix timestamp after which the call reverts.
+    /// @param dexCallData         Calldata forwarded to the DEX (first 4 bytes must match dexFunctionSelector).
     function executeTokenTrade(
         uint256 agentId,
-        address target,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 minAmountOut,
-        uint256 nativeValue,
-        bytes calldata callData
-    ) external nonReentrant returns (uint256 amountInSpent, uint256 amountOutReceived, bytes memory returnData) {
+        address dexContractAddress,
+        bytes4  dexFunctionSelector,
+        address inputTokenAddress,
+        address outputTokenAddress,
+        uint256 maxInputAmount,
+        uint256 minOutputAmount,
+        uint256 tradeNotionalValueWei,
+        uint256 executionDeadline,
+        bytes calldata dexCallData
+    ) external nonReentrant returns (uint256 inputAmountSpent, uint256 outputAmountReceived) {
+        // 1. Agent must exist and not be paused.
         AgentState storage a = _requireAgent(agentId);
         if (a.paused) revert AgentIsPaused(agentId);
-        if (target == address(0) || tokenIn == address(0) || tokenOut == address(0)) revert ZeroAddress();
-        if (tokenIn == tokenOut) revert InvalidTokenPair(tokenIn, tokenOut);
-        if (amountIn == 0) revert ZeroAmount();
-        if (!_allowedTargets[agentId][target]) revert TargetNotAllowed(agentId, target);
-        if (a.nativeBalance < nativeValue) revert InsufficientNativeBalance(agentId, nativeValue, a.nativeBalance);
 
-        uint256 vaultTokenIn = _tokenBalances[agentId][tokenIn];
-        if (vaultTokenIn < amountIn) revert InsufficientTokenBalance(agentId, tokenIn, amountIn, vaultTokenIn);
+        // 2. Deadline check.
+        if (block.timestamp > executionDeadline) revert ExecutionPlanExpired(executionDeadline, block.timestamp);
 
-        _consumeTradeAllowance(agentId, a, msg.sender, nativeValue);
+        // 3. Address / pair sanity.
+        if (dexContractAddress == address(0) || inputTokenAddress == address(0) || outputTokenAddress == address(0)) revert ZeroAddress();
+        if (inputTokenAddress == outputTokenAddress) revert InvalidTokenPair(inputTokenAddress, outputTokenAddress);
 
-        uint256 nativeBefore = address(this).balance;
-        if (nativeBefore < nativeValue) revert NativeAccountingInvariant();
+        // 4. Amount sanity.
+        if (maxInputAmount == 0) revert ZeroAmount();
+        if (tradeNotionalValueWei == 0) revert ZeroAmount();
 
-        uint256 tokenInBefore = _erc20Balance(tokenIn, address(this));
-        uint256 tokenOutBefore = _erc20Balance(tokenOut, address(this));
-
-        _tokenBalances[agentId][tokenIn] = vaultTokenIn - amountIn;
-        a.nativeBalance -= nativeValue;
-
-        _safeApprove(tokenIn, target, 0);
-        _safeApprove(tokenIn, target, amountIn);
-
-        (bool ok, bytes memory data) = target.call{value: nativeValue}(callData);
-        _safeApprove(tokenIn, target, 0);
-
-        if (!ok) revert ExternalCallFailed(data);
-        returnData = data;
-
-        uint256 expectedAfter = nativeBefore - nativeValue;
-        uint256 nativeAfter = address(this).balance;
-        if (nativeAfter < expectedAfter) revert NativeAccountingInvariant();
-        if (nativeAfter > expectedAfter) {
-            uint256 refunded = nativeAfter - expectedAfter;
-            a.nativeBalance += refunded;
+        // 5. Calldata prefix check (prevents calldata-prefix forgery).
+        if (dexCallData.length < 4 || bytes4(dexCallData[0:4]) != dexFunctionSelector) {
+            revert DexCallNotAllowed(agentId, dexContractAddress, dexFunctionSelector);
         }
 
-        uint256 tokenInAfter = _erc20Balance(tokenIn, address(this));
-        uint256 tokenOutAfter = _erc20Balance(tokenOut, address(this));
+        // 6. DEX call allowlist.
+        if (!_allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector]) {
+            revert DexCallNotAllowed(agentId, dexContractAddress, dexFunctionSelector);
+        }
+
+        // 7. Trade token allowlist.
+        if (!_allowedTradeTokens[agentId][inputTokenAddress]) revert TradeTokenNotAllowed(agentId, inputTokenAddress);
+        if (!_allowedTradeTokens[agentId][outputTokenAddress]) revert TradeTokenNotAllowed(agentId, outputTokenAddress);
+
+        // 8. Sufficient vault balance.
+        uint256 vaultInput = _tokenBalances[agentId][inputTokenAddress];
+        if (vaultInput < maxInputAmount) revert InsufficientTokenBalance(agentId, inputTokenAddress, maxInputAmount, vaultInput);
+
+        // 9. Delegated execution checks (owner can always trade; non-owner needs delegation).
+        if (msg.sender != a.owner) {
+            if (!a.delegatedExecutionEnabled) revert DelegatedExecutionDisabled(agentId);
+            _consumeTradeNotionalAllowance(agentId, a, msg.sender, tradeNotionalValueWei);
+        }
+
+        uint256 tokenInBefore = _erc20Balance(inputTokenAddress, address(this));
+        uint256 tokenOutBefore = _erc20Balance(outputTokenAddress, address(this));
+
+        _tokenBalances[agentId][inputTokenAddress] = vaultInput - maxInputAmount;
+
+        _safeApprove(inputTokenAddress, dexContractAddress, 0);
+        _safeApprove(inputTokenAddress, dexContractAddress, maxInputAmount);
+
+        (bool ok, bytes memory returnData) = dexContractAddress.call(dexCallData);
+        _safeApprove(inputTokenAddress, dexContractAddress, 0);
+
+        if (!ok) revert ExternalCallFailed(returnData);
+
+        uint256 tokenInAfter = _erc20Balance(inputTokenAddress, address(this));
+        uint256 tokenOutAfter = _erc20Balance(outputTokenAddress, address(this));
 
         if (tokenInAfter > tokenInBefore) {
             uint256 refundedIn = tokenInAfter - tokenInBefore;
-            _tokenBalances[agentId][tokenIn] += refundedIn;
-            amountInSpent = amountIn > refundedIn ? amountIn - refundedIn : 0;
+            _tokenBalances[agentId][inputTokenAddress] += refundedIn;
+            inputAmountSpent = maxInputAmount > refundedIn ? maxInputAmount - refundedIn : 0;
         } else {
-            amountInSpent = tokenInBefore - tokenInAfter;
-            if (amountInSpent > amountIn) revert NativeAccountingInvariant();
+            inputAmountSpent = tokenInBefore - tokenInAfter;
+            if (inputAmountSpent > maxInputAmount) revert NativeAccountingInvariant();
         }
 
-        amountOutReceived = tokenOutAfter > tokenOutBefore ? tokenOutAfter - tokenOutBefore : 0;
-        if (amountOutReceived < minAmountOut) revert SlippageExceeded(minAmountOut, amountOutReceived);
+        outputAmountReceived = tokenOutAfter > tokenOutBefore ? tokenOutAfter - tokenOutBefore : 0;
+        if (outputAmountReceived < minOutputAmount) revert SlippageExceeded(minOutputAmount, outputAmountReceived);
 
-        _tokenBalances[agentId][tokenOut] += amountOutReceived;
+        _tokenBalances[agentId][outputTokenAddress] += outputAmountReceived;
 
-        emit TokenTradeExecuted(
+        emit TokenSpotTradeExecuted(
             agentId,
             msg.sender,
-            target,
-            tokenIn,
-            tokenOut,
-            amountIn,
-            amountInSpent,
-            amountOutReceived,
-            nativeValue
+            dexContractAddress,
+            dexFunctionSelector,
+            inputTokenAddress,
+            outputTokenAddress,
+            maxInputAmount,
+            inputAmountSpent,
+            minOutputAmount,
+            outputAmountReceived,
+            tradeNotionalValueWei,
+            executionDeadline
         );
     }
 
@@ -440,44 +460,43 @@ contract Agent {
 
     function _requireTickPermission(uint256 agentId, AgentState storage a, address caller) private view {
         if (caller == a.owner) return;
-        if (!a.autoSignEnabled) revert AutoSignDisabled(agentId);
-        ExecutorApproval storage approval = _executorApprovals[agentId][caller];
+        if (!a.delegatedExecutionEnabled) revert DelegatedExecutionDisabled(agentId);
+        DelegatedExecutorApproval storage approval = _delegatedExecutorApprovals[agentId][caller];
         if (!approval.canTick) revert NotAuthorizedTickExecutor(agentId, caller);
     }
 
-    function _consumeTradeAllowance(
+    function _consumeTradeNotionalAllowance(
         uint256 agentId,
         AgentState storage a,
         address caller,
-        uint256 valueWei
+        uint256 tradeNotionalValueWei
     ) private {
         if (caller == a.owner) return;
-        if (!a.autoSignEnabled) revert AutoSignDisabled(agentId);
 
-        ExecutorApproval storage approval = _executorApprovals[agentId][caller];
+        DelegatedExecutorApproval storage approval = _delegatedExecutorApprovals[agentId][caller];
         if (!approval.canTrade) revert NotAuthorizedTradeExecutor(agentId, caller);
 
-        uint256 maxPerTrade = approval.maxValuePerTradeWei;
-        if (maxPerTrade != 0 && valueWei > maxPerTrade) {
-            revert TradeValueLimitExceeded(agentId, caller, valueWei, maxPerTrade);
+        uint256 maxPerTrade = approval.maxTradeNotionalValueWei;
+        if (maxPerTrade != 0 && tradeNotionalValueWei > maxPerTrade) {
+            revert TradeNotionalLimitExceeded(agentId, caller, tradeNotionalValueWei, maxPerTrade);
         }
 
         uint64 today = _todayIndex();
         if (approval.dayIndex != today) {
             approval.dayIndex = today;
-            approval.spentTodayWei = 0;
+            approval.notionalSpentTodayWei = 0;
         }
 
-        uint256 attemptedTotal = uint256(approval.spentTodayWei) + valueWei;
-        uint256 dailyLimit = approval.dailyLimitWei;
+        uint256 attemptedTotal = uint256(approval.notionalSpentTodayWei) + tradeNotionalValueWei;
+        uint256 dailyLimit = approval.dailyTradeNotionalLimitWei;
         if (dailyLimit != 0 && attemptedTotal > dailyLimit) {
-            revert DailyTradeValueLimitExceeded(agentId, caller, attemptedTotal, dailyLimit);
+            revert DailyTradeNotionalLimitExceeded(agentId, caller, attemptedTotal, dailyLimit);
         }
         if (attemptedTotal > type(uint128).max) {
-            revert DailyTradeValueLimitExceeded(agentId, caller, attemptedTotal, type(uint128).max);
+            revert DailyTradeNotionalLimitExceeded(agentId, caller, attemptedTotal, type(uint128).max);
         }
 
-        approval.spentTodayWei = uint128(attemptedTotal);
+        approval.notionalSpentTodayWei = uint128(attemptedTotal);
     }
 
     function _todayIndex() private view returns (uint64) {

@@ -54,6 +54,7 @@ export default defineNuxtConfig({
       initiaIndexerUrl: process.env.NUXT_PUBLIC_INITIA_INDEXER_URL || 'http://localhost:8080',
       initiaWebUrl: process.env.NUXT_PUBLIC_INITIA_WEB_URL || 'http://localhost:5173',
       initiaShowcaseTokenAddress: process.env.NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_ADDRESS || '',
+      initiaShowcaseTokenFaucetAddress: process.env.NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_FAUCET_ADDRESS || '',
       initiaExecutorAddress: process.env.NUXT_PUBLIC_INITIA_EXECUTOR_ADDRESS || '',
       initiaShowcaseTargetAddress: process.env.NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS || '',
       initiaExecutorMaxTradeWei: process.env.NUXT_PUBLIC_INITIA_EXECUTOR_MAX_TRADE_WEI || '0',

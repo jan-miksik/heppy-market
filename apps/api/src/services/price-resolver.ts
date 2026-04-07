@@ -1,6 +1,7 @@
 import type { Env } from '../types/env.js';
 import { createDexDataService, getPriceUsd } from './dex-data.js';
 import { createGeckoTerminalService } from './gecko-terminal.js';
+import { resolveCoinGeckoSpotUsdForPair } from './coingecko-price.js';
 
 /** "WETH/USDC" → "WETH USDC" */
 function pairToSearchQuery(pairName: string): string {
@@ -37,6 +38,10 @@ export async function resolveCurrentPriceUsd(env: Env, pairName: string): Promis
   const geckoSvc = createGeckoTerminalService(env.CACHE);
   const dexSvc = createDexDataService(env.CACHE);
   const query = pairToSearchQuery(pairName);
+
+  // Direct CoinGecko spot fallback for supported symbols (e.g. INIT/USDC).
+  const coinGeckoSpot = await resolveCoinGeckoSpotUsdForPair(env, pairName);
+  if (coinGeckoSpot > 0) return coinGeckoSpot;
 
   // GeckoTerminal first (network=base)
   try {
@@ -83,4 +88,3 @@ export async function resolveCurrentPriceUsd(env: Env, pairName: string): Promis
 
   return 0;
 }
-

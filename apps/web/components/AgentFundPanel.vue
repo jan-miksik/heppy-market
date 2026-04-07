@@ -14,22 +14,25 @@ const emit = defineEmits<{
 }>();
 
 const { updateAgent } = useAgents();
-const { state: initiaState, openConnect, openBridge } = useInitiaBridge();
+const { state: initiaState, openConnect, openBridge, refresh, mintShowcaseToken } = useInitiaBridge();
 const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
 const BRIDGE_SRC_DENOM = 'uinit';
 
 const isOpen = ref(false);
 const tab = ref<'deposit' | 'withdraw'>('deposit');
 const amount = ref('1000');
+const faucetAmount = ref('1000');
 const funding = ref(false);
 const withdrawing = ref(false);
 const bridging = ref(false);
+const mintingFaucet = ref(false);
 const error = ref('');
 const successMsg = ref('');
 
 function open() {
   isOpen.value = true;
   amount.value = '1000';
+  faucetAmount.value = '1000';
   error.value = '';
   successMsg.value = '';
 }
@@ -53,7 +56,7 @@ function formatWei(wei: string | null | undefined): string {
   }
 }
 
-const walletDisplay = computed(() => formatWei(initiaState.value.walletBalanceWei));
+const walletDisplay = computed(() => formatWei(initiaState.value.walletShowcaseTokenBalanceWei));
 
 function clearMessages() {
   error.value = '';
@@ -70,7 +73,7 @@ async function handleFund() {
   funding.value = true;
   try {
     await updateAgent(props.agentId, { paperBalance: amt });
-    successMsg.value = `Funded — balance set to ${amt.toLocaleString()} iUSD`;
+    successMsg.value = `Funded — balance set to ${amt.toLocaleString()} iUSD-demo`;
     emit('done', amt);
   } catch (e) {
     error.value = extractApiError(e);
@@ -90,7 +93,7 @@ async function handleWithdraw() {
   withdrawing.value = true;
   try {
     await updateAgent(props.agentId, { paperBalance: newBalance });
-    successMsg.value = `Withdrew ${amt.toLocaleString()} iUSD`;
+    successMsg.value = `Withdrew ${amt.toLocaleString()} iUSD-demo`;
     emit('done', newBalance);
   } catch (e) {
     error.value = extractApiError(e);
@@ -115,7 +118,29 @@ async function handleBridge() {
   }
 }
 
-const busy = computed(() => funding.value || withdrawing.value || bridging.value);
+async function handleMintFaucet() {
+  const amt = Number(faucetAmount.value);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    error.value = 'Enter a valid faucet amount greater than zero.';
+    return;
+  }
+  clearMessages();
+  mintingFaucet.value = true;
+  try {
+    if (!initiaState.value.initiaAddress) {
+      await openConnect();
+    }
+    const result = await mintShowcaseToken(String(amt));
+    await refresh();
+    successMsg.value = `Minted ${amt.toLocaleString()} iUSD-demo.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
+  } catch (e) {
+    error.value = extractApiError(e);
+  } finally {
+    mintingFaucet.value = false;
+  }
+}
+
+const busy = computed(() => funding.value || withdrawing.value || bridging.value || mintingFaucet.value);
 </script>
 
 <template>
@@ -148,6 +173,31 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
             </div>
           </div>
 
+          <div class="fund-modal__faucet">
+            <div class="fund-modal__faucet-title">iUSD-demo faucet (test only)</div>
+            <div class="fund-modal__input-row">
+              <input
+                v-model="faucetAmount"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                class="fund-modal__input"
+                placeholder="1000"
+                :disabled="busy"
+                @focus="clearMessages"
+              >
+              <span class="fund-modal__currency">iUSD-demo</span>
+            </div>
+            <button
+              class="fund-modal__btn fund-modal__btn--faucet"
+              :disabled="busy"
+              @click="handleMintFaucet"
+            >
+              <span v-if="mintingFaucet" class="spinner" style="width:11px;height:11px;" />
+              {{ mintingFaucet ? 'Minting…' : 'Mint Faucet Tokens' }}
+            </button>
+          </div>
+
           <!-- Tab toggle -->
           <div class="fund-modal__tabs">
             <button
@@ -174,7 +224,7 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
               :disabled="busy"
               @focus="clearMessages"
             >
-            <span class="fund-modal__currency">iUSD</span>
+            <span class="fund-modal__currency">iUSD-demo</span>
           </div>
 
           <!-- Quick presets -->
@@ -483,6 +533,36 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
   font-size: 9px;
   line-height: 1.55;
   color: var(--text-muted, #a7a7a7);
+}
+
+.fund-modal__faucet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, #4ade80 28%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #4ade80 8%, transparent);
+  border-radius: 4px;
+  padding: 9px 10px;
+}
+
+.fund-modal__faucet-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+
+.fund-modal__btn--faucet {
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, #4ade80 45%, var(--border, #2a2a2a));
+  color: #4ade80;
+  background: color-mix(in srgb, #4ade80 10%, transparent);
+}
+
+.fund-modal__btn--faucet:not(:disabled):hover {
+  background: color-mix(in srgb, #4ade80 18%, transparent);
 }
 
 /* ── Transitions ── */

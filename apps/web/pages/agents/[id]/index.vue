@@ -992,7 +992,6 @@ function formatLatency(ms: number): string {
             {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ formatInterval(agent.config.analysisInterval) }} interval · temp {{ (agent.config.temperature ?? 0.7).toFixed(1) }}
             <span v-if="livePricesLoading" class="mono" style="opacity: 0.7;"> · fetching live prices…</span>
             <span v-else-if="livePricesError" class="mono" style="opacity: 0.7;"> · live price unavailable</span>
-            <span v-if="isInitiaAgent" class="mono" style="opacity: 0.75;"> · auto-sign {{ autoSignEnabled ? 'on' : 'off' }}</span>
           </p>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -1007,17 +1006,6 @@ function formatLatency(ms: number): string {
             <span v-if="isAnalyzing" class="analyze-pulse" />
             <span v-if="isAnalyzing" class="analyze-status-text">{{ analyzeStatusText }}</span>
             <template v-else>⚡ Run Analysis</template>
-          </button>
-          <button
-            v-if="isInitiaAgent"
-            class="btn btn-sm"
-            :class="autoSignEnabled ? 'btn-autosign-on' : 'btn-ghost'"
-            :disabled="autoSignBusy !== null || (Boolean(initiaState.initiaAddress) && autoSignMismatch)"
-            :title="autoSignButtonTitle"
-            @click="handleToggleAutoSign"
-          >
-            <span v-if="autoSignBusy" class="spinner" style="width:11px;height:11px;border-color:#fff3;border-top-color:currentColor;" />
-            {{ autoSignButtonLabel }}
           </button>
           <button v-if="agent.status !== 'running'" class="btn btn-success btn-sm" @click="handleStart">
             ▶ Start
@@ -1055,13 +1043,6 @@ function formatLatency(ms: number): string {
           </NuxtLink>
           <button class="btn btn-ghost btn-sm" @click="analyzeError = null" aria-label="Dismiss">✕</button>
         </div>
-      </div>
-      <div v-if="autoSignError" class="api-error-banner" style="margin-bottom: 16px; align-items: flex-start;">
-        <span class="error-icon" style="margin-top: 1px;">!</span>
-        <div style="flex: 1; min-width: 0;">
-          {{ autoSignError }}
-        </div>
-        <button class="btn btn-ghost btn-sm" @click="autoSignError = null" aria-label="Dismiss">✕</button>
       </div>
 
       <!-- Stats row -->

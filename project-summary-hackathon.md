@@ -25,14 +25,3 @@ initRoot is an edge-native, AI-assisted trading platform for DEX markets, where 
 - Storage/state: D1, KV, Durable Objects, Cloudflare Queues
 - AI layer: OpenRouter (optional Anthropic), structured outputs with schema validation
 
-## Why it fits hackathons well
-- Live demo friendly: clear visual outcomes (agents, trades, P&L, decisions).
-- Strong technical depth: AI + fintech + realtime + edge serverless.
-- Responsible approach: paper trading mode avoids custody/regulatory complexity for MVP demos.
-- Easy to position across multiple tracks: AI Agents, Fintech, Web3/Base, Edge/Cloudflare, Real-time systems.
-
-## Suggested submission angle
-initRoot demonstrates how to build trustworthy autonomous financial agents at the edge: low-latency execution, resilient state management, and transparent AI decisioning in a safe paper-trading environment.
-
-## Keywords for hackathon search
-AI trading agents, paper trading, Cloudflare Workers, Durable Objects, Base ecosystem, DEX analytics, autonomous systems, edge AI, real-time fintech, LLM orchestration
