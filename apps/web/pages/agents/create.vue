@@ -22,6 +22,43 @@ const {
   enableAutoSign,
   disableAutoSign,
 } = useInitiaBridge();
+const autoSignMgr = useAutoSign();
+
+// ── Consent modal ────────────────────────────────────────────────────────────
+const consentModalOpen = ref(false);
+const consentActionKey = ref('');
+const consentActionLabel = ref('');
+let pendingAction: (() => Promise<void>) | null = null;
+
+async function withAutoSignCheck(key: string, label: string, fn: () => Promise<void>) {
+  if (consentModalOpen.value) return;
+  if (!autoSignMgr.isDismissed(key)) {
+    pendingAction = fn;
+    consentActionKey.value = key;
+    consentActionLabel.value = label;
+    consentModalOpen.value = true;
+    return;
+  }
+  await fn();
+}
+
+async function onConsentProceed(useAutoSignChoice: boolean) {
+  const key = consentActionKey.value;
+  consentModalOpen.value = false;
+  autoSignMgr.setEnabled(key, useAutoSignChoice);
+  autoSignMgr.setDismissed(key, true);
+  if (useAutoSignChoice && !autoSignMgr.chainAutoSignEnabled.value) {
+    try { await enableAutoSign(); } catch { /* fall back to no auto-sign */ }
+  }
+  const fn = pendingAction;
+  pendingAction = null;
+  if (fn) await fn();
+}
+
+function onConsentCancel() {
+  consentModalOpen.value = false;
+  pendingAction = null;
+}
 
 // ── Step state ──────────────────────────────────────────────────────────────
 const step = ref<1 | 2>(1);
@@ -222,40 +259,43 @@ function goToStep(s: 1 | 2) {
 // ── Step 1: capture config ─────────────────────────────────────────────────
 
 async function handleNext(payload: Partial<CreateAgentPayload>) {
-  creating.value = true;
-  try {
-    await ensureWalletConnected();
+  await withAutoSignCheck('createAgentOnchain', 'Create Agent', async () => {
+    creating.value = true;
+    try {
+      await ensureWalletConnected();
 
-    if (!createdAgentId.value) {
-      const agent = await createAgent({
-        ...toCreateAgentPayload({ ...payload, paperBalance: 0 }),
-        chain: 'initia',
-        initiaWalletAddress: initiaState.value.initiaAddress ?? undefined,
+      if (!createdAgentId.value) {
+        const agent = await createAgent({
+          ...toCreateAgentPayload({ ...payload, paperBalance: 0 }),
+          chain: 'initia',
+          initiaWalletAddress: initiaState.value.initiaAddress ?? undefined,
+        });
+        createdAgentId.value = agent.id;
+        currentPaperBalance.value = 0;
+      }
+
+      const autoSign = autoSignMgr.isEnabled('createAgentOnchain') && autoSignMgr.chainAutoSignEnabled.value;
+      await ensureOnchainAgent({ forceCreate: true, autoSign });
+      await refresh();
+      await syncInitiaState('create-step-onchain');
+      step.value = 2;
+      showNotification({
+        type: 'success',
+        title: 'Agent Created',
+        message: 'Agent setup was created successfully. Continue with funding in step 2.',
       });
-      createdAgentId.value = agent.id;
-      currentPaperBalance.value = 0;
+    } catch (e) {
+      showNotification({
+        type: 'error',
+        title: 'Agent Creation Failed',
+        message: extractApiError(e),
+        durationMs: 8_000,
+      });
+    } finally {
+      creating.value = false;
+      onchainStatus.value = '';
     }
-
-    await ensureOnchainAgent({ forceCreate: true });
-    await refresh();
-    await syncInitiaState('create-step-onchain');
-    step.value = 2;
-    showNotification({
-      type: 'success',
-      title: 'Agent Created',
-      message: 'Agent setup was created successfully. Continue with funding in step 2.',
-    });
-  } catch (e) {
-    showNotification({
-      type: 'error',
-      title: 'Agent Creation Failed',
-      message: extractApiError(e),
-      durationMs: 8_000,
-    });
-  } finally {
-    creating.value = false;
-    onchainStatus.value = '';
-  }
+  });
 }
 
 function handleCancel() {
@@ -347,7 +387,7 @@ async function ensureWalletConnected() {
   throw new Error('Wallet connection was not detected. Finish wallet connect and try again.');
 }
 
-async function ensureOnchainAgent(opts?: { forceCreate?: boolean }) {
+async function ensureOnchainAgent(opts?: { forceCreate?: boolean; autoSign?: boolean }) {
   if (!opts?.forceCreate && initiaState.value.agentExists) return;
 
   if (!initiaState.value.chainOk) {
@@ -356,7 +396,7 @@ async function ensureOnchainAgent(opts?: { forceCreate?: boolean }) {
 
   const metadataPointer = buildMetadataPointer();
   onchainStatus.value = 'Waiting for block confirmation…';
-  const { txHash, onchainAgentId } = await createAgentOnchain(metadataPointer);
+  const { txHash, onchainAgentId } = await createAgentOnchain(metadataPointer, { autoSign: opts?.autoSign });
 
   if (onchainAgentId) {
     onchainStatus.value = 'Agent confirmed onchain';
@@ -405,7 +445,8 @@ async function handleDeposit() {
   try {
     const balanceBeforeDeposit = currentPaperBalance.value;
     await ensureWalletConnected();
-    await ensureOnchainAgent();
+    const autoSign = autoSignMgr.isEnabled('createAgentOnchain') && autoSignMgr.chainAutoSignEnabled.value;
+    await ensureOnchainAgent({ autoSign });
     const result = await depositShowcaseToken(String(amt));
     await refresh();
     currentPaperBalance.value += amt;
@@ -738,7 +779,7 @@ function handleOpenAgent() {
         </div>
 
         <p class="fund-step__desc">
-          Agent is created with zero balance by default. Fund from wallet to proceed.
+          Agents start with a zero balance. Deposit funds from your wallet to continue.
         </p>
 
         <div class="fund-step__wallet-row">
@@ -828,6 +869,14 @@ function handleOpenAgent() {
       </div>
     </div>
   </div>
+
+  <AutoSignConsentModal
+    :open="consentModalOpen"
+    :action-key="consentActionKey"
+    :action-label="consentActionLabel"
+    @proceed="onConsentProceed"
+    @cancel="onConsentCancel"
+  />
 </template>
 
 <style scoped>

@@ -240,51 +240,52 @@ export function useInitiaBridge() {
 
   async function createAgentOnchain(
     metadataPointer: Record<string, unknown>,
+    opts?: { autoSign?: boolean },
   ): Promise<{ txHash?: string | null; onchainAgentId?: string | null }> {
-    const result = await sendBridgeAction({ action: 'createAgentOnchain', params: { metadataPointer } });
+    const result = await sendBridgeAction({ action: 'createAgentOnchain', params: { metadataPointer, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
       onchainAgentId: (result?.onchainAgentId as string | undefined) ?? null,
     };
   }
 
-  async function deposit(amount: string): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'deposit', params: { amount } });
+  async function deposit(amount: string, opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'deposit', params: { amount, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
   }
 
-  async function withdraw(amount: string): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'withdraw', params: { amount } });
+  async function withdraw(amount: string, opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'withdraw', params: { amount, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
   }
 
-  async function mintShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'mintShowcaseToken', params: { amount } });
+  async function mintShowcaseToken(amount: string, opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'mintShowcaseToken', params: { amount, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
   }
 
-  async function depositShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'depositShowcaseToken', params: { amount } });
+  async function depositShowcaseToken(amount: string, opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'depositShowcaseToken', params: { amount, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
   }
 
-  async function withdrawShowcaseToken(amount: string): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'withdrawShowcaseToken', params: { amount } });
+  async function withdrawShowcaseToken(amount: string, opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'withdrawShowcaseToken', params: { amount, autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
   }
 
-  async function authorizeExecutor(): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'authorizeExecutor' });
+  async function authorizeExecutor(opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'authorizeExecutor', params: { autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };
@@ -304,8 +305,8 @@ export function useInitiaBridge() {
     };
   }
 
-  async function executeTick(): Promise<{ txHash?: string | null }> {
-    const result = await sendBridgeAction({ action: 'executeTick' });
+  async function executeTick(opts?: { autoSign?: boolean }): Promise<{ txHash?: string | null }> {
+    const result = await sendBridgeAction({ action: 'executeTick', params: { autoSign: opts?.autoSign } });
     return {
       txHash: (result?.txHash as string | undefined) ?? null,
     };

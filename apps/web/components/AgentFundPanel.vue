@@ -20,7 +20,6 @@ const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
 const BRIDGE_SRC_DENOM = 'uinit';
 
 const isOpen = ref(false);
-const tab = ref<'deposit' | 'withdraw'>('deposit');
 const amount = ref('1000');
 const faucetAmount = ref('1000');
 const funding = ref(false);
@@ -92,10 +91,10 @@ async function handleFund() {
   try {
     await ensureWalletConnected();
     const result = await depositShowcaseToken(String(amt));
-    
+
     const newBalance = (props.currentBalance ?? 0) + amt;
     await updateAgent(props.agentId, { paperBalance: newBalance });
-    
+
     await request(`/api/agents/${props.agentId}/initia/sync`, {
       method: 'POST',
       body: {
@@ -138,9 +137,9 @@ async function handleWithdraw() {
   try {
     await ensureWalletConnected();
     const result = await withdrawShowcaseToken(String(amt));
-    
+
     await updateAgent(props.agentId, { paperBalance: newBalance });
-    
+
     await request(`/api/agents/${props.agentId}/initia/sync`, {
       method: 'POST',
       body: {
@@ -213,133 +212,109 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
 </script>
 
 <template>
-  <!-- Trigger button -->
   <button class="btn btn-ghost btn-sm" title="Deposit / Withdraw" @click="open">
     $ Deposit / Withdraw
   </button>
 
-  <!-- Modal backdrop -->
   <Teleport to="body">
     <Transition name="fund-modal">
       <div v-if="isOpen" class="fund-backdrop" @click.self="close">
-        <div class="fund-modal" role="dialog" aria-modal="true">
-
-          <!-- Header -->
-          <div class="fund-modal__head">
-            <span class="fund-modal__title">iUSD-DEMO VAULT</span>
+        <div class="fund-modal fund-step" role="dialog" aria-modal="true">
+          <div class="fund-step__surface">
             <button class="fund-modal__close" aria-label="Close" @click="close">✕</button>
-          </div>
 
-          <!-- Balance row -->
-          <div class="fund-modal__balances">
-            <div class="fund-modal__bal-row">
-              <span class="fund-modal__bal-key">agent balance</span>
-              <span class="fund-modal__bal-val">${{ (currentBalance ?? 0).toLocaleString() }}</span>
+            <div class="fund-step__header">
+              <span class="fund-step__title">Agent vault</span>
             </div>
-            <div v-if="walletDisplay" class="fund-modal__bal-row">
-              <span class="fund-modal__bal-key">wallet iUSD-demo</span>
-              <span class="fund-modal__bal-val">{{ walletDisplay }}</span>
+
+            <div class="fund-step__wallet-row">
+              <span class="fund-step__bal-key">agent paper balance</span>
+              <span class="fund-step__bal-val">{{ (currentBalance ?? 0).toLocaleString() }} iUSD-demo</span>
             </div>
-          </div>
 
-          <!-- Tab toggle -->
-          <div class="fund-modal__tabs">
-            <button
-              class="fund-modal__tab"
-              :class="{ 'fund-modal__tab--active': tab === 'deposit' }"
-              @click="tab = 'deposit'; clearMessages()"
-            >Deposit</button>
-            <button
-              class="fund-modal__tab"
-              :class="{ 'fund-modal__tab--active': tab === 'withdraw' }"
-              @click="tab = 'withdraw'; clearMessages()"
-            >Withdraw</button>
-          </div>
+            <div v-if="walletDisplay" class="fund-step__wallet-row">
+              <span class="fund-step__bal-key">wallet balance</span>
+              <span class="fund-step__bal-val">{{ walletDisplay }} iUSD-demo</span>
+            </div>
 
-          <!-- Amount input -->
-          <div class="fund-modal__input-row">
-            <input
-              v-model="amount"
-              type="number"
-              min="0"
-              step="100"
-              class="fund-modal__input"
-              placeholder="Amount"
-              :disabled="busy"
-              @focus="clearMessages"
-            >
-            <span class="fund-modal__currency">iUSD-demo</span>
-          </div>
-
-          <!-- Feedback -->
-          <div v-if="successMsg" class="fund-modal__feedback fund-modal__feedback--ok">{{ successMsg }}</div>
-          <div v-if="error" class="fund-modal__feedback fund-modal__feedback--err">{{ error }}</div>
-
-          <!-- Actions -->
-          <div class="fund-modal__actions">
-            <button
-              v-if="tab === 'deposit'"
-              class="fund-modal__btn fund-modal__btn--primary"
-              :disabled="busy"
-              @click="handleFund"
-            >
-              <span v-if="funding" class="spinner" style="width:11px;height:11px;border-color:#0003;border-top-color:#0a0a0a" />
-              {{ funding ? 'Funding…' : 'Deposit' }}
-            </button>
-            <button
-              v-else
-              class="fund-modal__btn fund-modal__btn--primary"
-              :disabled="busy"
-              @click="handleWithdraw"
-            >
-              <span v-if="withdrawing" class="spinner" style="width:11px;height:11px;border-color:#0003;border-top-color:#0a0a0a" />
-              {{ withdrawing ? 'Withdrawing…' : 'Withdraw' }}
-            </button>
-            <button
-              class="fund-modal__btn fund-modal__btn--bridge"
-              :disabled="busy"
-              @click="handleBridge"
-            >
-              <span v-if="bridging" class="spinner" style="width:11px;height:11px;" />
-              {{ bridging ? 'Opening…' : '⇌ Bridge' }}
-            </button>
-          </div>
-
-          <!-- Bridge note -->
-          <div class="fund-modal__bridge-note">
-            <div class="fund-modal__bridge-note-title">Hackathon bridge note</div>
-            <p>
-              Local dev limitation: Interwoven Bridge resolves registered chain IDs only, so your local appchain or
-              token route may not render. Bridge stays in this flow to demonstrate the hackathon path: bridge assets
-              from L1 to appchain, then deposit into the agent vault.
-            </p>
-          </div>
-
-          <div class="fund-modal__faucet">
-            <div class="fund-modal__faucet-title">iUSD-demo faucet</div>
-            <div class="fund-modal__input-row">
+            <div class="fund-step__input-row">
               <input
-                v-model="faucetAmount"
+                v-model="amount"
                 type="number"
                 min="0.0001"
                 step="0.0001"
-                class="fund-modal__input"
+                class="fund-step__input"
                 placeholder="1000"
                 :disabled="busy"
                 @focus="clearMessages"
               >
-              <span class="fund-modal__currency">iUSD-demo</span>
+              <span class="fund-step__currency">iUSD-demo</span>
             </div>
-            <button
-              class="fund-modal__btn fund-modal__btn--faucet"
-              :disabled="busy"
-              @click="handleMintFaucet"
-            >
-              <span v-if="mintingFaucet" class="spinner" style="width:11px;height:11px;" />
-              {{ mintingFaucet ? 'Minting…' : 'Mint Faucet Tokens' }}
-            </button>
-          </div>
 
+            <div v-if="successMsg" class="fund-step__feedback fund-step__feedback--ok">{{ successMsg }}</div>
+            <div v-if="error" class="fund-step__feedback fund-step__feedback--err">{{ error }}</div>
+
+            <div class="fund-step__actions">
+              <button
+                class="fund-step__btn fund-step__btn--primary"
+                :disabled="busy"
+                @click="handleFund"
+              >
+                <span v-if="funding" class="spinner" style="width:12px;height:12px;border-color:#0003;border-top-color:#0a0a0a" />
+                {{ funding ? 'Depositing…' : 'Deposit' }}
+              </button>
+              <button
+                class="fund-step__btn fund-step__btn--ghost"
+                :disabled="busy"
+                @click="handleWithdraw"
+              >
+                <span v-if="withdrawing" class="spinner" style="width:12px;height:12px;" />
+                {{ withdrawing ? 'Withdrawing…' : 'Withdraw' }}
+              </button>
+              <button
+                class="fund-step__btn fund-step__btn--bridge"
+                :disabled="busy"
+                @click="handleBridge"
+              >
+                <span v-if="bridging" class="spinner" style="width:12px;height:12px;" />
+                {{ bridging ? 'Opening…' : 'Bridge' }}
+              </button>
+            </div>
+
+            <div class="fund-step__bridge-note">
+              <div class="fund-step__bridge-note-title">Hackathon bridge note</div>
+              <p>
+                Local dev limitation: Interwoven Bridge resolves registered chain IDs only, so your local appchain or token route may not render.
+                We still keep bridge in this flow because it demonstrates the hackathon path: bridge assets from L1 to appchain, then deposit into the agent vault.
+                This improves onboarding speed, liquidity access, and immediate utility.
+              </p>
+            </div>
+
+            <div class="fund-step__faucet">
+              <div class="fund-step__faucet-title">iUSD-demo faucet</div>
+              <div class="fund-step__input-row">
+                <input
+                  v-model="faucetAmount"
+                  type="number"
+                  min="0.0001"
+                  step="0.0001"
+                  class="fund-step__input"
+                  placeholder="1000"
+                  :disabled="busy"
+                  @focus="clearMessages"
+                >
+                <span class="fund-step__currency">iUSD-demo</span>
+              </div>
+              <button
+                class="fund-step__btn fund-step__btn--faucet"
+                :disabled="busy"
+                @click="handleMintFaucet"
+              >
+                <span v-if="mintingFaucet" class="spinner" style="width:12px;height:12px;" />
+                {{ mintingFaucet ? 'Minting…' : 'Mint Faucet Tokens' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
@@ -347,7 +322,6 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
 </template>
 
 <style scoped>
-/* ── Backdrop ── */
 .fund-backdrop {
   position: fixed;
   inset: 0;
@@ -356,274 +330,245 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
 }
 
-/* ── Modal ── */
 .fund-modal {
-  background: var(--surface, #141414);
-  border: 1px solid var(--border, #2a2a2a);
-  width: 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 18px 20px;
+  width: min(100%, 440px);
   position: relative;
 }
 
-/* ── Header ── */
-.fund-modal__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.fund-modal__title {
-  font-family: 'Space Mono', monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text-muted, #555);
-  flex: 1;
-}
-.fund-modal__badge {
-  font-family: 'Space Mono', monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #f59e0b;
-  background: color-mix(in srgb, #f59e0b 12%, transparent);
-  border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
-  padding: 2px 6px;
-}
 .fund-modal__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
   background: none;
   border: none;
   color: var(--text-muted, #555);
   font-size: 13px;
   cursor: pointer;
-  padding: 0;
+  padding: 4px;
   line-height: 1;
   transition: color 0.1s;
+  z-index: 2;
 }
 .fund-modal__close:hover { color: var(--text, #e0e0e0); }
 
-/* ── Balances ── */
-.fund-modal__balances {
+.fund-step__surface {
+  background: var(--surface, #141414);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 10px;
-  background: var(--bg, #0a0a0a);
-  border: 1px solid var(--border, #1e1e1e);
-}
-.fund-modal__bal-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-.fund-modal__bal-key {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted, #444);
-}
-.fund-modal__bal-val {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text, #e0e0e0);
+  gap: 14px;
 }
 
-/* ── Tabs ── */
-.fund-modal__tabs {
+.fund-step__header {
   display: flex;
-  border: 1px solid var(--border, #2a2a2a);
-  overflow: hidden;
+  align-items: center;
+  gap: 10px;
 }
-.fund-modal__tab {
+
+.fund-step__title {
   flex: 1;
-  padding: 7px;
-  background: none;
-  border: none;
   font-family: 'Space Mono', monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted, #555);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
 }
-.fund-modal__tab + .fund-modal__tab {
-  border-left: 1px solid var(--border, #2a2a2a);
+
+.fund-step__desc {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted, #555);
+  margin: 0;
 }
-.fund-modal__tab--active {
-  background: var(--border, #2a2a2a);
+
+.fund-step__wallet-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--border, #2a2a2a) 20%, transparent);
+  border-radius: 3px;
+}
+
+.fund-step__bal-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted, #555);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fund-step__bal-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
   color: var(--text, #e0e0e0);
 }
 
-/* ── Input ── */
-.fund-modal__input-row {
+.fund-step__input-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.fund-modal__input {
+
+.fund-step__input {
   flex: 1;
-  height: 36px;
+  height: 38px;
   background: var(--bg, #0a0a0a);
   border: 1px solid var(--border, #2a2a2a);
+  border-radius: 3px;
   color: var(--text, #e0e0e0);
   font-family: 'JetBrains Mono', monospace;
   font-size: 14px;
-  padding: 0 10px;
+  padding: 0 12px;
   outline: none;
   transition: border-color 0.12s;
 }
-.fund-modal__input:focus { border-color: var(--accent, #7c6af7); }
-.fund-modal__input:disabled { opacity: 0.4; }
-.fund-modal__currency {
+.fund-step__input:focus { border-color: var(--accent, #7c6af7); }
+.fund-step__input:disabled { opacity: 0.4; }
+
+.fund-step__currency {
   font-family: 'Space Mono', monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--text-muted, #555);
   white-space: nowrap;
 }
 
-/* ── Presets ── */
-.fund-modal__presets {
-  display: flex;
-  gap: 5px;
-}
-.fund-modal__preset {
-  flex: 1;
-  padding: 4px 0;
-  background: none;
-  border: 1px solid var(--border, #2a2a2a);
-  color: var(--text-muted, #555);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color 0.1s, color 0.1s;
-}
-.fund-modal__preset:not(:disabled):hover {
-  border-color: var(--accent, #7c6af7);
-  color: var(--text, #e0e0e0);
-}
-.fund-modal__preset:disabled { opacity: 0.35; cursor: not-allowed; }
-
-/* ── Feedback ── */
-.fund-modal__feedback {
+.fund-step__feedback {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   padding: 6px 10px;
-  border-radius: 0;
+  border-radius: 4px;
 }
-.fund-modal__feedback--ok {
+.fund-step__feedback--ok {
   color: #4ade80;
   background: color-mix(in srgb, #4ade80 8%, transparent);
   border: 1px solid color-mix(in srgb, #4ade80 20%, transparent);
 }
-.fund-modal__feedback--err {
+.fund-step__feedback--err {
   color: #e55;
   background: color-mix(in srgb, #e55 8%, transparent);
   border: 1px solid color-mix(in srgb, #e55 20%, transparent);
 }
 
-/* ── Actions ── */
-.fund-modal__actions {
+.fund-step__actions {
   display: flex;
   gap: 8px;
 }
-.fund-modal__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+
+.fund-step__btn {
+  flex: 1;
+  height: 34px;
+  border-radius: 3px;
+  border: 1px solid var(--border, #2a2a2a);
+  background: transparent;
+  color: var(--text, #e0e0e0);
   font-family: 'Space Mono', monospace;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
-  transition: background 0.1s, opacity 0.1s;
+  transition: opacity 0.12s, border-color 0.12s, background 0.12s;
+  min-height: 2.5rem;
 }
-.fund-modal__btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.fund-modal__btn--primary {
-  flex: 1;
+
+.fund-step__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.fund-step__btn--primary {
   background: #e0e0e0;
   color: #0a0a0a;
-  justify-content: center;
+  border-color: transparent;
 }
-.fund-modal__btn--primary:not(:disabled):hover { background: #fff; }
-.fund-modal__btn--bridge {
-  background: none;
-  border: 1px solid color-mix(in srgb, #f59e0b 35%, #2a2a2a);
+
+.fund-step__btn--primary:not(:disabled):hover {
+  background: #fff;
+}
+
+.fund-step__btn--ghost:not(:disabled):hover {
+  border-color: #555;
+  color: #fff;
+}
+
+.fund-step__btn--bridge {
   color: #f59e0b;
+  border-color: color-mix(in srgb, #f59e0b 40%, var(--border, #2a2a2a));
 }
-.fund-modal__btn--bridge:not(:disabled):hover {
+
+.fund-step__btn--bridge:not(:disabled):hover {
   background: color-mix(in srgb, #f59e0b 10%, transparent);
 }
 
-/* ── Bridge note ── */
-.fund-modal__bridge-note {
+.fund-step__bridge-note {
   border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--border, #2a2a2a));
   background: color-mix(in srgb, #f59e0b 8%, transparent);
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: 10px;
 }
-.fund-modal__bridge-note-title {
+
+.fund-step__bridge-note-title {
   font-family: 'Space Mono', monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #f59e0b;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
-.fund-modal__bridge-note p {
+
+.fund-step__bridge-note p {
   margin: 0;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  line-height: 1.55;
+  font-size: 10px;
+  line-height: 1.6;
   color: var(--text-muted, #a7a7a7);
 }
 
-.fund-modal__faucet {
+.fund-step__faucet {
+  border: 1px solid color-mix(in srgb, #4ade80 30%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #4ade80 9%, transparent);
+  border-radius: 4px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border: 1px solid color-mix(in srgb, #4ade80 28%, var(--border, #2a2a2a));
-  background: color-mix(in srgb, #4ade80 8%, transparent);
-  border-radius: 4px;
-  padding: 9px 10px;
 }
 
-.fund-modal__faucet-title {
+.fund-step__faucet-title {
   font-family: 'Space Mono', monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #4ade80;
 }
 
-.fund-modal__btn--faucet {
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, #4ade80 45%, var(--border, #2a2a2a));
+.fund-step__btn--faucet {
+  border-color: color-mix(in srgb, #4ade80 45%, var(--border, #2a2a2a));
   color: #4ade80;
   background: color-mix(in srgb, #4ade80 10%, transparent);
 }
 
-.fund-modal__btn--faucet:not(:disabled):hover {
-  background: color-mix(in srgb, #4ade80 18%, transparent);
+.fund-step__btn--faucet:not(:disabled):hover {
+  background: color-mix(in srgb, #4ade80 16%, transparent);
 }
 
-/* ── Transitions ── */
 .fund-modal-enter-active,
 .fund-modal-leave-active {
   transition: opacity 0.15s ease;

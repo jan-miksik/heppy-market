@@ -1,9 +1,15 @@
 <script setup lang="ts">
 const { user, fetchMe } = useAuth();
 const { initConnect, disconnect } = useOpenRouter();
+const { ON_CHAIN_ACTIONS, isEnabled, setEnabled, chainAutoSignEnabled } = useAutoSign();
+const { state: initiaState, enableAutoSign, disableAutoSign } = useInitiaBridge();
 
 const disconnecting = ref(false);
 const connecting = ref(false);
+const togglingChain = ref(false);
+
+const bridgeBusy = computed(() => Boolean(initiaState.value.busyAction));
+const bridgeConnected = computed(() => Boolean(initiaState.value.initiaAddress));
 
 async function handleDisconnect() {
   disconnecting.value = true;
@@ -21,6 +27,19 @@ async function handleConnect() {
     await initConnect(); // redirects away on success
   } catch {
     connecting.value = false;
+  }
+}
+
+async function handleToggleChainAutoSign() {
+  togglingChain.value = true;
+  try {
+    if (chainAutoSignEnabled.value) {
+      await disableAutoSign();
+    } else {
+      await enableAutoSign();
+    }
+  } finally {
+    togglingChain.value = false;
   }
 }
 </script>
@@ -48,6 +67,52 @@ async function handleConnect() {
         </template>
       </div>
     </section>
+
+    <section class="settings-section settings-section--autosign">
+      <h2 class="settings-section-title">Auto-Sign</h2>
+      <p class="settings-section-desc">
+        Choose which on-chain actions can be signed without wallet confirmation.
+        A session key is registered on-chain once and can be revoked at any time.
+      </p>
+
+      <div class="settings-row autosign-chain-row">
+        <span class="autosign-chain-label">Session key</span>
+        <span class="or-status" :class="chainAutoSignEnabled ? 'or-status--connected' : 'or-status--none'">
+          {{ chainAutoSignEnabled ? 'Active' : 'Inactive' }}
+        </span>
+        <button
+          class="btn btn-ghost btn-sm"
+          :disabled="togglingChain || bridgeBusy || !bridgeConnected"
+          @click="handleToggleChainAutoSign"
+        >
+          {{ togglingChain ? (chainAutoSignEnabled ? 'Disabling…' : 'Enabling…') : (chainAutoSignEnabled ? 'Disable' : 'Enable') }}
+        </button>
+      </div>
+
+      <div class="autosign-actions-list">
+        <label
+          v-for="action in ON_CHAIN_ACTIONS"
+          :key="action.key"
+          class="autosign-action-row"
+        >
+          <input
+            type="checkbox"
+            class="autosign-checkbox"
+            :checked="isEnabled(action.key)"
+            @change="setEnabled(action.key, ($event.target as HTMLInputElement).checked)"
+          />
+          <div class="autosign-action-info">
+            <span class="autosign-action-label">{{ action.label }}</span>
+            <span class="autosign-action-desc">{{ action.description }}</span>
+          </div>
+        </label>
+      </div>
+
+      <p class="settings-note">
+        Unchecking an action resets its auto-sign consent — the prompt will reappear on next use.
+        Disabling the session key revokes it on-chain but does not change the checkboxes above.
+      </p>
+    </section>
   </div>
 </template>
 
@@ -66,4 +131,53 @@ async function handleConnect() {
 .or-status { font-size: 13px; font-weight: 500; }
 .or-status--connected { color: var(--success, #22c55e); }
 .or-status--none { color: var(--text-dim); }
+
+.settings-section--autosign { margin-top: 20px; }
+
+.autosign-chain-row {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.autosign-chain-label { font-size: 13px; color: var(--text); flex: 1; }
+
+.autosign-actions-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.autosign-action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.autosign-action-row:last-child { border-bottom: none; }
+.autosign-action-row:hover { background: color-mix(in srgb, var(--bg-card) 80%, var(--border)); }
+
+.autosign-checkbox {
+  flex-shrink: 0;
+  margin-top: 3px;
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.autosign-action-info { display: flex; flex-direction: column; gap: 2px; }
+.autosign-action-label { font-size: 13px; color: var(--text); }
+.autosign-action-desc { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
+.settings-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 12px;
+  line-height: 1.5;
+}
 </style>

@@ -76,13 +76,13 @@ export type InitiaBridgeAction =
   | { action: 'openWallet' }
   | { action: 'openBridge'; params?: InitiaBridgeOpenParams }
   | { action: 'refresh' }
-  | { action: 'createAgentOnchain'; params: { metadataPointer: Record<string, unknown> } }
-  | { action: 'deposit'; params: { amount: string } }
-  | { action: 'withdraw'; params: { amount: string } }
-  | { action: 'mintShowcaseToken'; params: { amount: string } }
-  | { action: 'depositShowcaseToken'; params: { amount: string } }
-  | { action: 'withdrawShowcaseToken'; params: { amount: string } }
-  | { action: 'authorizeExecutor' }
+  | { action: 'createAgentOnchain'; params: { metadataPointer: Record<string, unknown>; autoSign?: boolean } }
+  | { action: 'deposit'; params: { amount: string; autoSign?: boolean } }
+  | { action: 'withdraw'; params: { amount: string; autoSign?: boolean } }
+  | { action: 'mintShowcaseToken'; params: { amount: string; autoSign?: boolean } }
+  | { action: 'depositShowcaseToken'; params: { amount: string; autoSign?: boolean } }
+  | { action: 'withdrawShowcaseToken'; params: { amount: string; autoSign?: boolean } }
+  | { action: 'authorizeExecutor'; params?: { autoSign?: boolean } }
   | { action: 'enableAutoSign' }
   | { action: 'disableAutoSign' }
-  | { action: 'executeTick' };
+  | { action: 'executeTick'; params?: { autoSign?: boolean } };

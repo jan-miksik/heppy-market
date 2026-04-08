@@ -17,8 +17,6 @@ const {
   openWallet,
   refresh,
   createAgentOnchain,
-  deposit,
-  withdraw,
   mintShowcaseToken,
   depositShowcaseToken,
   withdrawShowcaseToken,
@@ -27,14 +25,12 @@ const {
   disableAutoSign,
   executeTick,
 } = useInitiaBridge();
+const autoSignMgr = useAutoSign();
 
-const nativeAmount = ref('0.1');
 const tokenAmount = ref('10');
 const faucetAmount = ref('1000');
 const localBusy = ref<
   | 'create'
-  | 'deposit'
-  | 'withdraw'
   | 'mintToken'
   | 'depositToken'
   | 'withdrawToken'
@@ -46,6 +42,44 @@ const localBusy = ref<
 >(null);
 const actionError = ref<string | null>(null);
 const actionTxHashes = ref<string[]>([]);
+
+// Consent modal state
+const consentModalOpen = ref(false);
+const consentActionKey = ref('');
+const consentActionLabel = ref('');
+let pendingAction: (() => Promise<void>) | null = null;
+
+async function withAutoSignCheck(key: string, label: string, fn: () => Promise<void>) {
+  if (consentModalOpen.value) return; // guard double-click
+  if (!autoSignMgr.isDismissed(key)) {
+    pendingAction = fn;
+    consentActionKey.value = key;
+    consentActionLabel.value = label;
+    consentModalOpen.value = true;
+    return;
+  }
+  await fn();
+}
+
+async function onConsentProceed(useAutoSignChoice: boolean) {
+  const key = consentActionKey.value;
+  consentModalOpen.value = false;
+  autoSignMgr.setEnabled(key, useAutoSignChoice);
+  autoSignMgr.setDismissed(key, true);
+
+  if (useAutoSignChoice && !autoSignMgr.chainAutoSignEnabled.value) {
+    await runAction('enableAutoSign', async () => await enableAutoSign());
+  }
+
+  const fn = pendingAction;
+  pendingAction = null;
+  if (fn) await fn();
+}
+
+function onConsentCancel() {
+  consentModalOpen.value = false;
+  pendingAction = null;
+}
 
 const connected = computed(() => Boolean(initiaState.value.initiaAddress || initiaState.value.evmAddress));
 const busy = computed(() => Boolean(localBusy.value || initiaState.value.busyAction));
@@ -147,30 +181,13 @@ async function handleCreateAgentOnchain() {
     actionError.value = 'Connect wallet first.';
     return;
   }
-
-  await runAction('create', async () => {
-    const metadataPointer = {
-      source: 'initroot',
-      createdAt: new Date().toISOString(),
-    };
-    return await createAgentOnchain(metadataPointer);
+  await withAutoSignCheck('createAgentOnchain', 'Create Agent', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('createAgentOnchain') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('create', async () => {
+      const metadataPointer = { source: 'initroot', createdAt: new Date().toISOString() };
+      return await createAgentOnchain(metadataPointer, opts);
+    });
   });
-}
-
-async function handleDepositNative() {
-  if (!checkAmount(nativeAmount.value)) {
-    actionError.value = 'Enter a valid native amount > 0.';
-    return;
-  }
-  await runAction('deposit', async () => await deposit(nativeAmount.value));
-}
-
-async function handleWithdrawNative() {
-  if (!checkAmount(nativeAmount.value)) {
-    actionError.value = 'Enter a valid native amount > 0.';
-    return;
-  }
-  await runAction('withdraw', async () => await withdraw(nativeAmount.value));
 }
 
 async function handleDepositToken() {
@@ -178,7 +195,10 @@ async function handleDepositToken() {
     actionError.value = 'Enter a valid iUSD-demo amount > 0.';
     return;
   }
-  await runAction('depositToken', async () => await depositShowcaseToken(tokenAmount.value));
+  await withAutoSignCheck('depositShowcaseToken', 'Deposit iUSD-demo', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('depositShowcaseToken') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('depositToken', async () => await depositShowcaseToken(tokenAmount.value, opts));
+  });
 }
 
 async function handleWithdrawToken() {
@@ -186,7 +206,10 @@ async function handleWithdrawToken() {
     actionError.value = 'Enter a valid iUSD-demo amount > 0.';
     return;
   }
-  await runAction('withdrawToken', async () => await withdrawShowcaseToken(tokenAmount.value));
+  await withAutoSignCheck('withdrawShowcaseToken', 'Withdraw iUSD-demo', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('withdrawShowcaseToken') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('withdrawToken', async () => await withdrawShowcaseToken(tokenAmount.value, opts));
+  });
 }
 
 async function handleMintToken() {
@@ -194,11 +217,17 @@ async function handleMintToken() {
     actionError.value = 'Enter a valid faucet mint amount > 0.';
     return;
   }
-  await runAction('mintToken', async () => await mintShowcaseToken(faucetAmount.value));
+  await withAutoSignCheck('mintShowcaseToken', 'Mint iUSD-demo', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('mintShowcaseToken') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('mintToken', async () => await mintShowcaseToken(faucetAmount.value, opts));
+  });
 }
 
 async function handleAuthorizeExecutor() {
-  await runAction('authorizeExecutor', async () => await authorizeExecutor());
+  await withAutoSignCheck('authorizeExecutor', 'Authorize Executor', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('authorizeExecutor') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('authorizeExecutor', async () => await authorizeExecutor(opts));
+  });
 }
 
 async function handleEnableAutoSign() {
@@ -210,7 +239,10 @@ async function handleDisableAutoSign() {
 }
 
 async function handleExecuteTick() {
-  await runAction('executeTick', async () => await executeTick());
+  await withAutoSignCheck('executeTick', 'Execute Tick', async () => {
+    const opts = { autoSign: autoSignMgr.isEnabled('executeTick') && autoSignMgr.chainAutoSignEnabled.value };
+    await runAction('executeTick', async () => await executeTick(opts));
+  });
 }
 </script>
 
@@ -345,6 +377,14 @@ async function handleExecuteTick() {
     <div v-if="actionError || initiaState.error" class="vault-panel__error">
       {{ actionError || initiaState.error }}
     </div>
+
+    <AutoSignConsentModal
+      :open="consentModalOpen"
+      :action-key="consentActionKey"
+      :action-label="consentActionLabel"
+      @proceed="onConsentProceed"
+      @cancel="onConsentCancel"
+    />
   </section>
 </template>
 

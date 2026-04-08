@@ -676,7 +676,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'createAgent',
               args: [toHex(metadataBytes)],
             });
-            const txHash = await doAgentTx('createAgentOnchain', input);
+            const txHash = await doAgentTx('createAgentOnchain', input, undefined, params?.autoSign === true);
             // doContractTx's finally cleared busyAction — re-set it for the polling phase
             // so Vue keeps showing the loading state while we wait for block confirmation.
             setBusyAction('createAgentOnchain');
@@ -714,7 +714,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
             const amount = String(params?.amount ?? '0');
             const wei = parseEther(amount);
             const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'depositNative', args: [agentId] });
-            const txHash = await doAgentTx('deposit', input, `0x${wei.toString(16)}`);
+            const txHash = await doAgentTx('deposit', input, `0x${wei.toString(16)}`, params?.autoSign === true);
             return { txHash, onchainAgentId: agentId.toString() };
           }
           case 'withdraw': {
@@ -729,7 +729,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'withdrawNative',
               args: [agentId, wei, currentEvmAddrForWithdraw],
             });
-            const txHash = await doAgentTx('withdraw', input);
+            const txHash = await doAgentTx('withdraw', input, undefined, params?.autoSign === true);
             return { txHash, onchainAgentId: agentId.toString() };
           }
           case 'mintShowcaseToken': {
@@ -741,7 +741,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'mint',
               args: [wei],
             });
-            const txHash = await doContractTx('mintShowcaseToken', showcaseTokenFaucetAddress, input);
+            const txHash = await doContractTx('mintShowcaseToken', showcaseTokenFaucetAddress, input, undefined, params?.autoSign === true);
             return { txHash };
           }
           case 'depositShowcaseToken': {
@@ -760,6 +760,8 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               'depositShowcaseTokenApprove',
               showcaseTokenAddress,
               approveInput,
+              undefined,
+              params?.autoSign === true,
             );
 
             const depositInput = encodeFunctionData({
@@ -767,7 +769,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'depositToken',
               args: [agentId, showcaseTokenAddress, wei],
             });
-            const txHash = await doAgentTx('depositShowcaseToken', depositInput);
+            const txHash = await doAgentTx('depositShowcaseToken', depositInput, undefined, params?.autoSign === true);
             return { txHash, approveTxHash, onchainAgentId: agentId.toString() };
           }
           case 'withdrawShowcaseToken': {
@@ -782,7 +784,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'withdrawToken',
               args: [agentId, showcaseTokenAddress, wei, currentEvmAddr],
             });
-            const txHash = await doAgentTx('withdrawShowcaseToken', input);
+            const txHash = await doAgentTx('withdrawShowcaseToken', input, undefined, params?.autoSign === true);
             return { txHash, onchainAgentId: agentId.toString() };
           }
           case 'authorizeExecutor': {
@@ -796,7 +798,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
                 functionName: 'setAllowedTarget',
                 args: [agentId, showcaseTargetAddress, true],
               });
-              whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput);
+              whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput, undefined, params?.autoSign === true);
             }
 
             const approvalInput = encodeFunctionData({
@@ -804,7 +806,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'setExecutorApproval',
               args: [agentId, executorAddress, true, true, maxTradeValueWei, dailyTradeValueWei],
             });
-            const txHash = await doAgentTx('authorizeExecutor', approvalInput);
+            const txHash = await doAgentTx('authorizeExecutor', approvalInput, undefined, params?.autoSign === true);
             return { txHash, whitelistTxHash, onchainAgentId: agentId.toString() };
           }
           case 'enableAutoSign': {
@@ -843,7 +845,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
                 'executeTick',
                 input,
                 undefined,
-                agentStateRef.current.autoSignEnabled || !!(autoSign as any)?.isEnabledByChain?.[options.chainId],
+                params?.autoSign === true,
               );
               return { txHash, onchainAgentId: agentId.toString() };
             } finally {
