@@ -140,15 +140,20 @@ export const TradeDecisionSchema = z.object({
   suggestedPositionSizePct: z.number().min(0).max(100).nullable().optional(),
 });
 
-export const SpotTradeDecisionSchema = z.object({
-  action: z.enum(['OPEN_LONG', 'CLOSE_LONG', 'HOLD']),
+export const PerpTradeDecisionSchema = z.object({
+  action: z.enum(['OPEN_LONG', 'OPEN_SHORT', 'CLOSE_LONG', 'CLOSE_SHORT', 'HOLD']),
   market: z.string().min(1),
   confidence: z.number().min(0).max(1),
   sizePct: z.number().min(0).max(100),
   maxSlippageBps: z.number().int().min(0).max(10_000),
   rationale: z.string().min(1).max(2000),
 });
-export type SpotTradeDecision = z.infer<typeof SpotTradeDecisionSchema>;
+export type PerpTradeDecision = z.infer<typeof PerpTradeDecisionSchema>;
+
+/** @deprecated Use PerpTradeDecisionSchema */
+export const SpotTradeDecisionSchema = PerpTradeDecisionSchema;
+/** @deprecated Use PerpTradeDecision */
+export type SpotTradeDecision = PerpTradeDecision;
 
 export const CreateAgentRequestSchema = z.object({
   name: EntityNameSchema,

@@ -57,7 +57,7 @@ const AGENT_ABI = [
       { name: 'metadata', type: 'bytes' },
       { name: 'nativeBalance', type: 'uint256' },
       { name: 'exists', type: 'bool' },
-      { name: 'autoSignEnabled', type: 'bool' },
+      { name: 'delegatedExecutionEnabled', type: 'bool' },
       { name: 'paused', type: 'bool' },
     ],
   },
@@ -114,11 +114,21 @@ const AGENT_ABI = [
   },
   {
     type: 'function',
-    name: 'setAutoSignEnabled',
+    name: 'setDelegatedExecutionEnabled',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'agentId', type: 'uint256' },
       { name: 'enabled', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'setMaxLeverage',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'maxLev', type: 'uint8' },
     ],
     outputs: [],
   },
@@ -131,22 +141,22 @@ const AGENT_ABI = [
   },
   {
     type: 'function',
-    name: 'setAllowedTarget',
+    name: 'setAllowedPerpDex',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'agentId', type: 'uint256' },
-      { name: 'target', type: 'address' },
+      { name: 'perpDexAddress', type: 'address' },
       { name: 'allowed', type: 'bool' },
     ],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'isTargetAllowed',
+    name: 'isPerpDexAllowed',
     stateMutability: 'view',
     inputs: [
       { name: 'agentId', type: 'uint256' },
-      { name: 'target', type: 'address' },
+      { name: 'perpDexAddress', type: 'address' },
     ],
     outputs: [{ name: 'allowed', type: 'bool' }],
   },

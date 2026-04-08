@@ -12,6 +12,7 @@ packages/*/node_modules/
 .worktrees/
 .DS_Store
 .playwright-cli/
+contracts/broadcast/
 
 # Playwright
 e2e/.auth/user.json

@@ -1,67 +1,66 @@
-import { toFunctionSelector, type AbiFunction } from 'viem';
+import type { AbiFunction } from 'viem';
 
-export interface DexPlatform {
-  dexPlatformId: string;
-  dexContractAddress: `0x${string}`;
-  swapFunctionAbi: AbiFunction;
-  dexFunctionSelector: `0x${string}`;
-  buildSwapArgs(plan: {
-    inputTokenAddress: `0x${string}`;
-    outputTokenAddress: `0x${string}`;
-    maxInputAmount: bigint;
-    minOutputAmount: bigint;
-  }): readonly unknown[];
+export interface PerpPlatform {
+  perpDexPlatformId: string;
+  perpDexAddress: `0x${string}`;
+  openPositionAbi: AbiFunction;
+  closePositionAbi: AbiFunction;
 }
 
 /**
- * Initia EVM testnet router — swapExactTokensForTokens(address,address,uint256,uint256)
- *
- * Replace INITIA_ROUTER_V1_ADDRESS with the deployed address once known.
+ * Mock Perp DEX V1 — uses the MockPerpDEX contract deployed alongside Agent.sol.
+ * Replace the address with the deployed MockPerpDEX address from env.
  */
-const INITIA_ROUTER_V1_ADDRESS: `0x${string}` =
-  (process.env.INITIA_DEX_ROUTER_ADDRESS as `0x${string}`) ??
+const MOCK_PERP_DEX_ADDRESS: `0x${string}` =
+  (process.env.MOCK_PERP_DEX_ADDRESS as `0x${string}`) ??
   '0x0000000000000000000000000000000000000000';
 
-const swapExactInAbi: AbiFunction = {
+const openPositionAbi: AbiFunction = {
   type: 'function',
-  name: 'swapExactTokensForTokens',
+  name: 'executePerpOpen',
   stateMutability: 'nonpayable',
   inputs: [
-    { name: 'tokenIn', type: 'address' },
-    { name: 'tokenOut', type: 'address' },
-    { name: 'amountIn', type: 'uint256' },
-    { name: 'amountOutMin', type: 'uint256' },
+    { name: 'agentId', type: 'uint256' },
+    { name: 'perpDexAddress', type: 'address' },
+    { name: 'market', type: 'bytes32' },
+    { name: 'isLong', type: 'bool' },
+    { name: 'collateralAmount', type: 'uint256' },
+    { name: 'leverage', type: 'uint256' },
+    { name: 'acceptablePrice', type: 'uint256' },
+    { name: 'executionDeadline', type: 'uint256' },
   ],
-  outputs: [{ name: 'amountOut', type: 'uint256' }],
+  outputs: [{ name: 'perpPositionId', type: 'uint256' }],
 };
 
-const initiaRouterV1: DexPlatform = {
-  dexPlatformId: 'initia-router-v1',
-  dexContractAddress: INITIA_ROUTER_V1_ADDRESS,
-  swapFunctionAbi: swapExactInAbi,
-  dexFunctionSelector: toFunctionSelector(swapExactInAbi) as `0x${string}`,
-  buildSwapArgs({ inputTokenAddress, outputTokenAddress, maxInputAmount, minOutputAmount }) {
-    return [inputTokenAddress, outputTokenAddress, maxInputAmount, minOutputAmount] as const;
-  },
+const closePositionAbi: AbiFunction = {
+  type: 'function',
+  name: 'executePerpClose',
+  stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'agentId', type: 'uint256' },
+    { name: 'perpDexAddress', type: 'address' },
+    { name: 'perpPositionId', type: 'uint256' },
+    { name: 'acceptablePrice', type: 'uint256' },
+    { name: 'executionDeadline', type: 'uint256' },
+  ],
+  outputs: [{ name: 'pnl', type: 'int256' }],
 };
 
-export const DEX_REGISTRY: Record<string, DexPlatform> = {
-  [initiaRouterV1.dexPlatformId]: initiaRouterV1,
+const mockPerpV1: PerpPlatform = {
+  perpDexPlatformId: 'mock-perp-v1',
+  perpDexAddress: MOCK_PERP_DEX_ADDRESS,
+  openPositionAbi,
+  closePositionAbi,
+};
+
+export const PERP_DEX_REGISTRY: Record<string, PerpPlatform> = {
+  [mockPerpV1.perpDexPlatformId]: mockPerpV1,
 };
 
 /**
- * Returns the list of (dexContractAddress, dexFunctionSelector) tuples that
- * need to be allowlisted on-chain via setAllowedDexCall for a given platform.
+ * Returns the perp DEX address for allowlisting on-chain via setAllowedPerpDex.
  */
-export function getAllowedDexCallsForPlatform(
-  platformId: string
-): { dexContractAddress: `0x${string}`; dexFunctionSelector: `0x${string}` }[] {
-  const platform = DEX_REGISTRY[platformId];
-  if (!platform) return [];
-  return [
-    {
-      dexContractAddress: platform.dexContractAddress,
-      dexFunctionSelector: platform.dexFunctionSelector,
-    },
-  ];
+export function getPerpDexAddressForPlatform(platformId: string): `0x${string}` | null {
+  const platform = PERP_DEX_REGISTRY[platformId];
+  return platform?.perpDexAddress ?? null;
 }

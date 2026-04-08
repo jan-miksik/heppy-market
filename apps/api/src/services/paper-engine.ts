@@ -1,5 +1,5 @@
 import { generateId, nowIso } from '../lib/utils.js';
-import type { SpotPositionState } from '../agents/spot-state-machine.js';
+import type { PerpPositionState } from '../agents/perp-state-machine.js';
 
 export interface Position {
   id: string;
@@ -87,12 +87,15 @@ export class PaperEngine {
     return this.state.closedPositions;
   }
 
-  /** Returns LONG if there is an open buy position for the pair, FLAT otherwise. */
-  getCurrentSpotState(pair: string): SpotPositionState {
+  /** Returns LONG, SHORT or FLAT based on open positions. */
+  getCurrentPositionState(pair: string): PerpPositionState {
     const openBuy = Array.from(this.state.openPositions.values()).find(
       (p) => p.pair === pair && p.side === 'buy',
     );
-    return openBuy ? 'LONG' : 'FLAT';
+    const openSell = Array.from(this.state.openPositions.values()).find(
+      (p) => p.pair === pair && p.side === 'sell',
+    );
+    return openBuy ? 'LONG' : openSell ? 'SHORT' : 'FLAT';
   }
 
   /** Open a new paper position. Throws if constraints are violated. */

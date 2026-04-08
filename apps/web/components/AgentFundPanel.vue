@@ -174,7 +174,7 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
           </div>
 
           <div class="fund-modal__faucet">
-            <div class="fund-modal__faucet-title">iUSD-demo faucet (test only)</div>
+            <div class="fund-modal__faucet-title">iUSD-demo faucet</div>
             <div class="fund-modal__input-row">
               <input
                 v-model="faucetAmount"

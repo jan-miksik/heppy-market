@@ -16,8 +16,8 @@ const {
   openBridge,
   refresh,
   createAgentOnchain,
-  deposit,
-  withdraw,
+  depositShowcaseToken,
+  withdrawShowcaseToken,
   mintShowcaseToken,
   enableAutoSign,
   disableAutoSign,
@@ -406,7 +406,7 @@ async function handleDeposit() {
     const balanceBeforeDeposit = currentPaperBalance.value;
     await ensureWalletConnected();
     await ensureOnchainAgent();
-    const result = await deposit(String(amt));
+    const result = await depositShowcaseToken(String(amt));
     await refresh();
     currentPaperBalance.value += amt;
     await updateAgent(createdAgentId.value, { paperBalance: currentPaperBalance.value });
@@ -434,14 +434,14 @@ async function handleDeposit() {
       showNotification({
         type: 'error',
         title: 'Deposit Completed With Warning',
-        message: `Deposited ${amt.toLocaleString()} GAS.${txSuffix}\n${autoStartError}`,
+        message: `Deposited ${amt.toLocaleString()} iUSD-demo.${txSuffix}\n${autoStartError}`,
         durationMs: 8_500,
       });
     } else {
       showNotification({
         type: 'success',
         title: 'Deposit Successful',
-        message: `Deposited ${amt.toLocaleString()} GAS.${txSuffix}${shouldAutoStart ? ' Agent started and first analysis triggered.' : ''}`,
+        message: `Deposited ${amt.toLocaleString()} iUSD-demo.${txSuffix}${shouldAutoStart ? ' Agent started and first analysis triggered.' : ''}`,
       });
     }
   } catch (e) {
@@ -472,7 +472,7 @@ async function handleWithdraw() {
   try {
     await ensureWalletConnected();
     await ensureOnchainAgent();
-    const result = await withdraw(String(amt));
+    const result = await withdrawShowcaseToken(String(amt));
     await refresh();
     currentPaperBalance.value = Math.max(0, currentPaperBalance.value - amt);
     await updateAgent(createdAgentId.value, { paperBalance: currentPaperBalance.value });
@@ -480,7 +480,7 @@ async function handleWithdraw() {
     showNotification({
       type: 'success',
       title: 'Withdraw Successful',
-      message: `Withdrew ${amt.toLocaleString()} GAS.${result.txHash ? ` tx: ${result.txHash}` : ''}`,
+      message: `Withdrew ${amt.toLocaleString()} iUSD-demo.${result.txHash ? ` tx: ${result.txHash}` : ''}`,
     });
   } catch (e) {
     showNotification({
@@ -732,7 +732,6 @@ function handleOpenAgent() {
       <div class="fund-step__surface">
         <div class="fund-step__header">
           <span class="fund-step__title">Fund agent vault</span>
-          <span class="fund-step__badge">GAS = iUSD (demo)</span>
         </div>
 
         <p class="fund-step__desc">
@@ -744,9 +743,9 @@ function handleOpenAgent() {
           <span class="fund-step__bal-val">{{ currentPaperBalance.toLocaleString() }} iUSD-demo</span>
         </div>
 
-        <div v-if="walletDisplay" class="fund-step__wallet-row">
+        <div v-if="walletIusdDisplay" class="fund-step__wallet-row">
           <span class="fund-step__bal-key">wallet balance</span>
-          <span class="fund-step__bal-val">{{ walletDisplay }} GAS</span>
+          <span class="fund-step__bal-val">{{ walletIusdDisplay }} iUSD-demo</span>
         </div>
 
         <div class="fund-step__input-row">
@@ -760,16 +759,11 @@ function handleOpenAgent() {
             :disabled="funding || withdrawing || bridging || mintingFaucet || autoSignBusy !== null"
             @focus="clearFundingFeedback"
           >
-          <span class="fund-step__currency">GAS</span>
-        </div>
-
-        <div v-if="walletIusdDisplay" class="fund-step__wallet-row">
-          <span class="fund-step__bal-key">wallet iUSD-demo</span>
-          <span class="fund-step__bal-val">{{ walletIusdDisplay }}</span>
+          <span class="fund-step__currency">iUSD-demo</span>
         </div>
 
         <div class="fund-step__faucet">
-          <div class="fund-step__faucet-title">iUSD-demo faucet (test only)</div>
+          <div class="fund-step__faucet-title">iUSD-demo faucet</div>
           <div class="fund-step__input-row">
             <input
               v-model="faucetAmount"

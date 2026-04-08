@@ -223,14 +223,6 @@ async function handleExecuteTick() {
 
     <div class="vault-panel__stats">
       <div class="vault-panel__stat">
-        <div class="vault-panel__label">Deposited on agent</div>
-        <div class="vault-panel__value">{{ formatWei(initiaState.vaultBalanceWei) }} GAS</div>
-      </div>
-      <div class="vault-panel__stat">
-        <div class="vault-panel__label">Wallet GAS</div>
-        <div class="vault-panel__value">{{ formatWei(initiaState.walletBalanceWei) }} GAS</div>
-      </div>
-      <div class="vault-panel__stat">
         <div class="vault-panel__label">Deposited iUSD-demo</div>
         <div class="vault-panel__value">{{ formatWei(initiaState.showcaseTokenBalanceWei) }}</div>
       </div>
@@ -263,31 +255,6 @@ async function handleExecuteTick() {
         @click="handleCreateAgentOnchain"
       >
         {{ localBusy === 'create' ? 'Creating…' : 'Create Onchain Agent' }}
-      </button>
-
-      <input
-        v-model="nativeAmount"
-        type="number"
-        min="0"
-        step="0.0001"
-        class="vault-panel__amount"
-        placeholder="Native amount"
-      >
-
-      <button
-        class="btn btn-success btn-sm"
-        :disabled="busy || !connected || !hasAgent"
-        @click="handleDepositNative"
-      >
-        {{ localBusy === 'deposit' ? 'Depositing…' : 'Deposit GAS' }}
-      </button>
-
-      <button
-        class="btn btn-ghost btn-sm"
-        :disabled="busy || !connected || !hasAgent"
-        @click="handleWithdrawNative"
-      >
-        {{ localBusy === 'withdraw' ? 'Withdrawing…' : 'Withdraw GAS' }}
       </button>
 
       <input

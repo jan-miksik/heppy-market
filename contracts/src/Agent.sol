@@ -8,13 +8,21 @@ interface IERC20Like {
     function approve(address spender, uint256 amount) external returns (bool);
 }
 
+interface IMockPerpDEX {
+    function openPosition(bytes32 market, bool isLong, uint256 collateral, uint256 leverage, uint256 acceptablePrice)
+        external returns (uint256 positionId);
+    function closePosition(uint256 positionId, uint256 acceptablePrice)
+        external returns (int256 pnl);
+    function collateralToken() external view returns (address);
+}
+
 /// @title Agent
 /// @notice Multi-agent vault with delegated execution permissions.
-/// @dev Designed as a secure onchain execution layer for autonomous spot trading agents.
+/// @dev Designed as a secure onchain execution layer for autonomous perpetual trading agents.
 ///
-/// Security property: the contract trusts the executor's tradeNotionalValueWei valuation
+/// Security property: the contract trusts the executor's collateral valuation
 /// (it is a delegated-execution risk limit, not a price oracle). The executor is
-/// responsible for supplying a value consistent with what the user authorized in
+/// responsible for supplying values consistent with what the user authorized in
 /// setDelegatedExecutorApproval.
 contract Agent {
     struct AgentState {
@@ -24,13 +32,14 @@ contract Agent {
         bool exists;
         bool delegatedExecutionEnabled;
         bool paused;
+        uint8 maxLeverage; // 1–10, default 10
     }
 
     struct DelegatedExecutorApproval {
         bool canTick;
         bool canTrade;
-        uint128 maxTradeNotionalValueWei;    // 0 = unlimited
-        uint128 dailyTradeNotionalLimitWei;  // 0 = unlimited
+        uint128 maxTradeNotionalValueWei;    // 0 = unlimited (max collateral per trade)
+        uint128 dailyTradeNotionalLimitWei;  // 0 = unlimited (daily collateral limit)
         uint64 dayIndex;
         uint128 notionalSpentTodayWei;
     }
@@ -41,10 +50,12 @@ contract Agent {
     mapping(address => uint256[]) private _ownerAgentIds;
     mapping(uint256 => mapping(address => uint256)) private _tokenBalances;
     mapping(uint256 => mapping(address => DelegatedExecutorApproval)) private _delegatedExecutorApprovals;
-    /// @dev Per-agent (dexContractAddress => (dexFunctionSelector => allowed))
-    mapping(uint256 => mapping(address => mapping(bytes4 => bool))) private _allowedDexCalls;
-    /// @dev Per-agent token allowlist for both input and output sides
+    /// @dev Per-agent allowlisted perp DEX addresses
+    mapping(uint256 => mapping(address => bool)) private _allowedPerpDexes;
+    /// @dev Per-agent token allowlist (collateral tokens)
     mapping(uint256 => mapping(address => bool)) private _allowedTradeTokens;
+    /// @dev Per-agent open perp position IDs (agentId => positionId[])
+    mapping(uint256 => uint256[]) private _openPositionIds;
 
     uint256 private _reentrancyState = 1;
 
@@ -52,13 +63,14 @@ contract Agent {
     event MetadataUpdated(uint256 indexed agentId, bytes metadata);
     event DelegatedExecutionUpdated(uint256 indexed agentId, bool enabled);
     event AgentPaused(uint256 indexed agentId, bool paused);
+    event MaxLeverageUpdated(uint256 indexed agentId, uint8 maxLeverage);
 
     event NativeDeposited(uint256 indexed agentId, address indexed from, uint256 amount, uint256 newBalance);
     event NativeWithdrawn(uint256 indexed agentId, address indexed to, uint256 amount, uint256 newBalance);
     event TokenDeposited(uint256 indexed agentId, address indexed token, address indexed from, uint256 amount, uint256 newBalance);
     event TokenWithdrawn(uint256 indexed agentId, address indexed token, address indexed to, uint256 amount, uint256 newBalance);
 
-    event AllowedDexCallSet(uint256 indexed agentId, address indexed dexContractAddress, bytes4 indexed dexFunctionSelector, bool allowed);
+    event AllowedPerpDexSet(uint256 indexed agentId, address indexed perpDexAddress, bool allowed);
     event AllowedTradeTokenSet(uint256 indexed agentId, address indexed tokenAddress, bool allowed);
     event DelegatedExecutorApprovalSet(
         uint256 indexed agentId,
@@ -71,18 +83,23 @@ contract Agent {
     event DelegatedExecutorRevoked(uint256 indexed agentId, address indexed executor);
 
     event TickExecuted(uint256 indexed agentId, address indexed caller, uint256 timestamp);
-    event TokenSpotTradeExecuted(
+    event PerpPositionOpened(
         uint256 indexed agentId,
         address indexed delegatedExecutor,
-        address indexed dexContractAddress,
-        bytes4  dexFunctionSelector,
-        address inputTokenAddress,
-        address outputTokenAddress,
-        uint256 maxInputAmount,
-        uint256 inputAmountSpent,
-        uint256 minOutputAmount,
-        uint256 outputAmountReceived,
-        uint256 tradeNotionalValueWei,
+        address indexed perpDexAddress,
+        bytes32 market,
+        bool isLong,
+        uint256 collateralAmount,
+        uint256 leverage,
+        uint256 perpPositionId,
+        uint256 executionDeadline
+    );
+    event PerpPositionClosed(
+        uint256 indexed agentId,
+        address indexed delegatedExecutor,
+        address indexed perpDexAddress,
+        uint256 perpPositionId,
+        int256 pnl,
         uint256 executionDeadline
     );
 
@@ -96,20 +113,19 @@ contract Agent {
     error AgentIsPaused(uint256 agentId);
     error ZeroAddress();
     error ZeroAmount();
-    error DexCallNotAllowed(uint256 agentId, address dexContractAddress, bytes4 dexFunctionSelector);
+    error PerpDexNotAllowed(uint256 agentId, address perpDexAddress);
     error TradeTokenNotAllowed(uint256 agentId, address tokenAddress);
     error InsufficientNativeBalance(uint256 agentId, uint256 requested, uint256 available);
     error InsufficientTokenBalance(uint256 agentId, address token, uint256 requested, uint256 available);
     error TradeNotionalLimitExceeded(uint256 agentId, address executor, uint256 attempted, uint256 limit);
     error DailyTradeNotionalLimitExceeded(uint256 agentId, address executor, uint256 attemptedTotal, uint256 dailyLimit);
-    error InvalidTokenPair(address tokenIn, address tokenOut);
-    error SlippageExceeded(uint256 minAmountOut, uint256 actualAmountOut);
+    error InvalidLeverage(uint256 requested, uint256 max);
     error ExternalCallFailed(bytes reason);
-    error NativeAccountingInvariant();
     error ERC20QueryFailed(address token);
     error ERC20OperationFailed(address token);
     error Reentrancy();
     error ExecutionPlanExpired(uint256 executionDeadline, uint256 nowTs);
+    error PerpPositionNotTracked(uint256 agentId, uint256 perpPositionId);
 
     modifier nonReentrant() {
         if (_reentrancyState != 1) revert Reentrancy();
@@ -121,6 +137,8 @@ contract Agent {
     receive() external payable {
         emit NativeReceived(msg.sender, msg.value);
     }
+
+    // ─────────────────────────── Agent Lifecycle ───────────────────────────
 
     /// @notice Create a new agent vault owned by msg.sender.
     function createAgent(bytes calldata metadata) external returns (uint256 agentId) {
@@ -135,18 +153,17 @@ contract Agent {
             nativeBalance: 0,
             exists: true,
             delegatedExecutionEnabled: false,
-            paused: false
+            paused: false,
+            maxLeverage: 10
         });
         _ownerAgentIds[msg.sender].push(agentId);
         emit AgentCreated(agentId, msg.sender, metadata, block.timestamp);
     }
 
-    /// @notice Returns the list of agent IDs owned by `owner`.
     function ownerAgentIds(address owner) external view returns (uint256[] memory) {
         return _ownerAgentIds[owner];
     }
 
-    /// @notice Returns full agent state.
     function getAgent(uint256 agentId)
         external
         view
@@ -167,7 +184,12 @@ contract Agent {
         return _agents[agentId].exists;
     }
 
-    /// @notice Deposit native GAS into a specific agent vault.
+    function getMaxLeverage(uint256 agentId) external view returns (uint8) {
+        return _agents[agentId].maxLeverage;
+    }
+
+    // ─────────────────────────── Deposits / Withdrawals ───────────────────────────
+
     function depositNative(uint256 agentId) external payable {
         AgentState storage a = _requireOwner(agentId);
         if (msg.value == 0) revert ZeroAmount();
@@ -175,7 +197,6 @@ contract Agent {
         emit NativeDeposited(agentId, msg.sender, msg.value, a.nativeBalance);
     }
 
-    /// @notice Withdraw native GAS from a specific agent vault.
     function withdrawNative(uint256 agentId, uint256 amount, address payable to) external nonReentrant {
         AgentState storage a = _requireOwner(agentId);
         if (to == address(0)) revert ZeroAddress();
@@ -188,7 +209,6 @@ contract Agent {
         emit NativeWithdrawn(agentId, to, amount, a.nativeBalance);
     }
 
-    /// @notice Deposit ERC-20 token balance into a specific agent vault.
     function depositToken(uint256 agentId, address token, uint256 amount) external nonReentrant {
         _requireOwner(agentId);
         if (token == address(0)) revert ZeroAddress();
@@ -199,7 +219,6 @@ contract Agent {
         emit TokenDeposited(agentId, token, msg.sender, amount, _tokenBalances[agentId][token]);
     }
 
-    /// @notice Withdraw ERC-20 token balance from a specific agent vault.
     function withdrawToken(uint256 agentId, address token, uint256 amount, address to) external nonReentrant {
         _requireOwner(agentId);
         if (token == address(0) || to == address(0)) revert ZeroAddress();
@@ -216,6 +235,8 @@ contract Agent {
     function tokenBalance(uint256 agentId, address token) external view returns (uint256) {
         return _tokenBalances[agentId][token];
     }
+
+    // ─────────────────────────── Configuration ───────────────────────────
 
     function updateMetadata(uint256 agentId, bytes calldata metadata) external {
         AgentState storage a = _requireOwner(agentId);
@@ -235,28 +256,26 @@ contract Agent {
         emit AgentPaused(agentId, paused);
     }
 
-    /// @notice Allowlist or remove a (dexContractAddress, dexFunctionSelector) pair for an agent.
-    function setAllowedDexCall(
-        uint256 agentId,
-        address dexContractAddress,
-        bytes4 dexFunctionSelector,
-        bool allowed
-    ) external {
+    function setMaxLeverage(uint256 agentId, uint8 maxLev) external {
         _requireOwner(agentId);
-        if (dexContractAddress == address(0)) revert ZeroAddress();
-        _allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector] = allowed;
-        emit AllowedDexCallSet(agentId, dexContractAddress, dexFunctionSelector, allowed);
+        if (maxLev == 0 || maxLev > 10) revert InvalidLeverage(maxLev, 10);
+        _agents[agentId].maxLeverage = maxLev;
+        emit MaxLeverageUpdated(agentId, maxLev);
     }
 
-    function isDexCallAllowed(
-        uint256 agentId,
-        address dexContractAddress,
-        bytes4 dexFunctionSelector
-    ) external view returns (bool) {
-        return _allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector];
+    /// @notice Allowlist or remove a perp DEX address for an agent.
+    function setAllowedPerpDex(uint256 agentId, address perpDexAddress, bool allowed) external {
+        _requireOwner(agentId);
+        if (perpDexAddress == address(0)) revert ZeroAddress();
+        _allowedPerpDexes[agentId][perpDexAddress] = allowed;
+        emit AllowedPerpDexSet(agentId, perpDexAddress, allowed);
     }
 
-    /// @notice Allowlist or remove a trade token (both input and output sides).
+    function isPerpDexAllowed(uint256 agentId, address perpDexAddress) external view returns (bool) {
+        return _allowedPerpDexes[agentId][perpDexAddress];
+    }
+
+    /// @notice Allowlist or remove a trade token (collateral).
     function setAllowedTradeToken(uint256 agentId, address tokenAddress, bool allowed) external {
         _requireOwner(agentId);
         if (tokenAddress == address(0)) revert ZeroAddress();
@@ -268,7 +287,8 @@ contract Agent {
         return _allowedTradeTokens[agentId][tokenAddress];
     }
 
-    /// @notice Configure delegated execution permissions for one executor on one agent.
+    // ─────────────────────────── Delegation ───────────────────────────
+
     function setDelegatedExecutorApproval(
         uint256 agentId,
         address executor,
@@ -292,12 +312,7 @@ contract Agent {
         }
 
         emit DelegatedExecutorApprovalSet(
-            agentId,
-            executor,
-            canTick,
-            canTrade,
-            maxTradeNotionalValueWei,
-            dailyTradeNotionalLimitWei
+            agentId, executor, canTick, canTrade, maxTradeNotionalValueWei, dailyTradeNotionalLimitWei
         );
     }
 
@@ -332,6 +347,8 @@ contract Agent {
         );
     }
 
+    // ─────────────────────────── Execution ───────────────────────────
+
     /// @notice Execution anchor for one analysis tick.
     function executeTick(uint256 agentId) external {
         AgentState storage a = _requireAgent(agentId);
@@ -340,29 +357,25 @@ contract Agent {
         emit TickExecuted(agentId, msg.sender, block.timestamp);
     }
 
-    /// @notice Execute a spot ERC-20 swap using the agent's token balances.
-    /// @param agentId         Agent vault to trade from.
-    /// @param dexContractAddress  Address of the DEX router.
-    /// @param dexFunctionSelector The 4-byte selector; must match dexCallData[0:4] and be in the allowlist.
-    /// @param inputTokenAddress   Token the agent is selling.
-    /// @param outputTokenAddress  Token the agent is buying.
-    /// @param maxInputAmount      Maximum input tokens to spend (vault must hold this balance).
-    /// @param minOutputAmount     Minimum output tokens required (slippage guard).
-    /// @param tradeNotionalValueWei Risk-limit value; trusted from executor, not oracle-verified.
-    /// @param executionDeadline   Unix timestamp after which the call reverts.
-    /// @param dexCallData         Calldata forwarded to the DEX (first 4 bytes must match dexFunctionSelector).
-    function executeTokenTrade(
+    /// @notice Open a perpetual position using the agent's collateral token balance.
+    /// @param agentId           Agent vault to trade from.
+    /// @param perpDexAddress    Address of the MockPerpDEX.
+    /// @param market            Market identifier hash (e.g., keccak256("BTC/USD")).
+    /// @param isLong            True for long, false for short.
+    /// @param collateralAmount  Collateral to commit from the vault.
+    /// @param leverage          Leverage multiplier (1–maxLeverage).
+    /// @param acceptablePrice   Slippage guard passed to the perp DEX.
+    /// @param executionDeadline Unix timestamp after which the call reverts.
+    function executePerpOpen(
         uint256 agentId,
-        address dexContractAddress,
-        bytes4  dexFunctionSelector,
-        address inputTokenAddress,
-        address outputTokenAddress,
-        uint256 maxInputAmount,
-        uint256 minOutputAmount,
-        uint256 tradeNotionalValueWei,
-        uint256 executionDeadline,
-        bytes calldata dexCallData
-    ) external nonReentrant returns (uint256 inputAmountSpent, uint256 outputAmountReceived) {
+        address perpDexAddress,
+        bytes32 market,
+        bool isLong,
+        uint256 collateralAmount,
+        uint256 leverage,
+        uint256 acceptablePrice,
+        uint256 executionDeadline
+    ) external nonReentrant returns (uint256 perpPositionId) {
         // 1. Agent must exist and not be paused.
         AgentState storage a = _requireAgent(agentId);
         if (a.paused) revert AgentIsPaused(agentId);
@@ -370,83 +383,119 @@ contract Agent {
         // 2. Deadline check.
         if (block.timestamp > executionDeadline) revert ExecutionPlanExpired(executionDeadline, block.timestamp);
 
-        // 3. Address / pair sanity.
-        if (dexContractAddress == address(0) || inputTokenAddress == address(0) || outputTokenAddress == address(0)) revert ZeroAddress();
-        if (inputTokenAddress == outputTokenAddress) revert InvalidTokenPair(inputTokenAddress, outputTokenAddress);
+        // 3. Perp DEX allowlist.
+        if (perpDexAddress == address(0)) revert ZeroAddress();
+        if (!_allowedPerpDexes[agentId][perpDexAddress]) revert PerpDexNotAllowed(agentId, perpDexAddress);
 
-        // 4. Amount sanity.
-        if (maxInputAmount == 0) revert ZeroAmount();
-        if (tradeNotionalValueWei == 0) revert ZeroAmount();
+        // 4. Leverage check.
+        if (leverage == 0 || leverage > a.maxLeverage) revert InvalidLeverage(leverage, a.maxLeverage);
 
-        // 5. Calldata prefix check (prevents calldata-prefix forgery).
-        if (dexCallData.length < 4 || bytes4(dexCallData[0:4]) != dexFunctionSelector) {
-            revert DexCallNotAllowed(agentId, dexContractAddress, dexFunctionSelector);
+        // 5. Amount sanity.
+        if (collateralAmount == 0) revert ZeroAmount();
+
+        // 6. Resolve collateral token from the perp DEX.
+        address collateralToken = IMockPerpDEX(perpDexAddress).collateralToken();
+        if (!_allowedTradeTokens[agentId][collateralToken]) revert TradeTokenNotAllowed(agentId, collateralToken);
+
+        // 7. Sufficient vault balance.
+        uint256 vaultBal = _tokenBalances[agentId][collateralToken];
+        if (vaultBal < collateralAmount) {
+            revert InsufficientTokenBalance(agentId, collateralToken, collateralAmount, vaultBal);
         }
 
-        // 6. DEX call allowlist.
-        if (!_allowedDexCalls[agentId][dexContractAddress][dexFunctionSelector]) {
-            revert DexCallNotAllowed(agentId, dexContractAddress, dexFunctionSelector);
-        }
-
-        // 7. Trade token allowlist.
-        if (!_allowedTradeTokens[agentId][inputTokenAddress]) revert TradeTokenNotAllowed(agentId, inputTokenAddress);
-        if (!_allowedTradeTokens[agentId][outputTokenAddress]) revert TradeTokenNotAllowed(agentId, outputTokenAddress);
-
-        // 8. Sufficient vault balance.
-        uint256 vaultInput = _tokenBalances[agentId][inputTokenAddress];
-        if (vaultInput < maxInputAmount) revert InsufficientTokenBalance(agentId, inputTokenAddress, maxInputAmount, vaultInput);
-
-        // 9. Delegated execution checks (owner can always trade; non-owner needs delegation).
+        // 8. Delegated execution checks (owner can always trade; non-owner needs delegation).
         if (msg.sender != a.owner) {
             if (!a.delegatedExecutionEnabled) revert DelegatedExecutionDisabled(agentId);
-            _consumeTradeNotionalAllowance(agentId, a, msg.sender, tradeNotionalValueWei);
+            _consumeTradeNotionalAllowance(agentId, a, msg.sender, collateralAmount);
         }
 
-        uint256 tokenInBefore = _erc20Balance(inputTokenAddress, address(this));
-        uint256 tokenOutBefore = _erc20Balance(outputTokenAddress, address(this));
+        // 9. Debit vault, approve perp DEX, and open position.
+        _tokenBalances[agentId][collateralToken] = vaultBal - collateralAmount;
 
-        _tokenBalances[agentId][inputTokenAddress] = vaultInput - maxInputAmount;
+        _safeApprove(collateralToken, perpDexAddress, 0);
+        _safeApprove(collateralToken, perpDexAddress, collateralAmount);
 
-        _safeApprove(inputTokenAddress, dexContractAddress, 0);
-        _safeApprove(inputTokenAddress, dexContractAddress, maxInputAmount);
+        perpPositionId = IMockPerpDEX(perpDexAddress).openPosition(
+            market, isLong, collateralAmount, leverage, acceptablePrice
+        );
 
-        (bool ok, bytes memory returnData) = dexContractAddress.call(dexCallData);
-        _safeApprove(inputTokenAddress, dexContractAddress, 0);
+        _safeApprove(collateralToken, perpDexAddress, 0);
 
-        if (!ok) revert ExternalCallFailed(returnData);
+        // 10. Track position.
+        _openPositionIds[agentId].push(perpPositionId);
 
-        uint256 tokenInAfter = _erc20Balance(inputTokenAddress, address(this));
-        uint256 tokenOutAfter = _erc20Balance(outputTokenAddress, address(this));
-
-        if (tokenInAfter > tokenInBefore) {
-            uint256 refundedIn = tokenInAfter - tokenInBefore;
-            _tokenBalances[agentId][inputTokenAddress] += refundedIn;
-            inputAmountSpent = maxInputAmount > refundedIn ? maxInputAmount - refundedIn : 0;
-        } else {
-            inputAmountSpent = tokenInBefore - tokenInAfter;
-            if (inputAmountSpent > maxInputAmount) revert NativeAccountingInvariant();
-        }
-
-        outputAmountReceived = tokenOutAfter > tokenOutBefore ? tokenOutAfter - tokenOutBefore : 0;
-        if (outputAmountReceived < minOutputAmount) revert SlippageExceeded(minOutputAmount, outputAmountReceived);
-
-        _tokenBalances[agentId][outputTokenAddress] += outputAmountReceived;
-
-        emit TokenSpotTradeExecuted(
+        emit PerpPositionOpened(
             agentId,
             msg.sender,
-            dexContractAddress,
-            dexFunctionSelector,
-            inputTokenAddress,
-            outputTokenAddress,
-            maxInputAmount,
-            inputAmountSpent,
-            minOutputAmount,
-            outputAmountReceived,
-            tradeNotionalValueWei,
+            perpDexAddress,
+            market,
+            isLong,
+            collateralAmount,
+            leverage,
+            perpPositionId,
             executionDeadline
         );
     }
+
+    /// @notice Close a perpetual position and credit returned collateral (+/- P&L) to the vault.
+    /// @param agentId           Agent vault that owns the position.
+    /// @param perpDexAddress    Address of the MockPerpDEX.
+    /// @param perpPositionId    Position ID to close.
+    /// @param acceptablePrice   Slippage guard passed to the perp DEX.
+    /// @param executionDeadline Unix timestamp after which the call reverts.
+    function executePerpClose(
+        uint256 agentId,
+        address perpDexAddress,
+        uint256 perpPositionId,
+        uint256 acceptablePrice,
+        uint256 executionDeadline
+    ) external nonReentrant returns (int256 pnl) {
+        // 1. Agent must exist and not be paused.
+        AgentState storage a = _requireAgent(agentId);
+        if (a.paused) revert AgentIsPaused(agentId);
+
+        // 2. Deadline check.
+        if (block.timestamp > executionDeadline) revert ExecutionPlanExpired(executionDeadline, block.timestamp);
+
+        // 3. Perp DEX allowlist.
+        if (perpDexAddress == address(0)) revert ZeroAddress();
+        if (!_allowedPerpDexes[agentId][perpDexAddress]) revert PerpDexNotAllowed(agentId, perpDexAddress);
+
+        // 4. Verify position is tracked by this agent.
+        _removeTrackedPosition(agentId, perpPositionId);
+
+        // 5. Delegated execution checks.
+        if (msg.sender != a.owner) {
+            if (!a.delegatedExecutionEnabled) revert DelegatedExecutionDisabled(agentId);
+            DelegatedExecutorApproval storage approval = _delegatedExecutorApprovals[agentId][msg.sender];
+            if (!approval.canTrade) revert NotAuthorizedTradeExecutor(agentId, msg.sender);
+        }
+
+        // 6. Resolve collateral token.
+        address collateralToken = IMockPerpDEX(perpDexAddress).collateralToken();
+
+        // 7. Record balance before close to measure returned amount.
+        uint256 balBefore = _erc20Balance(collateralToken, address(this));
+
+        pnl = IMockPerpDEX(perpDexAddress).closePosition(perpPositionId, acceptablePrice);
+
+        uint256 balAfter = _erc20Balance(collateralToken, address(this));
+        uint256 returned = balAfter > balBefore ? balAfter - balBefore : 0;
+
+        // 8. Credit returned collateral to the vault.
+        _tokenBalances[agentId][collateralToken] += returned;
+
+        emit PerpPositionClosed(
+            agentId, msg.sender, perpDexAddress, perpPositionId, pnl, executionDeadline
+        );
+    }
+
+    /// @notice Returns the list of open perp position IDs for an agent.
+    function getOpenPositionIds(uint256 agentId) external view returns (uint256[] memory) {
+        return _openPositionIds[agentId];
+    }
+
+    // ─────────────────────────── Internal ───────────────────────────
 
     function _requireAgent(uint256 agentId) private view returns (AgentState storage a) {
         a = _agents[agentId];
@@ -497,6 +546,19 @@ contract Agent {
         }
 
         approval.notionalSpentTodayWei = uint128(attemptedTotal);
+    }
+
+    function _removeTrackedPosition(uint256 agentId, uint256 perpPositionId) private {
+        uint256[] storage ids = _openPositionIds[agentId];
+        uint256 len = ids.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (ids[i] == perpPositionId) {
+                ids[i] = ids[len - 1];
+                ids.pop();
+                return;
+            }
+        }
+        revert PerpPositionNotTracked(agentId, perpPositionId);
     }
 
     function _todayIndex() private view returns (uint64) {

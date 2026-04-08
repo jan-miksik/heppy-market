@@ -1175,18 +1175,19 @@ function formatLatency(ms: number): string {
             </div>
 
             <!-- Details toggle -->
-            <button class="dec-details-btn" @click="toggleSection(dec.id, 'details')">
+            <button v-if="dec.llmPromptText || dec.llmRawResponse" class="dec-details-btn" @click="toggleSection(dec.id, 'details')">
               Details {{ expandedSections[dec.id]?.has('details') ? '▾' : '▸' }}
             </button>
 
             <!-- Details: prompt sections + raw response -->
             <div v-if="expandedSections[dec.id]?.has('details')" class="dec-details">
               <!-- PROMPT group -->
-              <div class="dec-details-section-label">
-                PROMPT →
-                <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">setup edited</span>
-              </div>
-              <div class="prompt-pills">
+              <template v-if="dec.llmPromptText">
+                <div class="dec-details-section-label">
+                  PROMPT →
+                  <span v-if="hasEditedSetup(dec, decisions[idx + 1])" class="pill-edited-tag">setup edited</span>
+                </div>
+                <div class="prompt-pills">
                 <button class="prompt-pill prompt-pill--system" @click="toggleSection(dec.id, 'system')">
                   <span>[SYSTEM]</span>
                   <span class="pill-chevron">{{ expandedSections[dec.id]?.has('system') ? '▾' : '▸' }}</span>
@@ -1235,6 +1236,7 @@ function formatLatency(ms: number): string {
                   />
                 </div>
               </div>
+              </template>
 
               <!-- LLM RESPONSE group -->
               <template v-if="dec.llmRawResponse">

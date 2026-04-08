@@ -1,11 +1,11 @@
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { TradeDecisionSchema, SpotTradeDecisionSchema } from '@something-in-loop/shared';
-import type { TradeDecision, SpotTradeDecision, AgentBehaviorConfig } from '@something-in-loop/shared';
+import { TradeDecisionSchema, PerpTradeDecisionSchema } from '@something-in-loop/shared';
+import type { TradeDecision, PerpTradeDecision, AgentBehaviorConfig } from '@something-in-loop/shared';
 import { sleep } from '../lib/utils.js';
 import { classifyLlmError } from '../lib/agent-errors.js';
-import { BASE_AGENT_PROMPT, buildAnalysisPrompt, buildSpotAnalysisPrompt } from '../agents/prompts.js';
+import { BASE_AGENT_PROMPT, buildAnalysisPrompt, buildPerpAnalysisPrompt } from '../agents/prompts.js';
 
 export function buildJsonSchemaInstruction(): string {
   return `
@@ -298,29 +298,29 @@ export async function getTradeDecision(
   throw new Error(msg);
 }
 
-export function buildSpotJsonSchemaInstruction(): string {
+export function buildPerpJsonSchemaInstruction(): string {
   return `
 IMPORTANT: Respond with ONLY a valid JSON object — no markdown, no code blocks, no explanation.
 The JSON must match this schema exactly:
 {
-  "action": "OPEN_LONG" | "CLOSE_LONG" | "HOLD",
-  "market": "<string — e.g. INIT/USDC>",
+  "action": "OPEN_LONG" | "OPEN_SHORT" | "CLOSE_LONG" | "CLOSE_SHORT" | "HOLD",
+  "market": "<string — e.g. BTC/USD>",
   "confidence": <number 0.0–1.0>,
-  "sizePct": <number 0–100 — % of balance to use for OPEN_LONG; 0 for CLOSE_LONG/HOLD>,
+  "sizePct": <number 0–100 — % of balance to use for OPEN actions; 0 for CLOSE/HOLD>,
   "maxSlippageBps": <integer 0–10000 — acceptable slippage in basis points>,
   "rationale": "<string — 1–2 sentence explanation>"
 }
 Do NOT include calldata, token addresses, function selectors, or deadlines — the backend generates those.`;
 }
 
-export interface SpotTradeDecisionRequest {
+export interface PerpTradeDecisionRequest {
   portfolioState: {
     balance: number;
     openPositions: number;
     dailyPnlPct: number;
     totalPnlPct: number;
   };
-  currentSpotState: 'FLAT' | 'LONG';
+  currentPositionState: 'FLAT' | 'LONG' | 'SHORT';
   marketData: Array<{
     pair: string;
     priceUsd: number;
@@ -346,15 +346,15 @@ export interface SpotTradeDecisionRequest {
 }
 
 /**
- * Get a structured spot trade decision from the LLM.
- * Uses SpotTradeDecisionSchema (OPEN_LONG / CLOSE_LONG / HOLD).
+ * Get a structured perpetual trade decision from the LLM.
+ * Uses PerpTradeDecisionSchema.
  * Mirrors getTradeDecision — same model-fallback and retry strategy.
  */
-export async function getSpotTradeDecision(
+export async function getPerpTradeDecision(
   config: LLMRouterConfig,
-  request: SpotTradeDecisionRequest,
+  request: PerpTradeDecisionRequest,
 ): Promise<
-  SpotTradeDecision & {
+  PerpTradeDecision & {
     latencyMs: number;
     tokensUsed?: number;
     tokensIn?: number;
@@ -367,10 +367,10 @@ export async function getSpotTradeDecision(
   const isAnthropic = config.provider === 'anthropic';
   const openrouter = isAnthropic ? null : createOpenRouter({ apiKey: config.apiKey });
   const anthropic = isAnthropic ? createAnthropic({ apiKey: config.apiKey }) : null;
-  const systemPrompt = BASE_AGENT_PROMPT + buildSpotJsonSchemaInstruction();
-  const userPrompt = buildSpotAnalysisPrompt({
+  const systemPrompt = BASE_AGENT_PROMPT + buildPerpJsonSchemaInstruction();
+  const userPrompt = buildPerpAnalysisPrompt({
     portfolioState: request.portfolioState,
-    currentSpotState: request.currentSpotState,
+    currentPositionState: request.currentPositionState,
     marketData: request.marketData,
     lastDecisions: request.lastDecisions,
     config: request.config,
@@ -434,19 +434,19 @@ export async function getSpotTradeDecision(
         const modelInstance = isAnthropic ? anthropic!(modelId) : openrouter!(modelId);
 
         if (modelAttempt === 0) {
-          console.log('[llm-router:spot] Model:', modelId);
-          console.log('[llm-router:spot] Prompt length (chars):', fullPrompt.length);
+          console.log('[llm-router:perp] Model:', modelId);
+          console.log('[llm-router:perp] Prompt length (chars):', fullPrompt.length);
           if (debugLogging) {
-            console.log('[llm-router:spot] === PROMPT SENT TO LLM ===');
+            console.log('[llm-router:perp] === PROMPT SENT TO LLM ===');
             console.log(userPrompt);
-            console.log('[llm-router:spot] === END PROMPT ===');
+            console.log('[llm-router:perp] === END PROMPT ===');
           } else {
-            console.log('[llm-router:spot] User prompt preview:');
+            console.log('[llm-router:perp] User prompt preview:');
             console.log(previewPromptForLogs(userPrompt));
           }
         } else {
           console.log(
-            `[llm-router:spot] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`,
+            `[llm-router:perp] Retry ${modelAttempt}/${MAX_MODEL_RETRIES} for model ${modelId}`,
           );
         }
 
@@ -470,7 +470,7 @@ export async function getSpotTradeDecision(
             `Model returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw length: ${json.length}`,
           );
         }
-        const object = SpotTradeDecisionSchema.parse(parsed);
+        const object = PerpTradeDecisionSchema.parse(parsed);
         const latencyMs = Date.now() - startTime;
         const usage = (result as any).usage ?? {};
 
@@ -489,12 +489,12 @@ export async function getSpotTradeDecision(
         const isTransient = isTransientError(err);
         const classified = classifyLlmError(err, { model: modelId, attempt: modelAttempt });
         console.warn(
-          `[llm-router:spot] model=${modelId} attempt=${modelAttempt} error_code=${classified.code} message=${classified.message}`,
+          `[llm-router:perp] model=${modelId} attempt=${modelAttempt} error_code=${classified.code} message=${classified.message}`,
         );
 
         if (isTransient && modelAttempt < MAX_MODEL_RETRIES) {
           const backoffMs = 500 * Math.pow(2, modelAttempt);
-          console.log(`[llm-router:spot] Transient error — retrying in ${backoffMs}ms`);
+          console.log(`[llm-router:perp] Transient error — retrying in ${backoffMs}ms`);
           await sleep(backoffMs);
           modelAttempt++;
           continue;

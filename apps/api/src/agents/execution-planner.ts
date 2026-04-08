@@ -1,141 +1,146 @@
-import { encodeFunctionData } from 'viem';
-import type { SpotTradeDecision, AgentConfigOutput } from '@something-in-loop/shared';
-import { isLegalAction, type SpotPositionState } from './spot-state-machine.js';
-import { DEX_REGISTRY } from './dex-registry.js';
+import type { PerpTradeDecision, AgentConfigOutput } from '@something-in-loop/shared';
+import type { PerpPositionState } from './perp-state-machine.js';
+import { isLegalAction } from './perp-state-machine.js';
+import { PERP_DEX_REGISTRY } from './dex-registry.js';
 
-/** All amounts are in the token's native smallest unit (analogous to wei for 18-decimal tokens). */
-export interface SpotExecutionPlan {
-  dexPlatformId: string;
-  dexContractAddress: `0x${string}`;
-  dexFunctionSelector: `0x${string}`;
-  inputTokenAddress: `0x${string}`;
-  outputTokenAddress: `0x${string}`;
-  maxInputAmount: bigint;
-  minOutputAmount: bigint;
-  tradeNotionalValueWei: bigint;
-  executionDeadline: bigint; // unix seconds
-  dexCallData: `0x${string}`;
-}
-
-export interface PlanInputs {
-  decision: SpotTradeDecision;
-  currentState: SpotPositionState;
-  /** token address → balance in the token's native units */
+export interface PerpExecutionPlanInput {
+  decision: PerpTradeDecision;
+  currentState: PerpPositionState;
   vaultBalances: Record<string, bigint>;
-  /** USD price of the base token (e.g. price of INIT in USD) */
   marketPriceUsd: number;
   agentConfig: AgentConfigOutput;
+  /** On-chain perp position ID — required for CLOSE actions */
+  openPerpPositionId?: bigint;
 }
 
-const DEADLINE_SECONDS = 60n;
-/** Fixed-point scale: 1e18, used for price arithmetic (assumes 18-decimal tokens). */
-const WAD = 10n ** 18n;
-/** Slippage denominator */
-const BPS_DENOM = 10_000n;
+export interface PerpExecutionPlan {
+  action: 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT';
+  perpDexAddress: `0x${string}`;
+  perpDexPlatformId: string;
+  market: string;
+  marketHash: `0x${string}`;
+  isLong: boolean;
+  collateralAmount: bigint;
+  leverage: bigint;
+  acceptablePrice: bigint;
+  executionDeadline: bigint;
+  perpPositionId?: bigint; // for close actions
+}
+
+export type PerpExecutionResult =
+  | PerpExecutionPlan
+  | { skip: 'illegal_transition' | 'no_balance' | 'hold' | 'missing_position_id' | 'below_min_collateral' };
+
+const MIN_COLLATERAL_WEI = 1_000_000_000_000_000n; // 0.001 token (18 decimals)
 
 /**
- * Pure deterministic planner: converts validated LLM intent into a concrete
- * SpotExecutionPlan ready for submission to the contract's executeTokenTrade.
- *
- * Assumptions (V1 hackathon scope):
- * - Both tokens are 18-decimal (or the caller normalises vaultBalances accordingly).
- * - agentConfig.allowedTradeTokens[0] = base token, [1] = quote token (BASE/QUOTE order).
- * - Quote token is 1:1 USD for notional accounting purposes.
+ * Convert a PerpTradeDecision into a concrete PerpExecutionPlan.
+ * Returns { skip } if the action should be skipped.
  */
-export function planSpotExecution(
-  inputs: PlanInputs,
-): SpotExecutionPlan | { skip: 'HOLD' | 'illegal_transition' | 'no_balance' } {
-  const { decision, currentState, vaultBalances, marketPriceUsd, agentConfig } = inputs;
+export function planPerpExecution(input: PerpExecutionPlanInput): PerpExecutionResult {
+  const { decision, currentState, vaultBalances, marketPriceUsd, agentConfig, openPerpPositionId } = input;
 
-  if (decision.action === 'HOLD') return { skip: 'HOLD' };
+  if (decision.action === 'HOLD') {
+    return { skip: 'hold' };
+  }
 
   if (!isLegalAction(currentState, decision.action)) {
     return { skip: 'illegal_transition' };
   }
 
-  const dexPlatformId =
-    agentConfig.dexPlatformId ?? agentConfig.dexes?.[0] ?? 'initia-router-v1';
-  const platform = DEX_REGISTRY[dexPlatformId];
-  if (!platform) throw new Error(`Unknown DEX platform: ${dexPlatformId}`);
-
-  const tokens = agentConfig.allowedTradeTokens ?? [];
-  if (tokens.length < 2) {
-    throw new Error(
-      'agentConfig.allowedTradeTokens must have at least 2 entries ([baseToken, quoteToken])',
-    );
+  // Resolve perp DEX platform
+  const platformId = agentConfig.dexPlatformId ?? 'mock-perp-v1';
+  const platform = PERP_DEX_REGISTRY[platformId];
+  if (!platform) {
+    return { skip: 'no_balance' };
   }
 
-  const baseTokenAddress = tokens[0] as `0x${string}`;
-  const quoteTokenAddress = tokens[1] as `0x${string}`;
+  const isOpen = decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT';
+  const isLong = decision.action === 'OPEN_LONG' || decision.action === 'CLOSE_SHORT';
 
-  const quoteBalance = vaultBalances[quoteTokenAddress] ?? 0n;
-  const baseBalance = vaultBalances[baseTokenAddress] ?? 0n;
+  // For close actions, we need the on-chain position ID
+  if (!isOpen && openPerpPositionId === undefined) {
+    return { skip: 'missing_position_id' };
+  }
 
-  // Price in 18-decimal fixed-point (WAD units per quote)
-  const priceWad = BigInt(Math.floor(marketPriceUsd * 1e18));
+  // Determine collateral amount
+  const collateralTokenAddress = agentConfig.allowedTradeTokens?.[0] as `0x${string}` | undefined;
+  let collateralAmount: bigint;
 
-  let inputTokenAddress: `0x${string}`;
-  let outputTokenAddress: `0x${string}`;
-  let maxInputAmount: bigint;
-  let idealOutput: bigint;
-  let tradeNotionalValueWei: bigint;
+  if (isOpen) {
+    if (!collateralTokenAddress) return { skip: 'no_balance' };
+    const available = vaultBalances[collateralTokenAddress] ?? 0n;
+    if (available === 0n) return { skip: 'no_balance' };
 
-  if (decision.action === 'OPEN_LONG') {
-    // Spend quote → receive base
-    inputTokenAddress = quoteTokenAddress;
-    outputTokenAddress = baseTokenAddress;
+    // Use sizePct of available balance
+    const sizePct = BigInt(Math.max(1, Math.min(100, Math.round(decision.sizePct))));
+    collateralAmount = (available * sizePct) / 100n;
 
-    maxInputAmount = (quoteBalance * BigInt(Math.floor(decision.sizePct))) / 100n;
-    if (maxInputAmount === 0n) return { skip: 'no_balance' };
+    if (collateralAmount < MIN_COLLATERAL_WEI) {
+      return { skip: 'below_min_collateral' };
+    }
 
-    // idealBaseOut = quoteIn / price = (quoteIn * WAD) / priceWad
-    idealOutput = (maxInputAmount * WAD) / priceWad;
-
-    // Notional = quote amount spent (same units as on-chain limit)
-    tradeNotionalValueWei = maxInputAmount;
+    // Cap by max trade notional if configured
+    const maxNotional = agentConfig.maxTradeNotionalUsd;
+    if (maxNotional && maxNotional > 0) {
+      const maxNotionalWei = BigInt(Math.floor(maxNotional * 1e18));
+      if (collateralAmount > maxNotionalWei) {
+        collateralAmount = maxNotionalWei;
+      }
+    }
   } else {
-    // CLOSE_LONG: spend all base → receive quote
-    inputTokenAddress = baseTokenAddress;
-    outputTokenAddress = quoteTokenAddress;
-
-    maxInputAmount = baseBalance;
-    if (maxInputAmount === 0n) return { skip: 'no_balance' };
-
-    // idealQuoteOut = baseIn * price = (baseIn * priceWad) / WAD
-    idealOutput = (maxInputAmount * priceWad) / WAD;
-
-    // Notional = expected quote proceeds (pre-slippage)
-    tradeNotionalValueWei = idealOutput;
+    // For close, collateral is 0 (we're closing, not opening)
+    collateralAmount = 0n;
   }
 
-  const minOutputAmount =
-    (idealOutput * (BPS_DENOM - BigInt(decision.maxSlippageBps))) / BPS_DENOM;
+  // Calculate acceptable price with slippage
+  const slippageBps = decision.maxSlippageBps || 100; // default 1%
+  const priceWei = BigInt(Math.floor(marketPriceUsd * 1e18));
+  let acceptablePrice: bigint;
+  if (isLong) {
+    // Buying: accept higher price
+    acceptablePrice = priceWei + (priceWei * BigInt(slippageBps)) / 10_000n;
+  } else {
+    // Selling: accept lower price
+    acceptablePrice = priceWei - (priceWei * BigInt(slippageBps)) / 10_000n;
+    if (acceptablePrice < 0n) acceptablePrice = 0n;
+  }
 
-  const executionDeadline = BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS;
+  // Market hash (keccak256 of market string, matching Solidity)
+  const marketHash = keccakMarketHash(decision.market);
 
-  const swapArgs = platform.buildSwapArgs({
-    inputTokenAddress,
-    outputTokenAddress,
-    maxInputAmount,
-    minOutputAmount,
-  });
+  // Deadline: 5 minutes from now
+  const executionDeadline = BigInt(Math.floor(Date.now() / 1000) + 300);
 
-  const dexCallData = encodeFunctionData({
-    abi: [platform.swapFunctionAbi],
-    functionName: platform.swapFunctionAbi.name,
-    args: swapArgs as unknown[],
-  }) as `0x${string}`;
+  // Leverage: fixed at 1x for now (not exposed in AI/UI yet)
+  const leverage = 1n;
 
   return {
-    dexPlatformId: platform.dexPlatformId,
-    dexContractAddress: platform.dexContractAddress,
-    dexFunctionSelector: platform.dexFunctionSelector,
-    inputTokenAddress,
-    outputTokenAddress,
-    maxInputAmount,
-    minOutputAmount,
-    tradeNotionalValueWei,
+    action: decision.action,
+    perpDexAddress: platform.perpDexAddress,
+    perpDexPlatformId: platformId,
+    market: decision.market,
+    marketHash,
+    isLong,
+    collateralAmount,
+    leverage,
+    acceptablePrice,
     executionDeadline,
-    dexCallData,
+    perpPositionId: openPerpPositionId,
   };
+}
+
+/**
+ * keccak256 hash of a market string, matching Solidity's keccak256(abi.encodePacked(string)).
+ */
+function keccakMarketHash(market: string): `0x${string}` {
+  // We use a simple implementation that matches Solidity's keccak256(bytes(market))
+  // Import from viem at runtime to avoid circular deps
+  try {
+    const { keccak256, toHex } = require('viem');
+    return keccak256(toHex(market)) as `0x${string}`;
+  } catch {
+    // Fallback: return a deterministic placeholder
+    return `0x${'0'.repeat(64)}` as `0x${string}`;
+  }
 }

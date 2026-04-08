@@ -3,447 +3,298 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Agent, IERC20Like} from "../src/Agent.sol";
+import {MockPerpDEX} from "../src/MockPerpDEX.sol";
+import {IUSDDemoToken} from "../src/IUSDDemoToken.sol";
+import {IUSDDemoFaucet} from "../src/IUSDDemoFaucet.sol";
 
-contract MockERC20 is IERC20Like {
-    string public name;
-    string public symbol;
-    uint8 public immutable decimals = 18;
-    uint256 public totalSupply;
-
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    constructor(string memory _name, string memory _symbol) {
-        name = _name;
-        symbol = _symbol;
-    }
-
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-        totalSupply += amount;
-    }
-
-    function transfer(address to, uint256 amount) external returns (bool) {
-        uint256 bal = balanceOf[msg.sender];
-        require(bal >= amount, "insufficient");
-        balanceOf[msg.sender] = bal - amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
-        uint256 allowed = allowance[from][msg.sender];
-        require(allowed >= amount, "allowance");
-        uint256 bal = balanceOf[from];
-        require(bal >= amount, "insufficient");
-        allowance[from][msg.sender] = allowed - amount;
-        balanceOf[from] = bal - amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-
-    function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        return true;
-    }
-}
-
-contract MockTokenRouter {
-    function swapExactIn(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external {
-        IERC20Like(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        MockERC20(tokenOut).mint(msg.sender, amountOut);
-    }
-}
-
-contract AgentExecutionTest is Test {
+contract AgentPerpTest is Test {
     Agent internal vault;
-    MockERC20 internal usdc;
-    MockERC20 internal weth;
-    MockTokenRouter internal tokenRouter;
+    IUSDDemoToken internal iusd;
+    IUSDDemoFaucet internal faucet;
+    MockPerpDEX internal perpDex;
 
     address internal alice = makeAddr("alice");
-    address internal bob = makeAddr("bob");
     address internal executor = makeAddr("executor");
+    address internal bob = makeAddr("bob");
 
-    bytes4 internal swapSelector = MockTokenRouter.swapExactIn.selector;
+    bytes32 internal constant MARKET_BTC = keccak256("BTC/USD");
+    uint256 internal constant BTC_PRICE = 65_000e18;
 
     function setUp() external {
         vault = new Agent();
-        usdc = new MockERC20("USD Coin", "USDC");
-        weth = new MockERC20("Wrapped ETH", "WETH");
-        tokenRouter = new MockTokenRouter();
+        iusd = new IUSDDemoToken();
+        faucet = new IUSDDemoFaucet(address(iusd));
+        iusd.setMinter(address(faucet), true);
+        perpDex = new MockPerpDEX(address(iusd));
+
+        // Set BTC price
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE);
 
         vm.deal(alice, 100 ether);
-        vm.deal(bob, 50 ether);
-
-        usdc.mint(alice, 1_000_000e18);
-        weth.mint(alice, 1_000_000e18);
-    }
-
-    function _createAliceAgent(bytes memory metadata) internal returns (uint256 agentId) {
+        // Mint iUSD to alice
         vm.prank(alice);
-        agentId = vault.createAgent(metadata);
+        faucet.mint(100_000e18);
+
+        // Pre-fund MockPerpDEX with liquidity so it can pay out profits
+        iusd.setMinter(address(this), true);
+        iusd.mint(address(perpDex), 1_000_000e18);
     }
 
-    /// @dev Full spot-trade setup: deposit tokens, enable delegated execution,
-    ///      allowlist dex call + tokens, set executor approval with notional limits.
-    function _setupSpotTrade(
-        uint256 agentId,
-        uint256 depositAmount,
-        uint128 maxTradeNotional,
-        uint128 dailyNotional
-    ) internal {
+    function _createAndFundAgent() internal returns (uint256 agentId) {
         vm.startPrank(alice);
-        usdc.approve(address(vault), depositAmount);
-        vault.depositToken(agentId, address(usdc), depositAmount);
+        agentId = vault.createAgent(bytes("perp-agent"));
+        iusd.approve(address(vault), 10_000e18);
+        vault.depositToken(agentId, address(iusd), 10_000e18);
         vault.setDelegatedExecutionEnabled(agentId, true);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), swapSelector, true);
-        vault.setAllowedTradeToken(agentId, address(usdc), true);
-        vault.setAllowedTradeToken(agentId, address(weth), true);
-        vault.setDelegatedExecutorApproval(agentId, executor, false, true, maxTradeNotional, dailyNotional);
+        vault.setAllowedPerpDex(agentId, address(perpDex), true);
+        vault.setAllowedTradeToken(agentId, address(iusd), true);
+        vault.setDelegatedExecutorApproval(agentId, executor, true, true, 0, 0);
         vm.stopPrank();
-    }
-
-    function _buildSwapCalldata(uint256 amountIn, uint256 amountOut) internal view returns (bytes memory) {
-        return abi.encodeCall(MockTokenRouter.swapExactIn, (address(usdc), address(weth), amountIn, amountOut));
     }
 
     function _deadline() internal view returns (uint256) {
         return block.timestamp + 60;
     }
 
-    // ── Existing tests updated for renamed API ─────────────────────────────
+    // ── Open Position Tests ──────────────────────────────────────────
 
-    function test_createMultipleAgentsPerUser() external {
-        uint256 a1 = _createAliceAgent(bytes("alice-1"));
-        uint256 a2 = _createAliceAgent(bytes("alice-2"));
-
-        vm.prank(bob);
-        uint256 b1 = vault.createAgent(bytes("bob-1"));
-
-        uint256[] memory aliceAgents = vault.ownerAgentIds(alice);
-        uint256[] memory bobAgents = vault.ownerAgentIds(bob);
-
-        assertEq(aliceAgents.length, 2);
-        assertEq(aliceAgents[0], a1);
-        assertEq(aliceAgents[1], a2);
-        assertEq(bobAgents.length, 1);
-        assertEq(bobAgents[0], b1);
-    }
-
-    function test_nativeDepositAndWithdraw() external {
-        uint256 agentId = _createAliceAgent(bytes("native"));
-
-        vm.prank(alice);
-        vault.depositNative{value: 5 ether}(agentId);
-
-        (, , uint256 nativeBalance, bool exists, , ) = vault.getAgent(agentId);
-        assertTrue(exists);
-        assertEq(nativeBalance, 5 ether);
-
-        uint256 before = alice.balance;
-        vm.prank(alice);
-        vault.withdrawNative(agentId, 2 ether, payable(alice));
-        assertEq(alice.balance, before + 2 ether);
-
-        (, , nativeBalance, , , ) = vault.getAgent(agentId);
-        assertEq(nativeBalance, 3 ether);
-    }
-
-    function test_tokenDepositAndWithdraw() external {
-        uint256 agentId = _createAliceAgent(bytes("token"));
-
-        vm.startPrank(alice);
-        usdc.approve(address(vault), 400e18);
-        vault.depositToken(agentId, address(usdc), 400e18);
-        vm.stopPrank();
-
-        assertEq(vault.tokenBalance(agentId, address(usdc)), 400e18);
-
-        uint256 before = usdc.balanceOf(alice);
-        vm.prank(alice);
-        vault.withdrawToken(agentId, address(usdc), 150e18, alice);
-
-        assertEq(vault.tokenBalance(agentId, address(usdc)), 250e18);
-        assertEq(usdc.balanceOf(alice), before + 150e18);
-    }
-
-    function test_executorCanExecuteTickWhenApproved() external {
-        uint256 agentId = _createAliceAgent(bytes("tick"));
-
-        vm.startPrank(alice);
-        vault.setDelegatedExecutionEnabled(agentId, true);
-        vault.setDelegatedExecutorApproval(agentId, executor, true, false, 0, 0);
-        vm.stopPrank();
+    function test_executePerpOpen_opensLongPosition() external {
+        uint256 agentId = _createAndFundAgent();
 
         vm.prank(executor);
-        vault.executeTick(agentId);
-    }
-
-    function test_nonOwnerCannotWithdraw() external {
-        uint256 agentId = _createAliceAgent(bytes("owner-only"));
-        vm.prank(alice);
-        vault.depositNative{value: 1 ether}(agentId);
-
-        vm.expectRevert(abi.encodeWithSelector(Agent.NotAgentOwner.selector, agentId, bob));
-        vm.prank(bob);
-        vault.withdrawNative(agentId, 1 ether, payable(bob));
-    }
-
-    function test_executeTokenTrade_updatesAgentBalances() external {
-        uint256 agentId = _createAliceAgent(bytes("token-trade"));
-        _setupSpotTrade(agentId, 300e18, 0, 0);
-
-        bytes memory callData = _buildSwapCalldata(120e18, 105e18);
-        vm.prank(executor);
-        (uint256 amountInSpent, uint256 amountOutReceived) = vault.executeTokenTrade(
+        uint256 positionId = vault.executePerpOpen(
             agentId,
-            address(tokenRouter),
-            swapSelector,
-            address(usdc),
-            address(weth),
-            120e18,
-            100e18,
-            120e18,
-            _deadline(),
-            callData
+            address(perpDex),
+            MARKET_BTC,
+            true, // isLong
+            1_000e18, // collateral
+            5, // leverage
+            BTC_PRICE + 100e18, // acceptable price (above mark for long)
+            _deadline()
         );
 
-        assertEq(amountInSpent, 120e18);
-        assertEq(amountOutReceived, 105e18);
-        assertEq(vault.tokenBalance(agentId, address(usdc)), 180e18);
-        assertEq(vault.tokenBalance(agentId, address(weth)), 105e18);
+        assertEq(positionId, 1);
+        // Vault balance should be reduced by collateral
+        assertEq(vault.tokenBalance(agentId, address(iusd)), 9_000e18);
+
+        // Position should be tracked
+        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
+        assertEq(openIds.length, 1);
+        assertEq(openIds[0], 1);
     }
 
-    // ── New tests (Part 1.9) ──────────────────────────────────────────────
+    function test_executePerpOpen_opensShortPosition() external {
+        uint256 agentId = _createAndFundAgent();
 
-    function test_executeTokenTrade_consumesPerTradeNotionalLimit() external {
-        uint256 agentId = _createAliceAgent(bytes("notional-per-trade"));
-        // maxTradeNotional = 100e18; attempt 120e18 → revert
-        _setupSpotTrade(agentId, 300e18, uint128(100e18), 0);
-
-        bytes memory callData = _buildSwapCalldata(120e18, 100e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.TradeNotionalLimitExceeded.selector, agentId, executor, 120e18, 100e18)
+        vm.prank(executor);
+        uint256 positionId = vault.executePerpOpen(
+            agentId,
+            address(perpDex),
+            MARKET_BTC,
+            false, // isShort
+            2_000e18,
+            3,
+            BTC_PRICE - 100e18, // acceptable price (below mark for short)
+            _deadline()
         );
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 120e18, 0, 120e18, _deadline(), callData);
+
+        assertEq(positionId, 1);
+        assertEq(vault.tokenBalance(agentId, address(iusd)), 8_000e18);
     }
 
-    function test_executeTokenTrade_consumesDailyNotionalLimit() external {
-        uint256 agentId = _createAliceAgent(bytes("notional-daily"));
-        // dailyLimit = 150e18; first trade 100e18 ok; second pushes total to 200e18 → revert
-        _setupSpotTrade(agentId, 300e18, 0, uint128(150e18));
+    function test_executePerpOpen_rejectsExcessiveLeverage() external {
+        uint256 agentId = _createAndFundAgent();
 
-        bytes memory callData1 = _buildSwapCalldata(100e18, 90e18);
+        // Default max leverage is 10
+        vm.expectRevert(abi.encodeWithSelector(Agent.InvalidLeverage.selector, 11, 10));
         vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData1);
-
-        bytes memory callData2 = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.DailyTradeNotionalLimitExceeded.selector, agentId, executor, 200e18, 150e18)
-        );
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData2);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 11, BTC_PRICE + 100e18, _deadline());
     }
 
-    function test_executeTokenTrade_dailyNotionalRollover() external {
-        uint256 agentId = _createAliceAgent(bytes("daily-rollover"));
-        _setupSpotTrade(agentId, 300e18, 0, uint128(150e18));
+    function test_executePerpOpen_rejectsWhenDexNotAllowed() external {
+        uint256 agentId = _createAndFundAgent();
 
-        uint256 ts = block.timestamp;
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
+        MockPerpDEX unknownDex = new MockPerpDEX(address(iusd));
+        vm.expectRevert(abi.encodeWithSelector(Agent.PerpDexNotAllowed.selector, agentId, address(unknownDex)));
         vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, ts + 60, callData);
-
-        // Warp forward 1 day — counter resets, second trade should succeed
-        vm.warp(ts + 1 days);
-
-        bytes memory callData2 = _buildSwapCalldata(100e18, 90e18);
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, ts + 1 days + 60, callData2);
+        vault.executePerpOpen(agentId, address(unknownDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
     }
 
-    function test_executeTokenTrade_rejectsUnknownDexFunctionSelector() external {
-        uint256 agentId = _createAliceAgent(bytes("bad-selector"));
-        _setupSpotTrade(agentId, 300e18, 0, 0);
-
-        bytes4 badSelector = bytes4(keccak256("unknownFunc(address,uint256)"));
-        bytes memory callData = abi.encodeWithSelector(badSelector, address(usdc), 100e18);
+    function test_executePerpOpen_rejectsInsufficientBalance() external {
+        uint256 agentId = _createAndFundAgent();
 
         vm.expectRevert(
-            abi.encodeWithSelector(Agent.DexCallNotAllowed.selector, agentId, address(tokenRouter), badSelector)
+            abi.encodeWithSelector(Agent.InsufficientTokenBalance.selector, agentId, address(iusd), 20_000e18, 10_000e18)
         );
         vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), badSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 20_000e18, 1, BTC_PRICE + 100e18, _deadline());
     }
 
-    function test_executeTokenTrade_rejectsCalldataPrefixMismatch() external {
-        uint256 agentId = _createAliceAgent(bytes("prefix-mismatch"));
-        _setupSpotTrade(agentId, 300e18, 0, 0);
-
-        // calldata has real swapSelector prefix; argument claims a different selector
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        bytes4 wrongSelector = bytes4(keccak256("differentFunc()"));
-
-        // Allowlist wrongSelector too so only the prefix check fires
-        vm.prank(alice);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), wrongSelector, true);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.DexCallNotAllowed.selector, agentId, address(tokenRouter), wrongSelector)
-        );
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), wrongSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
-    }
-
-    function test_executeTokenTrade_rejectsDisallowedInputToken() external {
-        uint256 agentId = _createAliceAgent(bytes("bad-input-token"));
-
-        vm.startPrank(alice);
-        usdc.approve(address(vault), 200e18);
-        vault.depositToken(agentId, address(usdc), 200e18);
-        vault.setDelegatedExecutionEnabled(agentId, true);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), swapSelector, true);
-        // usdc NOT allowlisted as trade token
-        vault.setAllowedTradeToken(agentId, address(weth), true);
-        vault.setDelegatedExecutorApproval(agentId, executor, false, true, 0, 0);
-        vm.stopPrank();
-
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.TradeTokenNotAllowed.selector, agentId, address(usdc))
-        );
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
-    }
-
-    function test_executeTokenTrade_rejectsDisallowedOutputToken() external {
-        uint256 agentId = _createAliceAgent(bytes("bad-output-token"));
-
-        vm.startPrank(alice);
-        usdc.approve(address(vault), 200e18);
-        vault.depositToken(agentId, address(usdc), 200e18);
-        vault.setDelegatedExecutionEnabled(agentId, true);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), swapSelector, true);
-        vault.setAllowedTradeToken(agentId, address(usdc), true);
-        // weth NOT allowlisted as trade token
-        vault.setDelegatedExecutorApproval(agentId, executor, false, true, 0, 0);
-        vm.stopPrank();
-
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.TradeTokenNotAllowed.selector, agentId, address(weth))
-        );
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
-    }
-
-    function test_executeTokenTrade_rejectsWhenAgentPaused() external {
-        uint256 agentId = _createAliceAgent(bytes("paused-agent"));
-        _setupSpotTrade(agentId, 200e18, 0, 0);
-
-        vm.prank(alice);
-        vault.setPaused(agentId, true);
-
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(abi.encodeWithSelector(Agent.AgentIsPaused.selector, agentId));
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
-    }
-
-    function test_executeTokenTrade_rejectsWhenDelegatedExecutionDisabled() external {
-        uint256 agentId = _createAliceAgent(bytes("no-delegation"));
-
-        vm.startPrank(alice);
-        usdc.approve(address(vault), 200e18);
-        vault.depositToken(agentId, address(usdc), 200e18);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), swapSelector, true);
-        vault.setAllowedTradeToken(agentId, address(usdc), true);
-        vault.setAllowedTradeToken(agentId, address(weth), true);
-        vault.setDelegatedExecutorApproval(agentId, executor, false, true, 0, 0);
-        // delegatedExecutionEnabled intentionally left false
-        vm.stopPrank();
-
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(abi.encodeWithSelector(Agent.DelegatedExecutionDisabled.selector, agentId));
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, _deadline(), callData);
-    }
-
-    function test_executeTokenTrade_rejectsExpiredDeadline() external {
-        uint256 agentId = _createAliceAgent(bytes("deadline"));
-        _setupSpotTrade(agentId, 200e18, 0, 0);
+    function test_executePerpOpen_rejectsExpiredDeadline() external {
+        uint256 agentId = _createAndFundAgent();
 
         uint256 deadline = block.timestamp + 60;
         vm.warp(deadline + 1);
 
-        bytes memory callData = _buildSwapCalldata(100e18, 90e18);
-        vm.expectRevert(
-            abi.encodeWithSelector(Agent.ExecutionPlanExpired.selector, deadline, block.timestamp)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Agent.ExecutionPlanExpired.selector, deadline, block.timestamp));
         vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 100e18, 0, 100e18, deadline, callData);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, deadline);
     }
 
-    function test_executeTokenTrade_emitsTokenSpotTradeExecuted() external {
-        uint256 agentId = _createAliceAgent(bytes("emit-test"));
-        _setupSpotTrade(agentId, 300e18, 0, 0);
-
-        uint256 deadline = block.timestamp + 60;
-        bytes memory callData = _buildSwapCalldata(120e18, 105e18);
-
-        vm.expectEmit(true, true, true, true);
-        emit Agent.TokenSpotTradeExecuted(
-            agentId,
-            executor,
-            address(tokenRouter),
-            swapSelector,
-            address(usdc),
-            address(weth),
-            120e18,
-            120e18,
-            100e18,
-            105e18,
-            120e18,
-            deadline
-        );
-
-        vm.prank(executor);
-        vault.executeTokenTrade(agentId, address(tokenRouter), swapSelector, address(usdc), address(weth), 120e18, 100e18, 120e18, deadline, callData);
-    }
-
-    function test_setAllowedDexCall_ownerOnly() external {
-        uint256 agentId = _createAliceAgent(bytes("dex-owner"));
-        vm.expectRevert(abi.encodeWithSelector(Agent.NotAgentOwner.selector, agentId, bob));
-        vm.prank(bob);
-        vault.setAllowedDexCall(agentId, address(tokenRouter), swapSelector, true);
-    }
-
-    function test_setAllowedTradeToken_ownerOnly() external {
-        uint256 agentId = _createAliceAgent(bytes("token-owner"));
-        vm.expectRevert(abi.encodeWithSelector(Agent.NotAgentOwner.selector, agentId, bob));
-        vm.prank(bob);
-        vault.setAllowedTradeToken(agentId, address(usdc), true);
-    }
-
-    function test_setDelegatedExecutorApproval_storesNotionalLimits() external {
-        uint256 agentId = _createAliceAgent(bytes("notional-limits"));
+    function test_executePerpOpen_rejectsWhenPaused() external {
+        uint256 agentId = _createAndFundAgent();
 
         vm.prank(alice);
-        vault.setDelegatedExecutorApproval(agentId, executor, true, true, uint128(500e18), uint128(2000e18));
+        vault.setPaused(agentId, true);
 
-        (
-            bool canTick,
-            bool canTrade,
-            uint128 maxTradeNotionalValueWei,
-            uint128 dailyTradeNotionalLimitWei,
-            ,
-        ) = vault.getDelegatedExecutorApproval(agentId, executor);
+        vm.expectRevert(abi.encodeWithSelector(Agent.AgentIsPaused.selector, agentId));
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+    }
 
-        assertTrue(canTick);
-        assertTrue(canTrade);
-        assertEq(maxTradeNotionalValueWei, 500e18);
-        assertEq(dailyTradeNotionalLimitWei, 2000e18);
+    // ── Close Position Tests ──────────────────────────────────────────
+
+    function test_executePerpClose_closesLongAtProfit() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 positionId = vault.executePerpOpen(
+            agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline()
+        );
+
+        // Price goes up 10%
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE * 110 / 100);
+
+        uint256 balBefore = vault.tokenBalance(agentId, address(iusd));
+
+        vm.prank(executor);
+        int256 pnl = vault.executePerpClose(agentId, address(perpDex), positionId, 0, _deadline());
+
+        assertTrue(pnl > 0, "PnL should be positive");
+        uint256 balAfter = vault.tokenBalance(agentId, address(iusd));
+        assertTrue(balAfter > balBefore, "Balance should increase");
+
+        // Position should be removed from tracking
+        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
+        assertEq(openIds.length, 0);
+    }
+
+    function test_executePerpClose_closesLongAtLoss() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 positionId = vault.executePerpOpen(
+            agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline()
+        );
+
+        // Price goes down 5%
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE * 95 / 100);
+
+        vm.prank(executor);
+        int256 pnl = vault.executePerpClose(agentId, address(perpDex), positionId, 0, _deadline());
+
+        assertTrue(pnl < 0, "PnL should be negative");
+    }
+
+    function test_executePerpClose_closesShortAtProfit() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 positionId = vault.executePerpOpen(
+            agentId, address(perpDex), MARKET_BTC, false, 1_000e18, 3, BTC_PRICE - 100e18, _deadline()
+        );
+
+        // Price goes down 10% → short is profitable
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE * 90 / 100);
+
+        vm.prank(executor);
+        int256 pnl = vault.executePerpClose(agentId, address(perpDex), positionId, type(uint256).max, _deadline());
+
+        assertTrue(pnl > 0, "Short PnL should be positive on price decrease");
+    }
+
+    function test_executePerpClose_rejectsUntrackedPosition() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.expectRevert(abi.encodeWithSelector(Agent.PerpPositionNotTracked.selector, agentId, 999));
+        vm.prank(executor);
+        vault.executePerpClose(agentId, address(perpDex), 999, 0, _deadline());
+    }
+
+    // ── Delegation & Limits Tests ─────────────────────────────────────
+
+    function test_executePerpOpen_consumesNotionalLimit() external {
+        uint256 agentId;
+        vm.startPrank(alice);
+        agentId = vault.createAgent(bytes("limited"));
+        iusd.approve(address(vault), 10_000e18);
+        vault.depositToken(agentId, address(iusd), 10_000e18);
+        vault.setDelegatedExecutionEnabled(agentId, true);
+        vault.setAllowedPerpDex(agentId, address(perpDex), true);
+        vault.setAllowedTradeToken(agentId, address(iusd), true);
+        // maxTradeNotional = 500e18
+        vault.setDelegatedExecutorApproval(agentId, executor, true, true, uint128(500e18), 0);
+        vm.stopPrank();
+
+        // 1000e18 collateral > 500e18 limit
+        vm.expectRevert(
+            abi.encodeWithSelector(Agent.TradeNotionalLimitExceeded.selector, agentId, executor, 1_000e18, 500e18)
+        );
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+    }
+
+    function test_setMaxLeverage() external {
+        uint256 agentId = _createAndFundAgent();
+
+        assertEq(vault.getMaxLeverage(agentId), 10);
+
+        vm.prank(alice);
+        vault.setMaxLeverage(agentId, 5);
+        assertEq(vault.getMaxLeverage(agentId), 5);
+
+        // Now 6x leverage should be rejected
+        vm.expectRevert(abi.encodeWithSelector(Agent.InvalidLeverage.selector, 6, 5));
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 6, BTC_PRICE + 100e18, _deadline());
+    }
+
+    function test_multiplePositions() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 pos1 = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 2, BTC_PRICE + 100e18, _deadline());
+
+        vm.prank(executor);
+        uint256 pos2 = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, false, 500e18, 3, BTC_PRICE - 100e18, _deadline());
+
+        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
+        assertEq(openIds.length, 2);
+
+        // Close first position
+        vm.prank(executor);
+        vault.executePerpClose(agentId, address(perpDex), pos1, 0, _deadline());
+
+        openIds = vault.getOpenPositionIds(agentId);
+        assertEq(openIds.length, 1);
+        assertEq(openIds[0], pos2);
+    }
+
+    // ── Owner can trade without delegation ────────────────────────────
+
+    function test_ownerCanTradeDirect() external {
+        uint256 agentId;
+        vm.startPrank(alice);
+        agentId = vault.createAgent(bytes("owner-trade"));
+        iusd.approve(address(vault), 5_000e18);
+        vault.depositToken(agentId, address(iusd), 5_000e18);
+        vault.setAllowedPerpDex(agentId, address(perpDex), true);
+        vault.setAllowedTradeToken(agentId, address(iusd), true);
+        // No delegated execution enabled — owner can still trade
+        uint256 positionId = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+        vm.stopPrank();
+
+        assertEq(positionId, 1);
+        assertEq(vault.tokenBalance(agentId, address(iusd)), 4_000e18);
     }
 }

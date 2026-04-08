@@ -10,8 +10,12 @@ import type { Env } from '../types/env.js';
 import { agents, agentDecisions, users } from '../db/schema.js';
 import { PaperEngine } from '../services/paper-engine.js';
 import { resolveCurrentPriceUsd } from '../services/price-resolver.js';
-import { getTradeDecision } from '../services/llm-router.js';
+import { getTradeDecision, getPerpTradeDecision } from '../services/llm-router.js';
 import type { LlmJobMessage } from '../types/queue-types.js';
+import type { PerpTradeDecisionRequest } from '../services/llm-router.js';
+import { planPerpExecution } from './execution-planner.js';
+import { submitPerpExecutionPlan } from '../services/initia-executor.js';
+import type { PerpPositionState } from './perp-state-machine.js';
 import { generateId, nowIso } from '../lib/utils.js';
 import { decryptKey } from '../lib/crypto.js';
 import { normalizePairForDex } from '../lib/pairs.js';
@@ -311,6 +315,239 @@ export async function runAgentLoop(
     }
     llmApiKey = resolvedKey;
   }
+  // ─── INITIA PERP PATH ─────────────────────────────────────────────────────────
+  // For Initia agents: use PerpTradeDecision + execution-planner instead of the
+  // legacy Base buy/sell flow. Returns early so the Base path below is bypassed.
+  if (config.chain === 'initia') {
+    // Fetch on-chain sync state
+    let initiaSyncState: Record<string, unknown> | null = null;
+    try {
+      const [initiaRow] = await db
+        .select({ initiaSyncState: agents.initiaSyncState })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
+      if (initiaRow?.initiaSyncState) {
+        const parsed = JSON.parse(initiaRow.initiaSyncState) as Record<string, unknown>;
+        if (typeof parsed === 'object' && parsed !== null) initiaSyncState = parsed;
+      }
+    } catch {
+      // non-fatal
+    }
+
+    // Determine current perp position state from paper engine
+    const targetPair = normalizePairForDex(pairsToFetch[0]);
+    const openBuyPos = engine.openPositions.find((p) => p.pair === targetPair && p.side === 'buy');
+    const openSellPos = engine.openPositions.find((p) => p.pair === targetPair && p.side === 'sell');
+    const currentPositionState: PerpPositionState = openBuyPos ? 'LONG' : openSellPos ? 'SHORT' : 'FLAT';
+
+    const perpRequest: PerpTradeDecisionRequest = {
+      portfolioState: {
+        balance: engine.balance,
+        openPositions: engine.openPositions.length,
+        dailyPnlPct: engine.getDailyPnlPct(),
+        totalPnlPct: engine.getTotalPnlPct(),
+      },
+      currentPositionState,
+      marketData,
+      lastDecisions: recentDecisions,
+      config: {
+        pairs: pairsToFetch,
+        maxPositionSizePct: config.maxPositionSizePct,
+      },
+      behavior: config.behavior,
+      personaMd: resolveAgentPersonaMd({
+        agentName: agentRow.name,
+        agentPersonaMd: (agentRow as any).personaMd ?? null,
+        agentProfileId: (agentRow as any).profileId ?? null,
+        config: config as unknown as Record<string, unknown>,
+      }),
+      behaviorMd: (config as any).behaviorMd ?? null,
+      roleMd: (config as any).roleMd ?? null,
+    };
+
+    let perpDecision: Awaited<ReturnType<typeof getPerpTradeDecision>>;
+    const doneLlmPerp = log.time('llm_call_perp', { model: effectiveLlmModel });
+    try {
+      perpDecision = await getPerpTradeDecision(
+        {
+          apiKey: llmApiKey!,
+          model: effectiveLlmModel,
+          fallbackModel: effectiveLlmFallback,
+          allowFallback,
+          temperature: config.temperature,
+          timeoutMs: 90_000,
+          provider: llmProvider,
+          debugLogging: env.LOG_LLM_DEBUG === 'true',
+        },
+        perpRequest,
+      );
+    } catch (err) {
+      doneLlmPerp();
+      const { classifyLlmError } = await import('../lib/agent-errors.js');
+      const classified = classifyLlmError(err, { model: effectiveLlmModel });
+      logStructuredError('agent-loop', agentId, classified);
+      await db.insert(agentDecisions).values({
+        id: generateId('dec'),
+        agentId,
+        decision: 'HOLD',
+        confidence: 0,
+        reasoning: `LLM error [${classified.code}]: ${classified.message}`,
+        llmModel: effectiveLlmModel,
+        llmLatencyMs: 0,
+        marketDataSnapshot: JSON.stringify(marketData),
+        createdAt: nowIso(),
+      });
+      return;
+    }
+    doneLlmPerp();
+
+    log.info('perp_decision', {
+      action: perpDecision.action,
+      confidence: perpDecision.confidence,
+      model: perpDecision.modelUsed,
+      llm_latency_ms: perpDecision.latencyMs,
+    });
+
+    const pairData = marketData.find((m) => m.pair === targetPair);
+
+    // Build vault balances from on-chain sync state
+    const collateralTokenAddress = config.allowedTradeTokens?.[0] as `0x${string}` | undefined;
+    const vaultBalances: Record<string, bigint> = {};
+    if (collateralTokenAddress) {
+      const raw = initiaSyncState?.showcaseTokenBalanceWei ?? initiaSyncState?.vaultBalanceWei;
+      vaultBalances[collateralTokenAddress] =
+        typeof raw === 'string' && raw.length > 0 ? BigInt(raw) : 0n;
+    }
+
+    let paperErrorStr = '';
+    let executedPaperTrade = false;
+    let paperCloseReason: string | undefined = undefined;
+
+    // Execute paper trade for analytics
+    if (pairData && pairData.priceUsd > 0 && perpDecision.action !== 'HOLD') {
+      try {
+        if (perpDecision.action === 'OPEN_LONG' || perpDecision.action === 'OPEN_SHORT') {
+          const amountUsd = (engine.balance * perpDecision.sizePct) / 100;
+          const side = perpDecision.action === 'OPEN_LONG' ? 'buy' : 'sell';
+          const position = engine.openPosition({
+            agentId,
+            pair: targetPair,
+            dex: config.dexPlatformId ?? 'mock-perp-v1', // use configured dex for paper trade
+            side,
+            price: pairData.priceUsd,
+            amountUsd,
+            maxPositionSizePct: config.maxPositionSizePct,
+            balance: engine.balance,
+            confidence: perpDecision.confidence,
+            reasoning: perpDecision.rationale,
+            strategyUsed: 'perp-only',
+          });
+          await ctx.storage.put('pendingTrade', position);
+          await persistTrade(db, position);
+          await ctx.storage.delete('pendingTrade');
+          executedPaperTrade = true;
+        } else if (perpDecision.action === 'CLOSE_LONG' || perpDecision.action === 'CLOSE_SHORT') {
+          const side = perpDecision.action === 'CLOSE_LONG' ? 'buy' : 'sell';
+          const openPos = engine.openPositions.find((p) => p.pair === targetPair && p.side === side);
+          if (openPos) {
+            const closed = engine.closePosition(openPos.id, {
+              price: pairData.priceUsd,
+              confidence: perpDecision.confidence,
+              closeReason: 'llm_decision',
+            });
+            await ctx.storage.put('pendingTrade', closed);
+            await persistTrade(db, closed);
+            await ctx.storage.delete('pendingTrade');
+            executedPaperTrade = true;
+          } else {
+            paperCloseReason = 'no matching open position found in paper engine';
+          }
+        }
+      } catch (paperErr) {
+        log.warn('perp_paper_trade_failed', { error: String(paperErr) });
+        paperErrorStr = String(paperErr);
+      }
+    }
+
+    const canPlan = collateralTokenAddress && pairData && pairData.priceUsd > 0;
+
+    const plan = canPlan
+      ? planPerpExecution({
+          decision: perpDecision,
+          currentState: currentPositionState,
+          vaultBalances,
+          marketPriceUsd: pairData!.priceUsd,
+          agentConfig: config,
+        })
+      : ({ skip: 'no_balance' } as const);
+
+    const isHold = perpDecision.action === 'HOLD';
+    let executionNote = '';
+    if (isHold) {
+       executionNote = 'Execution: HOLD';
+    } else if ('skip' in plan) {
+       executionNote = `Execution: skipped (${plan.skip})`;
+       if (paperErrorStr) executionNote += ` | Paper error: ${paperErrorStr}`;
+       else if (paperCloseReason) executionNote += ` | Paper skip: ${paperCloseReason}`;
+       else if (executedPaperTrade) executionNote += ` | Paper trade: OK`;
+    } else {
+       executionNote = `Execution: ${perpDecision.action} ${targetPair} via ${plan.perpDexPlatformId}`;
+    }
+
+    // Persist decision
+    await db.insert(agentDecisions).values({
+      id: generateId('dec'),
+      agentId,
+      decision: perpDecision.action,
+      confidence: perpDecision.confidence,
+      reasoning: `${perpDecision.rationale}\n\n—\n${executionNote}`,
+      llmModel: perpDecision.modelUsed,
+      llmLatencyMs: perpDecision.latencyMs,
+      llmTokensUsed: perpDecision.tokensUsed,
+      llmPromptTokens: perpDecision.tokensIn ?? null,
+      llmCompletionTokens: perpDecision.tokensOut ?? null,
+      marketDataSnapshot: JSON.stringify(marketData),
+      llmPromptText: perpDecision.llmPromptText ?? null,
+      llmRawResponse: perpDecision.llmRawResponse ?? null,
+      createdAt: nowIso(),
+    });
+    try {
+      await ctx.storage.put('recentDecisions', [
+        { decision: perpDecision.action, confidence: perpDecision.confidence, createdAt: nowIso() },
+        ...recentDecisions,
+      ].slice(0, 10));
+    } catch { /* non-fatal */ }
+
+    if (!('skip' in plan)) {
+      const onchainResult = await submitPerpExecutionPlan({
+        plan,
+        env,
+        log,
+        agentId,
+        syncState: initiaSyncState,
+      });
+      if (!onchainResult.executed) {
+        log.info('perp_onchain_skipped', { reason: onchainResult.reason ?? 'unknown' });
+      } else {
+        log.info('perp_onchain_submitted', { tx_hash: onchainResult.txHash });
+      }
+    } else {
+      log.info('perp_plan_skip', { action: perpDecision.action, reason: plan.skip });
+    }
+
+    if (tickStart !== undefined) {
+      log.info('tick_end', {
+        duration_ms: Date.now() - tickStart,
+        pairs_fetched: marketData.length,
+        open_positions: engine.openPositions.length,
+        balance: engine.balance,
+      });
+    }
+    return;
+  }
+  // ─── END INITIA PERP PATH ──────────────────────────────────────────────────────
+
 
   const openPositionsSummary = engine.openPositions.map((pos) => {
     const currentPriceData = marketData.find((m) => m.pair === pos.pair);
