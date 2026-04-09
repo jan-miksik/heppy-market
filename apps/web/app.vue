@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { handleWalletDisconnect } from '~/composables/useAuth';
+import initRootLogoWithText from '~/assets/initRootLogoWithTextWhite.png';
 
 // Feature flag — set to false to remove the beta badge sitewide
 const IS_BETA = true;
@@ -95,8 +96,7 @@ async function handleWalletClick() {
   <div>
     <header v-if="isConnectRoute" class="shellbar shellbar--connect">
       <NuxtLink to="/connect" class="shellbar-brand">
-        <span class="shellbar-dot" />
-        <span>initRoot</span>
+        <img :src="initRootLogoWithText" alt="initRoot" class="brand-logo brand-logo--shell" />
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="shellbar-auth">
@@ -116,8 +116,7 @@ async function handleWalletClick() {
     </header>
     <nav v-else class="navbar">
       <NuxtLink to="/agents" class="navbar-brand">
-        <span class="dot" />
-        initRoot
+        <img :src="initRootLogoWithText" alt="initRoot" class="brand-logo" />
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="navbar-nav">
@@ -213,6 +212,17 @@ async function handleWalletClick() {
   align-items: center;
   gap: var(--space-sm);
   text-decoration: none;
+}
+
+.brand-logo {
+  display: block;
+  width: auto;
+  height: 18px;
+  object-fit: contain;
+}
+
+.brand-logo--shell {
+  height: 16px;
 }
 
 .navbar-nav {
@@ -484,14 +494,6 @@ async function handleWalletClick() {
   text-decoration: none;
   letter-spacing: 0.02em;
   white-space: nowrap;
-}
-
-.shellbar-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green);
-  flex-shrink: 0;
 }
 
 .shellbar-dot--inline {

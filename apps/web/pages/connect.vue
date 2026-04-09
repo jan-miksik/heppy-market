@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import initRootLogoWithText from '~/assets/initRootLogoWithTextWhite.png';
+
 const {
   state: initiaState,
   openConnect: openInitiaConnect,
@@ -59,7 +61,7 @@ function handleConnect() {
   <main class="connect-page">
     <div class="connect-center">
       <div class="connect-card">
-        <p class="connect-label">initRoot</p>
+        <img :src="initRootLogoWithText" alt="initRoot" class="connect-logo" />
         <p class="connect-desc">
           Autonomous trading agents on Initia. Deploy strategies, track performance, and let AI manage your portfolio.
         </p>
@@ -105,12 +107,11 @@ function handleConnect() {
   gap: var(--space-md);
 }
 
-.connect-label {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.01em;
+.connect-logo {
+  display: block;
+  width: auto;
+  height: 27px;
+  object-fit: contain;
 }
 
 .connect-desc {
