@@ -1088,7 +1088,7 @@ function formatLatency(ms: number): string {
           </div>
           <div class="stat-change">{{ closedTrades.length }} closed trades</div>
         </div>
-        <div class="stat-card" :class="{ 'stat-card-active': isAnalyzing }" style="cursor: pointer;" @click="handleAnalyze">
+        <div class="stat-card" :class="{ 'stat-card-active': isAnalyzing }">
           <div class="stat-label">Next Analysis</div>
           <div
             class="stat-value mono"
@@ -1685,7 +1685,7 @@ function formatLatency(ms: number): string {
   cursor: pointer;
   text-align: left;
   letter-spacing: 0.04em;
-  margin-bottom: 2px;
+  margin-bottom: 10px;
 }
 
 .dec-details-btn:hover {

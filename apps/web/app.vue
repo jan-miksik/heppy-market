@@ -240,7 +240,6 @@ async function handleWalletClick() {
 .navbar-nav a:hover,
 .navbar-nav a.router-link-active {
   color: var(--text);
-  border-color: var(--border-light);
   text-decoration: none;
 }
 

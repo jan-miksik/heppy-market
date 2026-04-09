@@ -292,60 +292,9 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
     <div class="page-header">
       <div>
         <h1 class="page-title">Agents</h1>
-        <p class="page-subtitle">
-          {{ agents.length }} agents · {{ runningCount }} running<span v-if="managedAgents.length"> · {{ managedAgents.length }} managed</span>
-        </p>
       </div>
       <div style="display: flex; gap: 8px; align-items: center;">
-        <!-- Column visibility menu -->
-        <div style="position: relative;" ref="columnMenuButtonRef">
-          <button
-            class="btn btn-ghost btn-sm"
-            style="padding-inline: 8px;"
-            title="Configure table columns"
-            @click="showColumnMenu = !showColumnMenu"
-          >
-            ⋯
-          </button>
-          <div
-            v-if="showColumnMenu"
-            ref="columnMenuRef"
-            style="position: absolute; right: 0; top: 110%; z-index: 60; background: var(--bg-card); border: 1px solid var(--border); padding: 8px 10px; min-width: 170px;"
-          >
-            <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px;">
-              Visible columns
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px;">
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.status" type="checkbox" /> Status
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.pairs" type="checkbox" /> Pairs
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.model" type="checkbox" /> Model
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.analysisInterval" type="checkbox" /> Interval
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.paperBalance" type="checkbox" /> Balance
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.maxPositionSizePct" type="checkbox" /> Max Pos
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.slTp" type="checkbox" /> SL / TP
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.totalPnl" type="checkbox" /> Total P&amp;L
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px;">
-                <input v-model="visibleColumns.actions" type="checkbox" /> Actions
-              </label>
-            </div>
-          </div>
-        </div>
+
         <button class="btn btn-primary" @click="$router.push('/agents/create')">
           + New Agent
         </button>
@@ -447,6 +396,33 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
                 Total P&amp;L <span class="sort-icon">{{ sortIcon('totalPnl') }}</span>
               </th>
               <th v-if="visibleColumns.actions" style="text-align: right; white-space: nowrap;">Actions</th>
+              <th class="col-picker-th" ref="columnMenuButtonRef">
+                <button
+                  type="button"
+                  class="col-picker-btn"
+                  :class="{ active: showColumnMenu }"
+                  title="Configure visible columns"
+                  @click.stop="showColumnMenu = !showColumnMenu"
+                >⋮</button>
+                <div
+                  v-if="showColumnMenu"
+                  ref="columnMenuRef"
+                  class="col-picker-panel"
+                >
+                  <div class="col-picker-title">Columns</div>
+                  <div class="col-picker-list">
+                    <label><input v-model="visibleColumns.status" type="checkbox" /> Status</label>
+                    <label><input v-model="visibleColumns.pairs" type="checkbox" /> Pairs</label>
+                    <label><input v-model="visibleColumns.model" type="checkbox" /> Model</label>
+                    <label><input v-model="visibleColumns.analysisInterval" type="checkbox" /> Interval</label>
+                    <label><input v-model="visibleColumns.paperBalance" type="checkbox" /> Balance</label>
+                    <label><input v-model="visibleColumns.maxPositionSizePct" type="checkbox" /> Max Pos</label>
+                    <label><input v-model="visibleColumns.slTp" type="checkbox" /> SL / TP</label>
+                    <label><input v-model="visibleColumns.totalPnl" type="checkbox" /> Total P&amp;L</label>
+                    <label><input v-model="visibleColumns.actions" type="checkbox" /> Actions</label>
+                  </div>
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -538,6 +514,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
                   </div>
                 </div>
               </td>
+              <td class="col-picker-td"></td>
             </tr>
           </tbody>
         </table>
@@ -674,6 +651,79 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
 .stat-pnl-breakdown .positive { color: var(--success, #4ade80); }
 .stat-pnl-breakdown .negative { color: var(--danger, #f87171); }
 .pnl-sep { color: var(--text-dim); }
+.col-picker-th {
+  position: relative;
+  width: 28px;
+  min-width: 28px;
+  padding: 0 4px;
+  text-align: center;
+  border-left: 1px solid var(--border, #2a2a2a);
+}
+.col-picker-td {
+  width: 28px;
+  min-width: 28px;
+  border-left: 1px solid var(--border, #2a2a2a);
+}
+.col-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted, #555);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 150ms, color 150ms, background 150ms;
+}
+.col-picker-btn:hover,
+.col-picker-btn.active {
+  border-color: var(--border-light, #333);
+  color: var(--text, #eee);
+  background: color-mix(in srgb, var(--border, #2a2a2a) 40%, transparent);
+}
+.col-picker-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 200;
+  background: var(--bg-card, #1a1a1a);
+  border: 1px solid var(--border-light, #333);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 155px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.col-picker-title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted, #555);
+  margin-bottom: 8px;
+}
+.col-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.col-picker-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms;
+}
+.col-picker-list label:hover {
+  color: var(--text, #eee);
+}
 input[type='checkbox'] {
   width: auto;
   height: unset;

@@ -50,7 +50,7 @@ let pendingAction: (() => Promise<void>) | null = null;
 
 async function withAutoSignCheck(key: string, fn: () => Promise<void>) {
   if (consentModalOpen.value) return; // guard double-click
-  if (!autoSignMgr.chainAutoSignEnabled.value || !autoSignMgr.isDismissed(key)) {
+  if (!autoSignMgr.chainAutoSignEnabled.value && !autoSignMgr.isDismissed(key)) {
     pendingAction = fn;
     consentActionKey.value = key;
     consentModalOpen.value = true;

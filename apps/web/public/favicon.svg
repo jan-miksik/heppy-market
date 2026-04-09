@@ -1,21 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Background -->
-  <rect width="32" height="32" rx="4" fill="#0a0a0a"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- background -->
+  <rect width="32" height="32" rx="5" fill="#0a0a0a"/>
 
-  <!-- H — left vertical -->
-  <rect x="5" y="5" width="5" height="22" rx="1" fill="#c8c8c8"/>
+  <!-- init: solid square seed -->
+  <rect x="13" y="5" width="6" height="6" fill="#74d38a"/>
 
-  <!-- H — right vertical -->
-  <rect x="22" y="5" width="5" height="22" rx="1" fill="#c8c8c8"/>
+  <!-- stem -->
+  <path d="M16 11 V17" stroke="#74d38a" stroke-width="2" stroke-linecap="round"/>
 
-  <!-- H crossbar: price spike in brand purple -->
-  <!-- spike: (10,17) → apex (16,9) → (22,17) -->
-  <polyline
-    points="10,17 16,9 22,17"
-    fill="none"
-    stroke="#7c6af7"
-    stroke-width="3"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
+  <!-- root system: three branches fanning down -->
+  <path d="M16 17 Q16 22 8 27"  stroke="#74d38a" stroke-width="2" stroke-linecap="round"/>
+  <path d="M16 17 V27"          stroke="#74d38a" stroke-width="2" stroke-linecap="round"/>
+  <path d="M16 17 Q16 22 24 27" stroke="#74d38a" stroke-width="2" stroke-linecap="round"/>
 </svg>

@@ -27,10 +27,12 @@ const hasMarketData = ref(false);
 
 const showMdPreview = ref(false);
 const showSetupDiff = ref(false);
+const promptPreviewExpanded = ref(true);
 
 // Collapsible pill state
 const systemExpanded = ref(false);
 const marketDataExpanded = ref(false);
+const setupExpanded = ref(true);
 const editingSetup = ref(false);
 const editPersonaText = ref('');
 const editBehaviorText = ref('');
@@ -51,6 +53,31 @@ const configFormRef = ref<InstanceType<typeof AgentConfigForm> | null>(null);
 
 // Live system prompt
 const liveSystemPrompt = computed(() => BASE_AGENT_PROMPT + buildJsonSchemaInstruction());
+const marketDataPreview = computed(() => {
+  const marketData = (apiMarketData.value || '').trim();
+  if (marketData) return marketData;
+  return `## Portfolio State
+Balance: $N/A USDC
+Open positions: N/A of N/A max
+Max per trade: N/A
+Daily P&L: N/A
+Total P&L: N/A
+
+## Market Data
+### <PAIR>
+Price: N/A
+5m change: N/A
+1h change: N/A
+6h change: N/A
+24h change: N/A
+Volume 24h: N/A
+Liquidity: N/A
+Short-term (48h hourly):
+N/A
+
+## Recent Decisions (last N)
+No recent decisions`;
+});
 
 // Compute live EDITABLE SETUP from form values
 const liveEditableSetup = computed(() => {
@@ -399,170 +426,173 @@ function resetRole() {
         <!-- Prompt preview -->
         <div class="edit-page__right">
           <div class="prompt-preview">
-            <div class="prompt-preview__header">
+            <button class="prompt-preview__toggle" @click="promptPreviewExpanded = !promptPreviewExpanded">
               <span class="prompt-preview__title">Prompt Preview</span>
-              <div class="prompt-preview__header-actions">
+              <span class="acf__chevron" :class="{ open: promptPreviewExpanded }">›</span>
+            </button>
+
+            <div class="prompt-preview__body" :class="{ open: promptPreviewExpanded }">
+              <div class="prompt-preview__body-content">
                 <button
-                  class="btn btn-ghost btn-sm"
-                  style="margin-left: auto; font-size: 11px;"
+                  class="btn btn-ghost btn-sm prompt-preview__md-toggle"
                   @click="showMdPreview = !showMdPreview"
                 >
                   {{ showMdPreview ? 'MD ●' : 'MD ○' }}
                 </button>
-              </div>
-            </div>
+                <div v-if="previewError" class="prompt-preview__error">{{ previewError }}</div>
 
-            <div v-if="previewError" class="prompt-preview__error">{{ previewError }}</div>
-
-            <div class="prompt-pills">
-              <!-- SYSTEM pill -->
-              <button class="prompt-pill prompt-pill--system" @click="systemExpanded = !systemExpanded">
-                <span>[SYSTEM]</span>
-                <span class="pill-chevron">{{ systemExpanded ? '▾' : '▸' }}</span>
-              </button>
-              <div v-if="systemExpanded" class="pill-content">
-                <pre
-                  v-if="!showMdPreview"
-                  class="dec-code-block dec-code-block--scrollable"
-                >{{ liveSystemPrompt }}</pre>
-                <!-- eslint-disable-next-line vue/no-v-html -->
-                <div
-                  v-else
-                  class="dec-code-block dec-code-block--scrollable"
-                  v-html="renderMarkdown(liveSystemPrompt)"
-                />
-              </div>
-
-              <!-- MARKET DATA pill -->
-              <button class="prompt-pill prompt-pill--market" @click="marketDataExpanded = !marketDataExpanded">
-                <span>[MARKET DATA]</span>
-                <span class="pill-chevron">{{ marketDataExpanded ? '▾' : '▸' }}</span>
-              </button>
-              <div v-if="marketDataExpanded" class="pill-content">
-                <pre
-                  v-if="!showMdPreview"
-                  class="dec-code-block dec-code-block--scrollable"
-                >{{ apiMarketData || '(no market data — run agent first)' }}</pre>
-                <!-- eslint-disable-next-line vue/no-v-html -->
-                <div
-                  v-else
-                  class="dec-code-block dec-code-block--scrollable"
-                  v-html="renderMarkdown(apiMarketData || '(no market data — run agent first)')"
-                />
-              </div>
-            </div>
-
-            <!-- EDITABLE SETUP block (always visible, with inline editor toggle) -->
-            <div class="prompt-section prompt-section--editable">
-              <div class="prompt-section__toggle-row">
-                <button class="prompt-section__toggle" style="flex:1" @click="marketDataExpanded = false">
-                  <span class="prompt-section__label">[EDITABLE SETUP]</span>
-                  <span v-if="setupChanged" class="prompt-section__edited-badge">edited</span>
-                </button>
-                <button
-                  v-if="!editingSetup && !showMdPreview && setupChanged"
-                  class="btn btn-ghost btn-sm"
-                  style="margin-right:8px"
-                  @click="showSetupDiff = !showSetupDiff"
-                >
-                  {{ showSetupDiff ? 'Text' : 'Diff' }}
-                </button>
-                <button v-if="!editingSetup" class="btn btn-ghost btn-sm" style="margin-right:8px" @click="startEditingSetup">
-                  Edit
-                </button>
-                <button v-else class="btn btn-ghost btn-sm" style="margin-right:8px" @click="stopEditingSetup">
-                  Done
-                </button>
-              </div>
-
-              <!-- View mode: show full live text -->
-              <pre
-                v-if="!editingSetup && !showMdPreview && (!setupChanged || !showSetupDiff)"
-                class="prompt-section__content prompt-section__content--setup"
-              >{{ liveEditableSetup }}</pre>
-              <!-- Diff view when edited (prev vs current) -->
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <pre
-                v-else-if="!editingSetup && !showMdPreview && setupChanged && showSetupDiff"
-                class="prompt-section__content prompt-section__content--setup prompt-section__content--diff"
-                v-html="setupDiffHtml"
-              />
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <div
-                v-else-if="!editingSetup && showMdPreview"
-                class="prompt-section__content prompt-section__content--setup"
-                v-html="renderMarkdown(liveEditableSetup)"
-              />
-
-              <!-- Edit mode: role, behavior, persona textareas + constraints (read-only) -->
-              <template v-else>
-                <div class="setup-part">
-                  <div class="setup-part__label">
-                    Role
-                    <span v-if="isRoleCustomized" class="acf__custom-badge">Custom</span>
-                    <span v-else class="setup-part__auto-tag">default</span>
-                    <button v-if="isRoleCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetRole">
-                      ↺ Reset
-                    </button>
+                <div class="prompt-pills">
+                  <!-- SYSTEM pill -->
+                  <button class="prompt-pill prompt-pill--system" @click="systemExpanded = !systemExpanded">
+                    <span>[SYSTEM]</span>
+                    <span class="acf__chevron" :class="{ open: systemExpanded }">›</span>
+                  </button>
+                  <div v-if="systemExpanded" class="pill-content">
+                    <pre
+                      v-if="!showMdPreview"
+                      class="dec-code-block dec-code-block--scrollable"
+                    >{{ liveSystemPrompt }}</pre>
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <div
+                      v-else
+                      class="dec-code-block dec-code-block--scrollable"
+                      v-html="renderMarkdown(liveSystemPrompt)"
+                    />
                   </div>
-                  <textarea
-                    ref="roleTextareaRef"
-                    class="setup-part__textarea"
-                    :value="editRoleText"
-                    placeholder="Role section markdown…"
-                    @input="onRoleTextInput($event)"
-                  />
+
+                  <!-- MARKET DATA pill -->
+                  <button class="prompt-pill prompt-pill--market" @click="marketDataExpanded = !marketDataExpanded">
+                    <span>[MARKET DATA]</span>
+                    <span class="acf__chevron" :class="{ open: marketDataExpanded }">›</span>
+                  </button>
+                  <div v-if="marketDataExpanded" class="pill-content">
+                    <pre
+                      v-if="!showMdPreview"
+                      class="dec-code-block dec-code-block--scrollable"
+                    >{{ marketDataPreview }}</pre>
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <div
+                      v-else
+                      class="dec-code-block dec-code-block--scrollable"
+                      v-html="renderMarkdown(marketDataPreview)"
+                    />
+                  </div>
                 </div>
 
-                <div class="setup-part">
-                  <div class="setup-part__label">
-                    Behavior profile
-                    <span v-if="isBehaviorCustomized" class="acf__custom-badge">Custom</span>
-                    <span v-else class="setup-part__auto-tag">auto-generated</span>
-                    <button v-if="isBehaviorCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetBehavior">
-                      ↺ Reset
+                <!-- EDITABLE SETUP block (always visible, with inline editor toggle) -->
+                <div class="prompt-section prompt-section--editable">
+                  <div class="prompt-section__toggle-row">
+                    <button class="prompt-section__toggle" style="flex:1" @click="setupExpanded = !setupExpanded">
+                      <span class="prompt-section__label">[EDITABLE SETUP]</span>
+                      <span v-if="setupChanged" class="prompt-section__edited-badge">edited</span>
+                      <span class="acf__chevron" :class="{ open: setupExpanded }">›</span>
+                    </button>
+                    <button
+                      v-if="setupExpanded && !editingSetup && !showMdPreview && setupChanged"
+                      class="btn btn-ghost btn-sm"
+                      style="margin-right:8px"
+                      @click="showSetupDiff = !showSetupDiff"
+                    >
+                      {{ showSetupDiff ? 'Text' : 'Diff' }}
+                    </button>
+                    <button v-if="setupExpanded && !editingSetup" class="btn btn-ghost btn-sm" style="margin-right:8px" @click="startEditingSetup">
+                      Edit
+                    </button>
+                    <button v-if="setupExpanded && editingSetup" class="btn btn-ghost btn-sm" style="margin-right:8px" @click="stopEditingSetup">
+                      Done
                     </button>
                   </div>
-                  <textarea
-                    ref="behaviorTextareaRef"
-                    class="setup-part__textarea"
-                    :value="editBehaviorText"
-                    placeholder="Behavior profile markdown…"
-                    @input="onBehaviorTextInput($event)"
-                  />
-                </div>
 
-                <div class="setup-part">
-                  <div class="setup-part__label">
-                    Persona
-                    <span v-if="isPersonaCustomized" class="acf__custom-badge">Custom</span>
-                    <button v-if="isPersonaCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetPersona">
-                      ↺ Reset
-                    </button>
-                  </div>
-                  <textarea
-                    ref="personaTextareaRef"
-                    class="setup-part__textarea"
-                    :value="editPersonaText"
-                    placeholder="Your persona markdown…"
-                    @input="onPersonaTextInput($event)"
-                  />
-                </div>
-
-                <div class="setup-part setup-part--readonly">
-                  <div class="setup-part__label">Constraints <span class="setup-part__auto-tag">auto-generated</span></div>
+                  <!-- View mode: show full live text -->
                   <pre
-                    v-if="!showMdPreview"
-                    class="prompt-section__content"
-                  >{{ liveConstraintsSection }}</pre>
+                    v-if="setupExpanded && !editingSetup && !showMdPreview && (!setupChanged || !showSetupDiff)"
+                    class="prompt-section__content prompt-section__content--setup"
+                  >{{ liveEditableSetup }}</pre>
+                  <!-- Diff view when edited (prev vs current) -->
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <pre
+                    v-else-if="setupExpanded && !editingSetup && !showMdPreview && setupChanged && showSetupDiff"
+                    class="prompt-section__content prompt-section__content--setup prompt-section__content--diff"
+                    v-html="setupDiffHtml"
+                  />
                   <!-- eslint-disable-next-line vue/no-v-html -->
                   <div
-                    v-else
-                    class="prompt-section__content"
-                    v-html="renderMarkdown(liveConstraintsSection)"
+                    v-else-if="setupExpanded && !editingSetup && showMdPreview"
+                    class="prompt-section__content prompt-section__content--setup"
+                    v-html="renderMarkdown(liveEditableSetup)"
                   />
+
+                  <!-- Edit mode: role, behavior, persona textareas + constraints (read-only) -->
+                  <template v-else-if="setupExpanded">
+                    <div class="setup-part">
+                      <div class="setup-part__label">
+                        Role
+                        <span v-if="isRoleCustomized" class="acf__custom-badge">Custom</span>
+                        <span v-else class="setup-part__auto-tag">default</span>
+                        <button v-if="isRoleCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetRole">
+                          ↺ Reset
+                        </button>
+                      </div>
+                      <textarea
+                        ref="roleTextareaRef"
+                        class="setup-part__textarea"
+                        :value="editRoleText"
+                        placeholder="Role section markdown…"
+                        @input="onRoleTextInput($event)"
+                      />
+                    </div>
+
+                    <div class="setup-part">
+                      <div class="setup-part__label">
+                        Behavior profile
+                        <span v-if="isBehaviorCustomized" class="acf__custom-badge">Custom</span>
+                        <span v-else class="setup-part__auto-tag">auto-generated</span>
+                        <button v-if="isBehaviorCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetBehavior">
+                          ↺ Reset
+                        </button>
+                      </div>
+                      <textarea
+                        ref="behaviorTextareaRef"
+                        class="setup-part__textarea"
+                        :value="editBehaviorText"
+                        placeholder="Behavior profile markdown…"
+                        @input="onBehaviorTextInput($event)"
+                      />
+                    </div>
+
+                    <div class="setup-part">
+                      <div class="setup-part__label">
+                        Persona
+                        <span v-if="isPersonaCustomized" class="acf__custom-badge">Custom</span>
+                        <button v-if="isPersonaCustomized" type="button" class="btn btn-ghost btn-sm" style="margin-left:8px" @click="resetPersona">
+                          ↺ Reset
+                        </button>
+                      </div>
+                      <textarea
+                        ref="personaTextareaRef"
+                        class="setup-part__textarea"
+                        :value="editPersonaText"
+                        placeholder="Your persona markdown…"
+                        @input="onPersonaTextInput($event)"
+                      />
+                    </div>
+
+                    <div class="setup-part setup-part--readonly">
+                      <div class="setup-part__label">Constraints <span class="setup-part__auto-tag">auto-generated</span></div>
+                      <pre
+                        v-if="!showMdPreview"
+                        class="prompt-section__content"
+                      >{{ liveConstraintsSection }}</pre>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <div
+                        v-else
+                        class="prompt-section__content"
+                        v-html="renderMarkdown(liveConstraintsSection)"
+                      />
+                    </div>
+                  </template>
                 </div>
-              </template>
+              </div>
             </div>
           </div>
         </div>
@@ -694,7 +724,7 @@ function resetRole() {
 .edit-page__body {
   display: flex;
   flex-direction: column;
-  gap: 5rem;
+  gap: 1rem;
   align-items: stretch;
   max-width: 740px;
   margin: 0 auto;
@@ -709,34 +739,51 @@ function resetRole() {
 
 /* ── Prompt preview ──────────────────────────────────────────── */
 .prompt-preview {
-  background: var(--surface, #141414);
   border: 1px solid var(--border, #2a2a2a);
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.prompt-preview__header {
+.prompt-preview__toggle {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
+  padding: 11px 16px;
+  border: none;
+  color: var(--text, #e0e0e0);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
   background: color-mix(in srgb, var(--border, #2a2a2a) 30%, transparent);
   gap: 12px;
+  transition: background 0.15s;
 }
-.prompt-preview__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.prompt-preview__toggle:hover {
+  background: color-mix(in srgb, var(--border, #2a2a2a) 50%, transparent);
 }
-.prompt-preview__title {
+.prompt-preview__body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  position: relative;
+}
+.prompt-preview__body.open {
+  max-height: 2000px;
+}
+.prompt-preview__body-content {
+  padding-top: 30px;
+}
+.prompt-preview__md-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted, #555);
+  z-index: 1;
 }
+
 .prompt-preview__meta {
   font-size: 11px;
   color: var(--text-muted, #444);
@@ -753,12 +800,11 @@ function resetRole() {
   border-bottom: 1px solid var(--border, #1e1e1e);
 }
 .prompt-section:last-child { border-bottom: none; }
-.prompt-section--editable { flex: 1; }
 .prompt-section__toggle {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 10px 16px;
   background: none;
   border: none;
@@ -777,9 +823,7 @@ function resetRole() {
 .prompt-section__toggle-row {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border, #1e1e1e);
 }
-.prompt-section__label { flex: 1; }
 .prompt-section__live-badge {
   font-size: 9px;
   font-weight: 600;
@@ -811,7 +855,6 @@ function resetRole() {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  background: color-mix(in srgb, var(--border, #2a2a2a) 10%, transparent);
 }
 .prompt-section__content--setup {
   overflow-y: auto;
@@ -879,10 +922,16 @@ function resetRole() {
 .prompt-pill:hover { opacity: 0.75; }
 .prompt-pill--system { color: var(--text-muted); }
 .prompt-pill--market { color: #f59e0b; }
-
-.pill-chevron {
+.acf__chevron {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 18px;
+  color: var(--text-muted, #555);
+  transition: transform 0.2s;
+  display: inline-block;
+  transform: rotate(0deg);
+}
+.acf__chevron.open {
+  transform: rotate(90deg);
 }
 
 .pill-content {
