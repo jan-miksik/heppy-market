@@ -13,7 +13,7 @@ const {
   openWallet: openInitiaWallet,
   refresh: refreshInitia,
 } = useInitiaBridge();
-const { notification, showNotification, clearNotification } = useNotification();
+const { showNotification } = useNotification();
 const walletActionError = ref<string | null>(null);
 const walletConnected = computed(() => !!(initiaState.value.initiaAddress || initiaState.value.evmAddress));
 const shouldEnforceWalletSession = computed(() => {
@@ -163,23 +163,7 @@ async function handleWalletClick() {
         </template>
       </div>
     </nav>
-    <transition name="site-notification">
-      <section
-        v-if="notification"
-        class="site-notification"
-        :class="`site-notification--${notification.type}`"
-        role="status"
-        aria-live="polite"
-      >
-        <div class="site-notification__head">
-          <strong>{{ notification.title || (notification.type === 'success' ? 'Success' : 'Error') }}</strong>
-          <button type="button" class="site-notification__close" aria-label="Dismiss notification" @click="clearNotification">
-            ×
-          </button>
-        </div>
-        <p class="site-notification__message">{{ notification.message }}</p>
-      </section>
-    </transition>
+    <NotificationsPanel />
     <main class="app-main">
       <NuxtPage />
     </main>
@@ -364,101 +348,6 @@ async function handleWalletClick() {
   background: black;
 }
 
-.site-notification {
-  position: fixed;
-  top: 68px;
-  right: 16px;
-  z-index: 180;
-  width: min(340px, calc(100vw - 32px));
-  border: 1px solid var(--border-light);
-  border-left-width: 3px;
-  background: var(--bg-card);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.site-notification--success {
-  border-color: color-mix(in srgb, var(--green) 25%, var(--border));
-  border-left-color: var(--green);
-}
-
-.site-notification--error {
-  border-color: color-mix(in srgb, #f87171 25%, var(--border));
-  border-left-color: #f87171;
-}
-
-.site-notification__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
-.site-notification--success .site-notification__head strong {
-  color: var(--green);
-}
-
-.site-notification--error .site-notification__head strong {
-  color: #f87171;
-}
-
-.site-notification__close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  line-height: 1;
-  font-size: 11px;
-  flex-shrink: 0;
-  transition: border-color 0.1s, color 0.1s;
-}
-
-.site-notification__close:hover {
-  border-color: var(--text-muted);
-  color: var(--text);
-}
-
-.site-notification__message {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--text-dim);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.site-notification-enter-active,
-.site-notification-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.site-notification-enter-from,
-.site-notification-leave-to {
-  opacity: 0;
-  transform: translateX(10px);
-}
-
-@media (max-width: 760px) {
-  .site-notification {
-    top: 62px;
-    right: 10px;
-    left: 10px;
-    width: auto;
-  }
-}
 
 .app-loading-overlay {
   position: fixed;

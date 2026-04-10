@@ -1,7 +1,13 @@
 <script setup lang="ts">
 const { user, fetchMe } = useAuth();
 const { initConnect, disconnect } = useOpenRouter();
-const { chainAutoSignEnabled } = useAutoSign();
+const {
+  chainAutoSignConfigured,
+  chainAutoSignEnabled,
+  chainAutoSignExpiresAt,
+  chainAutoSignExpired,
+  chainAutoSignNeedsRenewal,
+} = useAutoSign();
 const { state: initiaState, enableAutoSign, disableAutoSign } = useInitiaBridge();
 
 const disconnecting = ref(false);
@@ -10,6 +16,75 @@ const togglingChain = ref(false);
 
 const bridgeBusy = computed(() => Boolean(initiaState.value.busyAction));
 const bridgeConnected = computed(() => Boolean(initiaState.value.initiaAddress));
+
+function formatExpiryDistance(target: Date): string {
+  const diffMs = target.getTime() - Date.now();
+  const diffMinutes = Math.max(0, Math.floor(Math.abs(diffMs) / 60_000));
+  const days = Math.floor(diffMinutes / (24 * 60));
+  const hours = Math.floor((diffMinutes % (24 * 60)) / 60);
+  const minutes = diffMinutes % 60;
+  const parts: string[] = [];
+
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || days > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes} min`);
+
+  return diffMs >= 0 ? `${parts.join(' ')}` : `${parts.join(' ')} ago`;
+}
+
+function formatExpiryExact(target: Date): string {
+  return new Intl.DateTimeFormat('en', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(target);
+}
+
+const autoSignStatusLabel = computed(() => {
+  if (chainAutoSignEnabled.value) return 'Active';
+  if (chainAutoSignNeedsRenewal.value) return chainAutoSignExpired.value ? 'Expired' : 'Needs renewal';
+  return 'Inactive';
+});
+
+const autoSignStatusClass = computed(() => {
+  if (chainAutoSignEnabled.value) return 'or-status--connected';
+  if (chainAutoSignNeedsRenewal.value) return 'or-status--warning';
+  return 'or-status--none';
+});
+
+const autoSignToggleLabel = computed(() => {
+  if (togglingChain.value) {
+    if (chainAutoSignEnabled.value) return 'Disabling…';
+    return chainAutoSignNeedsRenewal.value ? 'Renewing…' : 'Enabling…';
+  }
+  if (chainAutoSignEnabled.value) return 'Disable';
+  return chainAutoSignNeedsRenewal.value ? 'Renew' : 'Enable';
+});
+
+const autoSignInfo = computed(() => {
+  if (!bridgeConnected.value) {
+    return 'Connect your Initia wallet to manage auto-sign in Interwoven.';
+  }
+
+  const expiresAt = chainAutoSignExpiresAt.value;
+
+  if (chainAutoSignEnabled.value && expiresAt) {
+    return `Expires after ${formatExpiryDistance(expiresAt)} (${formatExpiryExact(expiresAt)}).`;
+  }
+
+  if (chainAutoSignEnabled.value) {
+    return 'Auto-sign is active until you revoke it in Interwoven.';
+  }
+
+  if (chainAutoSignNeedsRenewal.value && expiresAt) {
+    return `The previous auto-sign approval expired ${formatExpiryDistance(expiresAt)} (${formatExpiryExact(expiresAt)}). Enable it again to renew.`;
+  }
+
+  if (chainAutoSignConfigured.value) {
+    return 'Delegated execution is still configured onchain, but the Interwoven approval is no longer valid. Enable it again to renew.';
+  }
+
+  return 'When enabled, Interwoven approval is time-limited and may need renewal later.';
+});
 
 async function handleDisconnect() {
   disconnecting.value = true;
@@ -75,17 +150,20 @@ async function handleToggleChainAutoSign() {
       </p>
 
       <div class="settings-row autosign-chain-row">
-        <span class="or-status" :class="chainAutoSignEnabled ? 'or-status--connected' : 'or-status--none'">
-          {{ chainAutoSignEnabled ? 'Active' : 'Inactive' }}
+        <span class="or-status" :class="autoSignStatusClass">
+          {{ autoSignStatusLabel }}
         </span>
         <button
           class="btn btn-ghost btn-sm"
           :disabled="togglingChain || bridgeBusy || !bridgeConnected"
           @click="handleToggleChainAutoSign"
         >
-          {{ togglingChain ? (chainAutoSignEnabled ? 'Disabling…' : 'Enabling…') : (chainAutoSignEnabled ? 'Disable' : 'Enable') }}
+          {{ autoSignToggleLabel }}
         </button>
       </div>
+      <p class="settings-section-note">
+        {{ autoSignInfo }}
+      </p>
     </section>
   </div>
 </template>
@@ -104,6 +182,7 @@ async function handleToggleChainAutoSign() {
 .settings-row { display: flex; align-items: center; gap: 12px; }
 .or-status { font-size: 13px; font-weight: 500; }
 .or-status--connected { color: var(--success, #22c55e); }
+.or-status--warning { color: var(--warning, #f59e0b); }
 .or-status--none { color: var(--text-dim); }
 
 .settings-section--autosign { margin-top: 20px; }
@@ -112,4 +191,11 @@ async function handleToggleChainAutoSign() {
   margin-bottom: 0;
 }
 .autosign-chain-label { font-size: 13px; color: var(--text); flex: 1; }
+.settings-section-note {
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
 </style>

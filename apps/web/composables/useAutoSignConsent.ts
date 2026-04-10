@@ -11,7 +11,7 @@ export function useAutoSignConsent(options: {
 
   async function runWithAutoSignCheck(key: string, fn: () => Promise<void>) {
     if (consentModalOpen.value) return;
-    if (!autoSignMgr.chainAutoSignEnabled.value && !autoSignMgr.isDismissed(key)) {
+    if (autoSignMgr.shouldPrompt(key)) {
       pendingAction = fn;
       consentActionKey.value = key;
       consentModalOpen.value = true;

@@ -41,6 +41,11 @@ export interface InitiaBridgeResponseEventDetail {
   payload: InitiaBridgeResponsePayload;
 }
 
+export type ProgressStep = {
+  label: string;
+  status: 'pending' | 'active' | 'done' | 'error';
+};
+
 export interface InitiaBridgeState {
   ready: boolean;
   chainOk: boolean;
@@ -54,9 +59,13 @@ export interface InitiaBridgeState {
   agentExists: boolean;
   executorAuthorized: boolean;
   autoSignEnabled: boolean;
+  autoSignConfiguredOnchain: boolean;
+  autoSignGrantEnabled: boolean;
+  autoSignExpiresAt: string | null;
   busyAction: string | null;
   lastTxHash: string | null;
   error: string | null;
+  progressSteps: ProgressStep[];
 }
 
 export interface InitiaBridgeStateEventDetail {

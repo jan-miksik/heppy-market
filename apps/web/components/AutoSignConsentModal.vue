@@ -38,7 +38,11 @@ function handleEnable() {
         </div>
         <div class="modal-body">
           <p class="autosign-desc">
-            With auto-sign, you only approve actions once in Interwoven, no need to confirm again in your wallet. <br><br>You can edit Auto-Sign also in settings.
+            With auto-sign, you only approve actions once in Interwoven, no need to confirm again in your wallet.
+            <br><br>
+            Interwoven approvals are time-limited and can expire, so you may need to renew auto-sign later.
+            <br><br>
+            You can edit Auto-Sign also in settings.
           </p>
         </div>
         <div class="modal-footer">

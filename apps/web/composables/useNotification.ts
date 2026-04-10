@@ -7,53 +7,52 @@ export type SiteNotification = {
   durationMs?: number;
 };
 
-type NotificationState = {
+export type NotificationState = {
   id: number;
   type: NotificationKind;
   title?: string;
   message: string;
 };
 
-let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+const dismissTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
 export function useNotification() {
-  const notification = useState<NotificationState | null>('site-notification', () => null);
+  const notifications = useState<NotificationState[]>('site-notifications', () => []);
 
-  function clearNotification() {
-    if (dismissTimer) {
-      clearTimeout(dismissTimer);
-      dismissTimer = null;
+  function clearNotification(id?: number) {
+    if (id !== undefined) {
+      const timer = dismissTimers.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        dismissTimers.delete(id);
+      }
+      notifications.value = notifications.value.filter(n => n.id !== id);
+    } else {
+      dismissTimers.forEach(t => clearTimeout(t));
+      dismissTimers.clear();
+      notifications.value = [];
     }
-    notification.value = null;
   }
 
   function showNotification(payload: SiteNotification) {
-    if (dismissTimer) {
-      clearTimeout(dismissTimer);
-      dismissTimer = null;
-    }
-
     const id = Date.now();
-    notification.value = {
-      id,
-      type: payload.type,
-      title: payload.title,
-      message: payload.message,
-    };
+    notifications.value = [
+      ...notifications.value,
+      { id, type: payload.type, title: payload.title, message: payload.message },
+    ];
 
-    const durationMs = payload.durationMs ?? 6_500;
+    const durationMs = payload.durationMs ?? 12_000;
     if (durationMs > 0) {
-      dismissTimer = setTimeout(() => {
-        if (notification.value?.id === id) {
-          notification.value = null;
-        }
-        dismissTimer = null;
+      const timer = setTimeout(() => {
+        notifications.value = notifications.value.filter(n => n.id !== id);
+        dismissTimers.delete(id);
       }, durationMs);
+      dismissTimers.set(id, timer);
     }
   }
 
   return {
-    notification,
+    notifications,
     showNotification,
     clearNotification,
   };

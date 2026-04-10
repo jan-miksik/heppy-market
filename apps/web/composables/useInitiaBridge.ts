@@ -29,9 +29,13 @@ const initiaBridgeState = ref<InitiaBridgeState>({
   agentExists: false,
   executorAuthorized: false,
   autoSignEnabled: false,
+  autoSignConfiguredOnchain: false,
+  autoSignGrantEnabled: false,
+  autoSignExpiresAt: null,
   busyAction: null,
   lastTxHash: null,
   error: null,
+  progressSteps: [],
 });
 
 let listenersBound = false;

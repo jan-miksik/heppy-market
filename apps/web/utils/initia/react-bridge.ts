@@ -10,6 +10,7 @@ import type {
   InitiaBridgeActionEventDetail,
   InitiaBridgeOpenParams,
   InitiaBridgeState,
+  ProgressStep,
 } from '~/utils/initia/bridge-types';
 import { INITIA_BRIDGE_ACTION_EVENT } from '~/utils/initia/bridge-types';
 import { AGENT_ABI, ERC20_ABI, IUSD_FAUCET_ABI } from '~/utils/initia/bridge/abi';
@@ -120,6 +121,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
 
   const fetchLatestAgentId = useCallback(async (owner: `0x${string}`): Promise<bigint | null> => {
     if (!normalizedContractAddress) return null;
@@ -327,6 +329,23 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     }
   }, [openBridge, options.bridgeUrl]);
 
+  const startSteps = useCallback((labels: string[]) => {
+    setProgressSteps(labels.map((label, i) => ({
+      label,
+      status: (i === 0 ? 'active' : 'pending') as ProgressStep['status'],
+    })));
+  }, []);
+
+  const advanceStep = useCallback((completedIndex: number) => {
+    setProgressSteps(prev => prev.map((s, i) => {
+      if (i === completedIndex) return { ...s, status: 'done' as const };
+      if (i === completedIndex + 1) return { ...s, status: 'active' as const };
+      return s;
+    }));
+  }, []);
+
+  const clearSteps = useCallback(() => setProgressSteps([]), []);
+
   useEffect(() => {
     window.__initiaBridgeApi = {
       openConnect: () => openConnect(),
@@ -370,7 +389,9 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'createAgent',
               args: [toHex(metadataBytes)],
             });
+            startSteps(['Confirm agent creation']);
             const txHash = await doAgentTx('createAgentOnchain', input, undefined, params?.autoSign === true);
+            advanceStep(0);
             // doContractTx's finally cleared busyAction — re-set it for the polling phase
             // so Vue keeps showing the loading state while we wait for block confirmation.
             setBusyAction('createAgentOnchain');
@@ -401,6 +422,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               };
             } finally {
               setBusyAction(null);
+              clearSteps();
             }
           }
           case 'deposit': {
@@ -408,8 +430,13 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
             const amount = String(params?.amount ?? '0');
             const wei = parseEther(amount);
             const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'depositNative', args: [agentId] });
-            const txHash = await doAgentTx('deposit', input, `0x${wei.toString(16)}`, params?.autoSign === true);
-            return { txHash, onchainAgentId: agentId.toString() };
+            startSteps(['Confirm INIT deposit']);
+            try {
+              const txHash = await doAgentTx('deposit', input, `0x${wei.toString(16)}`, params?.autoSign === true);
+              return { txHash, onchainAgentId: agentId.toString() };
+            } finally {
+              clearSteps();
+            }
           }
           case 'withdraw': {
             const currentEvmAddrForWithdraw =
@@ -423,8 +450,13 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'withdrawNative',
               args: [agentId, wei, currentEvmAddrForWithdraw],
             });
-            const txHash = await doAgentTx('withdraw', input, undefined, params?.autoSign === true);
-            return { txHash, onchainAgentId: agentId.toString() };
+            startSteps(['Confirm INIT withdrawal']);
+            try {
+              const txHash = await doAgentTx('withdraw', input, undefined, params?.autoSign === true);
+              return { txHash, onchainAgentId: agentId.toString() };
+            } finally {
+              clearSteps();
+            }
           }
           case 'mintShowcaseToken': {
             if (!showcaseTokenFaucetAddress) throw new Error('iUSD-demo faucet address is not configured.');
@@ -435,8 +467,13 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'mint',
               args: [wei],
             });
-            const txHash = await doContractTx('mintShowcaseToken', showcaseTokenFaucetAddress, input, undefined, params?.autoSign === true);
-            return { txHash };
+            startSteps(['Confirm iUSD-demo mint']);
+            try {
+              const txHash = await doContractTx('mintShowcaseToken', showcaseTokenFaucetAddress, input, undefined, params?.autoSign === true);
+              return { txHash };
+            } finally {
+              clearSteps();
+            }
           }
           case 'depositShowcaseToken': {
             if (!showcaseTokenAddress) throw new Error('Showcase token address is not configured.');
@@ -445,26 +482,32 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
             const amount = String(params?.amount ?? '0');
             const wei = parseEther(amount);
 
-            const approveInput = encodeFunctionData({
-              abi: ERC20_ABI,
-              functionName: 'approve',
-              args: [normalizedContractAddress!, wei],
-            });
-            const approveTxHash = await doContractTx(
-              'depositShowcaseTokenApprove',
-              showcaseTokenAddress,
-              approveInput,
-              undefined,
-              params?.autoSign === true,
-            );
+            startSteps(['Approve iUSD-demo spending', 'Deposit iUSD-demo to vault']);
+            try {
+              const approveInput = encodeFunctionData({
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [normalizedContractAddress!, wei],
+              });
+              const approveTxHash = await doContractTx(
+                'depositShowcaseTokenApprove',
+                showcaseTokenAddress,
+                approveInput,
+                undefined,
+                params?.autoSign === true,
+              );
+              advanceStep(0);
 
-            const depositInput = encodeFunctionData({
-              abi: AGENT_ABI,
-              functionName: 'depositToken',
-              args: [agentId, showcaseTokenAddress, wei],
-            });
-            const txHash = await doAgentTx('depositShowcaseToken', depositInput, undefined, params?.autoSign === true);
-            return { txHash, approveTxHash, onchainAgentId: agentId.toString() };
+              const depositInput = encodeFunctionData({
+                abi: AGENT_ABI,
+                functionName: 'depositToken',
+                args: [agentId, showcaseTokenAddress, wei],
+              });
+              const txHash = await doAgentTx('depositShowcaseToken', depositInput, undefined, params?.autoSign === true);
+              return { txHash, approveTxHash, onchainAgentId: agentId.toString() };
+            } finally {
+              clearSteps();
+            }
           }
           case 'withdrawShowcaseToken': {
             if (!showcaseTokenAddress) throw new Error('Showcase token address is not configured.');
@@ -478,61 +521,83 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               functionName: 'withdrawToken',
               args: [agentId, showcaseTokenAddress, wei, currentEvmAddr],
             });
-            const txHash = await doAgentTx('withdrawShowcaseToken', input, undefined, params?.autoSign === true);
-            return { txHash, onchainAgentId: agentId.toString() };
+            startSteps(['Confirm iUSD-demo withdrawal']);
+            try {
+              const txHash = await doAgentTx('withdrawShowcaseToken', input, undefined, params?.autoSign === true);
+              return { txHash, onchainAgentId: agentId.toString() };
+            } finally {
+              clearSteps();
+            }
           }
           case 'authorizeExecutor': {
             if (!executorAddress) throw new Error('Executor address is not configured.');
             const agentId = requireAgentId();
 
-            let whitelistTxHash: string | null = null;
-            if (showcaseTargetAddress) {
-              const whitelistInput = encodeFunctionData({
-                abi: AGENT_ABI,
-                functionName: 'setAllowedPerpDex',
-                args: [agentId, showcaseTargetAddress, true],
-              });
-              whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput, undefined, params?.autoSign === true);
-            }
+            const authSteps = showcaseTargetAddress
+              ? ['Whitelist trading target', 'Authorize executor contract']
+              : ['Authorize executor contract'];
+            startSteps(authSteps);
+            try {
+              let whitelistTxHash: string | null = null;
+              if (showcaseTargetAddress) {
+                const whitelistInput = encodeFunctionData({
+                  abi: AGENT_ABI,
+                  functionName: 'setAllowedPerpDex',
+                  args: [agentId, showcaseTargetAddress, true],
+                });
+                whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput, undefined, params?.autoSign === true);
+                advanceStep(0);
+              }
 
-            const approvalInput = encodeFunctionData({
-              abi: AGENT_ABI,
-              functionName: 'setExecutorApproval',
-              args: [agentId, executorAddress, true, true, maxTradeValueWei, dailyTradeValueWei],
-            });
-            const txHash = await doAgentTx('authorizeExecutor', approvalInput, undefined, params?.autoSign === true);
-            return { txHash, whitelistTxHash, onchainAgentId: agentId.toString() };
+              const approvalInput = encodeFunctionData({
+                abi: AGENT_ABI,
+                functionName: 'setExecutorApproval',
+                args: [agentId, executorAddress, true, true, maxTradeValueWei, dailyTradeValueWei],
+              });
+              const txHash = await doAgentTx('authorizeExecutor', approvalInput, undefined, params?.autoSign === true);
+              return { txHash, whitelistTxHash, onchainAgentId: agentId.toString() };
+            } finally {
+              clearSteps();
+            }
           }
           case 'enableAutoSign': {
             if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
             const agentId = requireAgentId();
             setBusyAction('enableAutoSign');
+            startSteps(['Grant auto-sign permission', 'Enable delegation on-chain']);
             try {
               await (autoSign as any)?.enable?.(options.chainId, { permissions: ['/minievm.evm.v1.MsgCall'] });
+              advanceStep(0);
               const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setDelegatedExecutionEnabled', args: [agentId, true] });
-              const txHash = await doAgentTx('enableAutoSign', input);
+              // Pass true so the delegation tx uses auto-sign (just granted above)
+              const txHash = await doAgentTx('enableAutoSign', input, undefined, true);
               return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
+              clearSteps();
             }
           }
           case 'disableAutoSign': {
             if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
             const agentId = requireAgentId();
             setBusyAction('disableAutoSign');
+            startSteps(['Revoke auto-sign permission', 'Disable delegation on-chain']);
             try {
               await (autoSign as any)?.disable?.(options.chainId);
+              advanceStep(0);
               const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setDelegatedExecutionEnabled', args: [agentId, false] });
               const txHash = await doAgentTx('disableAutoSign', input);
               return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
+              clearSteps();
             }
           }
           case 'executeTick': {
             if (!initiaAddressRef.current) throw new Error('Connect wallet first.');
             const agentId = requireAgentId();
             setBusyAction('executeTick');
+            startSteps(['Execute trading tick']);
             try {
               const input = encodeFunctionData({ abi: AGENT_ABI, functionName: 'executeTick', args: [agentId] });
               const txHash = await doAgentTx(
@@ -544,6 +609,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
               return { txHash, onchainAgentId: agentId.toString() };
             } finally {
               setBusyAction(null);
+              clearSteps();
             }
           }
           default:
@@ -557,6 +623,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
         })
         .catch((err: unknown) => {
           const message = (err as Error)?.message || String(err);
+          clearSteps();
           setError(message);
           dispatchBridgeResponse(id, false, null, message);
         });
@@ -567,7 +634,9 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       window.removeEventListener(INITIA_BRIDGE_ACTION_EVENT, onAction);
     };
   }, [
+    advanceStep,
     autoSign,
+    clearSteps,
     dailyTradeValueWei,
     doAgentTx,
     doContractTx,
@@ -583,10 +652,14 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     showcaseTargetAddress,
     showcaseTokenFaucetAddress,
     showcaseTokenAddress,
+    startSteps,
     executorAddress,
   ]);
 
   useEffect(() => {
+    const autoSignExpiresAt = autoSign?.expiredAtByChain?.[options.chainId] ?? null;
+    const autoSignGrantEnabled = !!autoSign?.isEnabledByChain?.[options.chainId];
+    const autoSignConfiguredOnchain = agentState.autoSignEnabled;
     const state: InitiaBridgeState = {
       ready: true,
       chainOk,
@@ -599,10 +672,14 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
       showcaseTokenBalanceWei: agentState.exists ? agentState.showcaseTokenBalance.toString() : null,
       agentExists: agentState.exists,
       executorAuthorized: agentState.exists && agentState.executorAuthorized,
-      autoSignEnabled: agentState.autoSignEnabled || !!autoSign?.isEnabledByChain?.[options.chainId],
+      autoSignEnabled: autoSignConfiguredOnchain && autoSignGrantEnabled,
+      autoSignConfiguredOnchain,
+      autoSignGrantEnabled,
+      autoSignExpiresAt: autoSignExpiresAt?.toISOString?.() ?? null,
       busyAction,
       lastTxHash,
       error,
+      progressSteps,
     };
     dispatchBridgeState(state);
   }, [
@@ -621,6 +698,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: Ret
     normalizedInitiaAddress,
     lastTxHash,
     options.chainId,
+    progressSteps,
     walletBalanceWei,
   ]);
 

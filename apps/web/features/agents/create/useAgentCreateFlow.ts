@@ -189,43 +189,40 @@ export function useAgentCreateFlow() {
   }
 
   async function handleNext(payload: Partial<CreateAgentPayload>) {
-    await runWithAutoSignCheck('createAgentOnchain', async () => {
-      creating.value = true;
-      try {
-        await ensureWalletConnected();
+    creating.value = true;
+    try {
+      await ensureWalletConnected();
 
-        if (!createdAgentId.value) {
-          const agent = await createAgent({
-            ...requireCreateAgentPayload({ ...payload, paperBalance: 0 }),
-            chain: 'initia',
-            initiaWalletAddress: initiaState.value.initiaAddress ?? undefined,
-          });
-          createdAgentId.value = agent.id;
-          currentPaperBalance.value = 0;
-        }
-
-        const autoSign = autoSignMgr.isEnabled('createAgentOnchain') && autoSignMgr.chainAutoSignEnabled.value;
-        await ensureOnchainAgent({ forceCreate: true, autoSign });
-        await refresh();
-        await syncInitiaState('create-step-onchain');
-        step.value = 2;
-        showNotification({
-          type: 'success',
-          title: 'Agent Created',
-          message: 'Agent setup was created successfully. Continue with funding in step 2.',
+      if (!createdAgentId.value) {
+        const agent = await createAgent({
+          ...requireCreateAgentPayload({ ...payload, paperBalance: 0 }),
+          chain: 'initia',
+          initiaWalletAddress: initiaState.value.initiaAddress ?? undefined,
         });
-      } catch (err) {
-        showNotification({
-          type: 'error',
-          title: 'Agent Creation Failed',
-          message: extractApiError(err),
-          durationMs: 8_000,
-        });
-      } finally {
-        creating.value = false;
-        onchainStatus.value = '';
+        createdAgentId.value = agent.id;
+        currentPaperBalance.value = 0;
       }
-    });
+
+      await ensureOnchainAgent({ forceCreate: true, autoSign: false });
+      await refresh();
+      await syncInitiaState('create-step-onchain');
+      step.value = 2;
+      showNotification({
+        type: 'success',
+        title: 'Agent Created',
+        message: 'Agent setup was created successfully. Continue with funding in step 2.',
+      });
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Agent Creation Failed',
+        message: extractApiError(err),
+        durationMs: 8_000,
+      });
+    } finally {
+      creating.value = false;
+      onchainStatus.value = '';
+    }
   }
 
   async function handleDeposit() {
@@ -241,62 +238,64 @@ export function useAgentCreateFlow() {
     }
 
     clearFundingFeedback();
-    funding.value = true;
-    try {
-      const balanceBeforeDeposit = currentPaperBalance.value;
-      await ensureWalletConnected();
-      const autoSign = autoSignMgr.isEnabled('createAgentOnchain') && autoSignMgr.chainAutoSignEnabled.value;
-      await ensureOnchainAgent({ autoSign });
-      const result = await depositShowcaseToken(String(amount));
-      await refresh();
-      currentPaperBalance.value += amount;
-      await updateAgent(createdAgentId.value, { paperBalance: currentPaperBalance.value });
-      await syncInitiaState('create-step-deposit');
+    await runWithAutoSignCheck('depositShowcaseToken', async () => {
+      funding.value = true;
+      try {
+        const balanceBeforeDeposit = currentPaperBalance.value;
+        await ensureWalletConnected();
+        const autoSign = autoSignMgr.isEnabled('depositShowcaseToken') && autoSignMgr.chainAutoSignEnabled.value;
+        await ensureOnchainAgent({ autoSign });
+        const result = await depositShowcaseToken(String(amount));
+        await refresh();
+        currentPaperBalance.value += amount;
+        await updateAgent(createdAgentId.value!, { paperBalance: currentPaperBalance.value });
+        await syncInitiaState('create-step-deposit');
 
-      const shouldAutoStart = balanceBeforeDeposit <= 0 && currentPaperBalance.value > 0;
-      let autoStartError: string | null = null;
-      if (shouldAutoStart) {
-        try {
-          await startAgent(createdAgentId.value);
-        } catch (err) {
-          autoStartError = `Deposit succeeded, but auto-start failed: ${extractApiError(err)}`;
+        const shouldAutoStart = balanceBeforeDeposit <= 0 && currentPaperBalance.value > 0;
+        let autoStartError: string | null = null;
+        if (shouldAutoStart) {
+          try {
+            await startAgent(createdAgentId.value!);
+          } catch (err) {
+            autoStartError = `Deposit succeeded, but auto-start failed: ${extractApiError(err)}`;
+          }
+          if (!autoStartError) {
+            request(`/api/agents/${createdAgentId.value!}/analyze`, {
+              method: 'POST',
+              silent: true,
+              timeout: 90_000,
+            }).catch((err) => {
+              console.warn('[create-flow] background initial analysis failed:', err);
+            });
+          }
         }
-        if (!autoStartError) {
-          request(`/api/agents/${createdAgentId.value}/analyze`, {
-            method: 'POST',
-            silent: true,
-            timeout: 90_000,
-          }).catch((err) => {
-            console.warn('[create-flow] background initial analysis failed:', err);
+
+        const txSuffix = result.txHash ? ` tx: ${result.txHash}` : '';
+        if (autoStartError) {
+          showNotification({
+            type: 'error',
+            title: 'Deposit Completed With Warning',
+            message: `Deposited ${amount.toLocaleString()} iUSD-demo.${txSuffix}\n${autoStartError}`,
+            durationMs: 8_500,
+          });
+        } else {
+          showNotification({
+            type: 'success',
+            title: 'Deposit Successful',
+            message: `Deposited ${amount.toLocaleString()} iUSD-demo.${txSuffix}${shouldAutoStart ? ' Agent started and first analysis triggered.' : ''}`,
           });
         }
-      }
-
-      const txSuffix = result.txHash ? ` tx: ${result.txHash}` : '';
-      if (autoStartError) {
+      } catch (err) {
         showNotification({
           type: 'error',
-          title: 'Deposit Completed With Warning',
-          message: `Deposited ${amount.toLocaleString()} iUSD-demo.${txSuffix}\n${autoStartError}`,
-          durationMs: 8_500,
+          title: 'Deposit Failed',
+          message: extractApiError(err),
+          durationMs: 8_000,
         });
-      } else {
-        showNotification({
-          type: 'success',
-          title: 'Deposit Successful',
-          message: `Deposited ${amount.toLocaleString()} iUSD-demo.${txSuffix}${shouldAutoStart ? ' Agent started and first analysis triggered.' : ''}`,
-        });
+      } finally {
+        funding.value = false;
       }
-    } catch (err) {
-      showNotification({
-        type: 'error',
-        title: 'Deposit Failed',
-        message: extractApiError(err),
-        durationMs: 8_000,
-      });
-    } finally {
-      funding.value = false;
-    }
+    });
   }
 
   async function handleWithdraw() {
