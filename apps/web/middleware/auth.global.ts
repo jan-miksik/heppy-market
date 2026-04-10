@@ -15,6 +15,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (!isAuthenticated.value) {
-    return navigateTo('/connect', { replace: true });
+    const returnTo = `${to.path}${to.fullPath.slice(to.path.length)}`;
+    return navigateTo(`/connect?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
   }
 });

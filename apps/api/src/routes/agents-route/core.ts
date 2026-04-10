@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { desc, eq, isNull, or } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import {
   CreateAgentRequestSchema,
   DEFAULT_FREE_AGENT_MODEL,
@@ -15,14 +15,14 @@ import { deleteAgentRelatedRows, formatAgent, notifyScheduler, normalizeInitiaWa
 import type { AgentsRoute } from './shared.js';
 
 export function registerAgentCoreRoutes(agentsRoute: AgentsRoute): void {
-  /** GET /api/agents — list agents owned by the authenticated user (+ legacy unowned) */
+  /** GET /api/agents — list agents owned by the authenticated user */
   agentsRoute.get('/', async (c) => {
     const walletAddress = c.get('walletAddress');
     const db = drizzle(c.env.DB);
     const rows = await db
       .select()
       .from(agents)
-      .where(or(eq(agents.ownerAddress, walletAddress), isNull(agents.ownerAddress)))
+      .where(eq(agents.ownerAddress, walletAddress))
       .orderBy(desc(agents.createdAt));
     return c.json({ agents: rows.map(formatAgent) });
   });

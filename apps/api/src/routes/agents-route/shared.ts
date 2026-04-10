@@ -47,7 +47,7 @@ export async function deleteAgentRelatedRows(db: AgentsDb, agentId: string): Pro
   await db.delete(agentSelfModifications).where(eq(agentSelfModifications.agentId, agentId));
 }
 
-/** Shared ownership check: owns or legacy unowned */
+/** Shared ownership check: agent must belong to the authenticated wallet. */
 export async function requireOwnership(
   db: AgentsDb,
   id: string,
@@ -55,7 +55,8 @@ export async function requireOwnership(
 ): Promise<AgentRow | null> {
   const [agent] = await db.select().from(agents).where(eq(agents.id, id));
   if (!agent) return null;
-  if (agent.ownerAddress && agent.ownerAddress !== walletAddress) return null;
+  if (!agent.ownerAddress) return null;
+  if (agent.ownerAddress.toLowerCase() !== walletAddress.toLowerCase()) return null;
   return agent;
 }
 

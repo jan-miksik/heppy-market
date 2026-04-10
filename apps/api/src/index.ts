@@ -235,14 +235,14 @@ async function handleAgentWebSocket(request: Request, env: Env): Promise<Respons
   try {
     const { drizzle } = await import('drizzle-orm/d1');
     const { agents } = await import('./db/schema.js');
-    const { eq, or, isNull } = await import('drizzle-orm');
+    const { eq } = await import('drizzle-orm');
     const db = drizzle(env.DB);
     const [agent] = await db
       .select({ ownerAddress: agents.ownerAddress })
       .from(agents)
       .where(eq(agents.id, agentId));
     if (!agent) return new Response('Agent Not Found', { status: 404 });
-    if (agent.ownerAddress && agent.ownerAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+    if (!agent.ownerAddress || agent.ownerAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
       return new Response('Forbidden', { status: 403 });
     }
   } catch (err) {

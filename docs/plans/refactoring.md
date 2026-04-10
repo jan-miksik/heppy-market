@@ -1,358 +1,347 @@
-origin task
-okay, so prepeare complete plan for all future refactoring changes, the origin task is same.
-  Optimalization mainly for more effective usage of AI agents, so they can better oriented in
-  the codebase, spent less tokens on tasks etc.
-
-
-Gemini 3 Flash for apps/web/**
-
-• Complete Refactor Plan
-
-  Goal: restructure the repo so an AI agent can solve most tasks by opening a small, predictable
-  set of files, without scanning large mixed-concern pages, duplicated logic, or ambiguous
-  ownership.
-
-  This is a repo-wide plan for the remaining work. It assumes the current partial refactor stays
-  and we continue from there.
-
-  Success Criteria
-
-  - Feature work should usually require reading 1-5 files, not 10+.
-  - App-owned runtime files should usually stay under 250 LOC.
-  - 350 LOC is the review threshold.
-  - Each feature root has one obvious entrypoint and one short README.
-  - Shared logic exists once, under a predictable name.
-  - Tests are named by module/behavior, not by historical “phase”.
-  - Route/page files are thin shells, not business-logic containers.
+# Refactoring Plan
 
-  Current Hotspots
+This document finalizes the repo-wide refactor plan for the original goal:
 
-  - Frontend:
-      - apps/web/pages/agents/[id]/index.vue
-      - apps/web/components/AgentConfigForm.vue
-      - apps/web/components/ManagerConfigForm.vue
-      - apps/web/utils/initia/react-bridge.ts
-  - Backend:
-      - apps/api/src/agents/trading-agent.ts
-      - apps/api/src/services/llm-router.ts
-      - apps/api/src/services/coingecko-price.ts
-      - apps/api/src/agents/agent-loop/market.ts
-      - apps/api/src/routes/auth.ts
-      - apps/api/src/routes/pairs.ts
+- make the codebase faster for humans and AI agents to navigate
+- reduce token waste caused by mixed responsibilities and oversized files
+- make ownership obvious from file paths
+- keep future changes local instead of cross-cutting
 
-  Architecture Rules
+It reflects the current repository state on 2026-04-10, not the earlier draft notes.
 
-  - pages/:
-      - route params
-      - page-level loading/error state
-      - section composition
-      - no heavy orchestration
-  - components/:
-      - presentational sections and bounded smart panels
-  - composables/:
-      - page/feature orchestration
-      - derived state
-      - mutation flows
-  - features/<domain>/<flow>/:
-      - one flow owner
-      - one README
-      - one obvious entrypoint composable
-  - services/:
-      - external API/data access only
-  - routes/:
-      - HTTP composition only
-  - repo/ or *-repo.ts:
-      - DB access only
-  - *-schema.ts:
-      - validation + DTOs
-  - *-types.ts:
-      - shared types only, no behavior
+## Goal
 
-  ## Completed: Phase 1 & 2 (Frontend & Bridge)
+A typical feature or bugfix should be solvable by opening a small, predictable set of files instead of scanning large route files, mixed orchestration modules, or duplicated helpers.
 
-  - [x] **Agent/Manager Detail Pages**: Refactored monolithic pages into thin route shells with feature composables and modular sections.
-  - [x] **Config Forms**: Decomposed `AgentConfigForm` and `ManagerConfigForm` into shared presentational sections and feature-based logic.
-  - [x] **Initia Bridge**: Modularized `react-bridge.ts` into specialized units (`bootstrap`, `sync`, `actions`, `events`).
+## Success Criteria
 
-  ---
+- Most feature work should require reading 1-5 files, not 10+.
+- App-owned runtime files should usually stay below 250 LOC.
+- 350 LOC is the review threshold.
+- Route/page files should stay thin and compositional.
+- Shared helpers should have one obvious source of truth.
+- Tests should be named after modules or behavior, not historical phases.
+- Each feature root or subsystem root should have a short README with entrypoints and change guidance.
 
-  ## Phase 3: Backend Agent Runtime Modularization
+## Current Verified Hotspots
 
-  Priority: highest
+These are the main files still worth splitting or tightening:
 
-  ### 1. Trading Agent Durable Object
+- `apps/api/src/agents/trading-agent.ts` (~632 LOC)
+- `apps/api/src/services/llm-router.ts` (~551 LOC)
+- `apps/api/src/services/coingecko-price.ts` (~437 LOC)
+- `apps/api/src/agents/agent-loop/market.ts` (~395 LOC)
+- `apps/api/src/routes/auth.ts` (~313 LOC)
+- `apps/api/src/routes/pairs.ts` (~284 LOC)
 
-  Refactor apps/api/src/agents/trading-agent.ts.
+Frontend files previously flagged as hotspots are now below the review threshold:
 
-  Target structure:
+- `apps/web/pages/agents/[id]/index.vue` (~185 LOC)
+- `apps/web/components/AgentConfigForm.vue` (~149 LOC)
+- `apps/web/components/ManagerConfigForm.vue` (~119 LOC)
+- `apps/web/utils/initia/react-bridge.ts` (~166 LOC)
 
-  - apps/api/src/agents/trading-agent/index.ts
-  - apps/api/src/agents/trading-agent/state.ts
-  - apps/api/src/agents/trading-agent/alarms.ts
-  - apps/api/src/agents/trading-agent/websocket.ts
-  - apps/api/src/agents/trading-agent/cache.ts
-  - apps/api/src/agents/trading-agent/endpoints.ts
+## Architecture Rules
 
-  Outcome:
+- `pages/`
+  - route params
+  - page-level loading and error state
+  - section composition
+  - no heavy business orchestration
+- `components/`
+  - presentational sections
+  - bounded smart panels
+- `features/<domain>/<flow>/`
+  - one obvious flow owner
+  - one obvious entrypoint composable
+  - one short README
+- `services/`
+  - external API access
+  - provider clients
+  - response normalization only when tightly coupled to provider data
+- `routes/`
+  - HTTP parsing and composition only
+  - no embedded persistence or business logic when it can be extracted
+- `repo/` or `*-repo.ts`
+  - DB access only
+- `*-schema.ts`
+  - validation and DTO shaping only
+- `*-types.ts`
+  - shared types only
 
-  - transport, state, scheduling, and socket concerns are separate
-  - DO behavior becomes discoverable by file name
+## Completed Work
 
-  ### 2. Agent Loop Flow Modules
+### Phase 1: Frontend Page and Form Decomposition
 
-  If the orchestration still lives too centrally, split agent-loop flow into named phases.
+Completed:
 
-  Target structure:
+- Agent and manager detail pages were reduced to thinner route shells plus feature composables and section components.
+- `AgentConfigForm.vue` and `ManagerConfigForm.vue` were decomposed around shared config sections.
+- Frontend hotspots from the original plan are no longer priority refactor targets.
 
-  - apps/api/src/agents/agent-loop/load-agent-context.ts
-  - apps/api/src/agents/agent-loop/resolve-market-context.ts
-  - apps/api/src/agents/agent-loop/resolve-llm-decision.ts
-  - apps/api/src/agents/agent-loop/execute-decision.ts
-  - apps/api/src/agents/agent-loop/persist-tick-artifacts.ts
+### Phase 2: Initia Bridge Split
 
-  Also split apps/api/src/agents/agent-loop/market.ts if it still mixes fetch, normalization,
-  and decision input shaping.
+Completed:
 
-  Outcome:
+- The bridge surface is now organized around `apps/web/utils/initia/react-bridge.ts` plus focused helpers under `apps/web/utils/initia/bridge/*`.
+- Frontend wallet and flow orchestration moved toward feature-level ownership instead of accumulating in the bridge runtime.
 
-  - loop stages become explicit and grepable
-  - easier for AI agents to jump to the right decision phase
+### Phase 3: Partial Agent Loop Modularization
 
-  ### 3. LLM Router
+Partially completed:
 
-  Refactor apps/api/src/services/llm-router.ts.
+- `apps/api/src/agents/agent-loop/` already contains focused modules such as `base-flow.ts`, `execution.ts`, `initia-perp.ts`, `llm-config.ts`, `market.ts`, `queue.ts`, `risk-controls.ts`, and `types.ts`.
+- This means the agent-loop refactor has started, but the remaining boundary work should focus on the files that still mix multiple concerns.
 
-  Target structure:
+## Remaining Work
 
-  - apps/api/src/services/llm-router/index.ts
-  - apps/api/src/services/llm-router/provider-selection.ts
-  - apps/api/src/services/llm-router/request-builders.ts
-  - apps/api/src/services/llm-router/response-parsers.ts
-  - apps/api/src/services/llm-router/schema-instructions.ts only if needed, otherwise keep
-    shared import only
+## Phase 4: Trading Durable Object Modularization
 
-  Outcome:
+Priority: highest
 
-  - provider selection, prompt assembly, and response parsing are not interleaved
+Primary target:
 
-  ### 4. Market/Price Services
+- `apps/api/src/agents/trading-agent.ts`
 
-  Refactor:
+Target structure:
 
-  - apps/api/src/services/coingecko-price.ts
-  - apps/api/src/agents/agent-loop/market.ts
+- `apps/api/src/agents/trading-agent/index.ts`
+- `apps/api/src/agents/trading-agent/state.ts`
+- `apps/api/src/agents/trading-agent/alarms.ts`
+- `apps/api/src/agents/trading-agent/websocket.ts`
+- `apps/api/src/agents/trading-agent/cache.ts`
+- `apps/api/src/agents/trading-agent/endpoints.ts`
+- keep `apps/api/src/agents/trading-agent/persistence.ts` aligned with the new boundary
 
-  Target structure:
+Expected outcome:
 
-  - fetch client
-  - cache keys/constants
-  - response normalization
-  - domain mapping
+- transport, state, scheduling, and request handling stop living in one file
+- Durable Object behavior becomes discoverable by filename
+- tests can target narrower runtime units
 
-  Outcome:
+## Phase 5: LLM Router Split
 
-  - easier caching changes
-  - easier provider replacement
-  - testable normalization units
+Priority: highest
 
-  ## Phase 4: Route Helper Unification
+Primary target:
 
-  Priority: medium-high
+- `apps/api/src/services/llm-router.ts`
 
-  Unify repeated patterns across agents-route/*, managers-route/*, and general routes.
+Target structure:
 
-  Create:
+- `apps/api/src/services/llm-router/index.ts`
+- `apps/api/src/services/llm-router/provider-selection.ts`
+- `apps/api/src/services/llm-router/request-builders.ts`
+- `apps/api/src/services/llm-router/response-parsers.ts`
+- `apps/api/src/services/llm-router/schema-instructions.ts` only if it remains meaningfully separate
 
-  - apps/api/src/routes/_shared/owned-entity.ts
-  - apps/api/src/routes/_shared/json-response.ts
-  - apps/api/src/routes/_shared/parse-stored-json.ts
-  - apps/api/src/routes/_shared/format-stored-entity.ts
+Expected outcome:
 
-  Likely shared helpers:
+- provider selection, prompt construction, and response parsing are no longer interleaved
+- adding a provider or changing schema instructions becomes a local change
 
-  - withOwnedEntity
-  - parseStoredJson
-  - formatStoredEntity
-  - notFoundJson
+## Phase 6: Market and Price Service Cleanup
 
-  Refactor:
+Priority: high
 
-  - apps/api/src/routes/auth.ts
-  - apps/api/src/routes/pairs.ts
-  - route groups under agents-route and managers-route
+Primary targets:
 
-  Outcome:
+- `apps/api/src/services/coingecko-price.ts`
+- `apps/api/src/agents/agent-loop/market.ts`
 
-  - route handlers become smaller and more uniform
-  - AI agents see one route pattern instead of several local variants
+Split by concern:
 
-  ## Phase 5: Shared Auth, Cache, and Constants Surface
+- fetch client
+- cache keys and TTL constants
+- response normalization
+- market-domain mapping
+- agent-loop decision input shaping
 
-  Priority: medium-high
+Expected outcome:
 
-  Create single-source modules for operational constants and cross-cutting helpers.
+- provider replacement becomes tractable
+- normalization becomes directly testable
+- cache behavior stops being duplicated
 
-  Targets:
+## Phase 7: Route Helper Unification
 
-  - auth/session extraction
-  - cache key builders
-  - TTL constants
-  - provider names
-  - route-local response helpers
+Priority: medium-high
 
-  Potential layout:
+Primary targets:
 
-  - apps/api/src/auth/session.ts
-  - apps/api/src/cache/keys.ts
-  - apps/api/src/cache/ttl.ts
-  - apps/api/src/http/responses.ts
+- `apps/api/src/routes/auth.ts`
+- `apps/api/src/routes/pairs.ts`
+- shared helpers currently spread across `agents-route/*`, `managers-route/*`, and route-local utilities
 
-  Outcome:
+Suggested shared layout:
 
-  - tests stop re-declaring constants
-  - “where is this cache key defined?” has one answer
+- `apps/api/src/routes/_shared/owned-entity.ts`
+- `apps/api/src/routes/_shared/json-response.ts`
+- `apps/api/src/routes/_shared/parse-stored-json.ts`
+- `apps/api/src/routes/_shared/format-stored-entity.ts`
 
-  ## Phase 6: README and Navigation Layer
+Likely shared helpers:
 
-  Priority: medium
+- `withOwnedEntity`
+- `parseStoredJson`
+- `formatStoredEntity`
+- `notFoundJson`
 
-  Add short local READMEs at feature roots.
+Expected outcome:
 
-  Status:
-  - [x] apps/web/features/agents/create/README.md
-  - [ ] apps/web/features/agents/detail/README.md
-  - [ ] apps/web/features/agents/edit/README.md
-  - [x] apps/web/features/managers/detail/README.md
-  - [ ] apps/web/features/agents/config/README.md
-  - [ ] apps/web/features/managers/config/README.md
-  - [x] apps/web/utils/initia/README.md
-  - [x] apps/api/src/agents/README.md
-  - [x] apps/api/src/routes/README.md
-  - [ ] apps/api/src/services/README.md
+- route handlers become shorter and more uniform
+- the same route pattern is reused across agents, managers, and general endpoints
 
-  Each README should answer:
+## Phase 8: Shared Auth, Cache, and Constants Surface
 
-  - entrypoint
-  - main data flow
-  - where to change behavior
-  - related tests
-  - what not to edit first
+Priority: medium-high
 
-  Outcome:
+Current state:
 
-  - AI agents can orient from one README before reading code
+- auth already has a partial subsystem under `apps/api/src/lib/auth/*`
+- cache keys and TTL values are still worth consolidating if duplicated across services or tests
 
-  ## Phase 7: Replace Phase-Style Tests
+Candidate modules:
 
-  Priority: medium
+- `apps/api/src/auth/session.ts` or continue consolidating under `apps/api/src/lib/auth/*`
+- `apps/api/src/cache/keys.ts`
+- `apps/api/src/cache/ttl.ts`
+- `apps/api/src/http/responses.ts`
 
-  Current test naming still hides ownership:
+Expected outcome:
 
-  - apps/api/tests/phase1.test.ts
-  - apps/api/tests/phase2.test.ts
-  - apps/api/tests/phase3.test.ts
-  - apps/api/tests/phase4.test.ts
-  - apps/api/tests/phase6.test.ts
+- tests import production constants instead of copying them
+- operational values have a single source of truth
 
-  Replace with module-aligned tests, for example:
+## Phase 9: README and Navigation Layer
 
-  - [x] coingecko-price.test.ts
-  - [ ] agent-loop.test.ts
-  - [x] managers-route-utils.test.ts
-  - [ ] auth-session.test.ts
-  - [x] pairs-normalization.test.ts
+Priority: medium
 
-  Rules:
+Goal:
 
-  - tests import production constants/helpers
-  - no duplicated cache key logic
-  - no duplicated prompt schema logic
-  - no “phase” naming
+- every important feature or subsystem root should explain entrypoints, data flow, and where to edit first
 
-  Outcome:
+Verified current status:
 
-  - tests become navigation aids instead of historical artifacts
+- done: `apps/web/features/agents/create/README.md`
+- missing: `apps/web/features/agents/detail/README.md`
+- missing: `apps/web/features/agents/edit/README.md`
+- missing: `apps/web/features/agents/config/README.md`
+- done: `apps/web/features/managers/detail/README.md`
+- missing: `apps/web/features/managers/config/README.md`
+- done: `apps/web/utils/initia/README.md`
+- done: `apps/api/src/agents/README.md`
+- done: `apps/api/src/routes/README.md`
+- missing: `apps/api/src/services/README.md`
 
-  ## Phase 8: Repo Hygiene Automation
+Each README should answer:
 
-  Priority: medium
+- what is the entrypoint
+- what owns state
+- where behavior should be changed first
+- which related tests matter
+- which large file should not be edited first if a narrower module exists
 
-  Add a lightweight script or CI check that fails on structural regressions.
+## Phase 10: Replace Phase-Style Tests
 
-  Suggested checks:
+Priority: medium
 
-  - app-owned files above threshold
-  - missing README in required feature roots
-  - duplicate banned symbols
-  - maybe import-boundary violations for selected areas
+Phase-style files still present:
 
-  Suggested files:
+- `apps/api/tests/phase1.test.ts`
+- `apps/api/tests/phase2.test.ts`
+- `apps/api/tests/phase3.test.ts`
+- `apps/api/tests/phase4.test.ts`
+- `apps/api/tests/phase6.test.ts`
 
-  - scripts/check-file-sizes.mjs
-  - scripts/check-feature-readmes.mjs
-  - scripts/check-duplicate-symbols.mjs
+Good examples already present:
 
-  Suggested policy:
+- `apps/api/tests/coingecko-price.test.ts`
+- `apps/api/tests/manager-loop.test.ts`
+- `apps/api/tests/managers-route-utils.test.ts`
+- `apps/api/tests/pairs-normalization.test.ts`
 
-  - warn above 250
-  - fail above 350 for allowlisted directories only after migration
-  - maintain a short allowlist during transition
+Rules:
 
-  Outcome:
+- tests should be named after modules or behavior
+- tests should import production constants and helpers where possible
+- duplicated cache-key logic should be removed
+- duplicated prompt-schema logic should be removed
+- no new phase-style names
 
-  - the repo does not drift back into large-file sprawl
+Expected outcome:
 
-  ## Phase 9: Export Surface Cleanup
+- tests become a navigation tool instead of historical baggage
 
-  Priority: lower
+## Phase 11: Repo Hygiene Automation
 
-  Review barrel and public export strategy.
+Priority: medium
 
-  Rules:
+Add lightweight checks that prevent structural drift.
 
-  - allow boundary barrels only
-  - avoid broad global barrels
-  - avoid index.ts files that hide ownership unless they are true feature entrypoints
+Suggested checks:
 
-  Potential cleanup:
+- warn on app-owned files above 250 LOC
+- fail on app-owned files above 350 LOC for selected directories after migration
+- require README presence in declared feature roots
+- detect duplicated banned symbols or duplicated local helper implementations
+- optionally enforce import boundaries in selected directories
 
-  - packages/shared/src/index.ts
-  - any oversized index.ts that exports unrelated domains together
+Suggested scripts:
 
-  Outcome:
+- `scripts/check-file-sizes.mjs`
+- `scripts/check-feature-readmes.mjs`
+- `scripts/check-duplicate-symbols.mjs`
 
-  - AI agents can infer ownership from import paths
+Expected outcome:
 
-  ## Recommended Execution Order
+- the repo does not slide back into large-file sprawl after cleanup
 
-  1. apps/api/src/agents/trading-agent.ts
-  2. apps/api/src/services/llm-router.ts
-  3. apps/api/src/services/coingecko-price.ts and apps/api/src/agents/agent-loop/market.ts
-  4. route helper unification
-  5. test renaming and duplication cleanup
-  6. hygiene scripts and README completion
+## Phase 12: Export Surface Cleanup
 
-  ## Definition Of Done
+Priority: lower
 
-  The original refactor task is fully complete only when:
+Review barrels and public export boundaries.
 
-  - the listed hotspots are split or reduced below agreed thresholds
-  - route and agent runtime boundaries are explicit
-  - shared helpers have one source of truth
-  - required feature READMEs exist
-  - phase-style tests are gone
-  - structural hygiene checks are in place
+Rules:
 
----
+- allow barrels at subsystem boundaries
+- avoid broad global barrels that hide ownership
+- avoid `index.ts` files that mix unrelated domains
 
-# COMPLETED TASKS
+Likely review targets:
 
-### Phase 1 & 2: Frontend & Bridge Modularization
-- [x] **Agent/Manager Detail Pages**: Lean route shells + feature composables.
-- [x] **Config Forms**: Shared sections + logical composables.
-- [x] **Initia Bridge**: Domain-split logic unit.
-- [x] **Outcome**: High predictability and reduced token scanning for frontend tasks.
+- `packages/shared/src/index.ts`
+- any oversized `index.ts` that exports unrelated areas together
 
-### Completed READMEs & Tests
-- [x] READMEs: `agents/create`, `managers/detail`, `initia`, `api/agents`, `api/routes`.
-- [x] Tests: `coingecko-price`, `managers-route-utils`, `pairs-normalization`.
+Expected outcome:
+
+- ownership stays visible from import paths
+
+## Recommended Execution Order
+
+1. Split `apps/api/src/agents/trading-agent.ts`.
+2. Split `apps/api/src/services/llm-router.ts`.
+3. Split `apps/api/src/services/coingecko-price.ts` and tighten `apps/api/src/agents/agent-loop/market.ts`.
+4. Unify shared route helpers across `routes/*`.
+5. Replace phase-style tests with module-aligned tests.
+6. Add missing subsystem READMEs.
+7. Add hygiene scripts and enforce thresholds gradually.
+8. Review export surfaces last.
+
+## Definition Of Done
+
+This refactor is complete only when:
+
+- the current backend hotspots are either split or reduced below agreed thresholds
+- Durable Object, route, and service boundaries are explicit from file names
+- shared auth, cache, and HTTP helpers have one obvious source of truth
+- required feature and subsystem READMEs exist
+- phase-style tests are removed or renamed by ownership
+- lightweight structural hygiene checks are in place
+
+## Notes
+
+- Preserve public behavior while changing internal structure.
+- Prefer extracting cohesive units over large mechanical rewrites.
+- When in doubt, optimize for discoverability over clever abstraction.

@@ -9,7 +9,7 @@ import { validateQuery } from '../lib/validation.js';
 
 const tradesRoute = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
-/** Shared ownership check: owns or legacy unowned */
+/** Shared ownership check: agent must belong to the authenticated wallet. */
 async function requireAgentOwnership(
   db: ReturnType<typeof drizzle>,
   agentId: string,
@@ -17,7 +17,8 @@ async function requireAgentOwnership(
 ): Promise<typeof agents.$inferSelect | null> {
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
   if (!agent) return null;
-  if (agent.ownerAddress && agent.ownerAddress !== walletAddress) return null;
+  if (!agent.ownerAddress) return null;
+  if (agent.ownerAddress.toLowerCase() !== walletAddress.toLowerCase()) return null;
   return agent;
 }
 

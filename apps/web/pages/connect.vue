@@ -11,6 +11,11 @@ const { isAuthenticated, authResolved, fetchMe, signIn, signOut, user } = useAut
 const connecting = ref(false);
 const connectError = ref<string | null>(null);
 const walletConnected = computed(() => !!(initiaState.value.initiaAddress || initiaState.value.evmAddress));
+const route = useRoute();
+const redirectTarget = computed(() => {
+  const returnTo = typeof route.query.returnTo === 'string' ? route.query.returnTo : null;
+  return returnTo && returnTo.startsWith('/') ? returnTo : '/agents';
+});
 const sessionMatchesConnectedWallet = computed(() => doesSessionMatchWallet(
   user.value?.walletAddress,
   [initiaState.value.evmAddress, initiaState.value.initiaAddress],
@@ -28,7 +33,7 @@ async function ensureSignedSession(evmAddress: string): Promise<void> {
     await signIn({ walletAddress: evmAddress });
 
     if (isAuthenticated.value) {
-      await navigateTo('/agents', { replace: true });
+      await navigateTo(redirectTarget.value, { replace: true });
     } else {
       connectError.value = 'Authentication was not completed. Please try again.';
     }
@@ -45,7 +50,7 @@ watch([() => initiaState.value.evmAddress, authResolved], async ([evmAddress, re
   if (!resolved || !evmAddress || connecting.value) return;
 
   if (isAuthenticated.value && sessionMatchesConnectedWallet.value) {
-    await navigateTo('/agents', { replace: true });
+    await navigateTo(redirectTarget.value, { replace: true });
     return;
   }
 
@@ -56,12 +61,12 @@ onMounted(async () => {
   await Promise.allSettled([refreshInitia(), fetchMe()]);
 
   if (isAuthenticated.value && !walletConnected.value) {
-    await navigateTo('/agents', { replace: true });
+    await signOut({ redirectToConnect: false, clearWalletState: false });
     return;
   }
 
   if (isAuthenticated.value && sessionMatchesConnectedWallet.value) {
-    await navigateTo('/agents', { replace: true });
+    await navigateTo(redirectTarget.value, { replace: true });
   }
 });
 

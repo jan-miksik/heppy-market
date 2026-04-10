@@ -16,18 +16,23 @@ const {
 const { showNotification } = useNotification();
 const walletActionError = ref<string | null>(null);
 const walletConnected = computed(() => !!(initiaState.value.initiaAddress || initiaState.value.evmAddress));
-const displayedWalletAddress = computed(() => (
-  initiaState.value.evmAddress
-  || initiaState.value.initiaAddress
-  || user.value?.walletAddress
-  || ''
-));
 const sessionMatchesConnectedWallet = computed(() => doesSessionMatchWallet(
   user.value?.walletAddress,
   [initiaState.value.evmAddress, initiaState.value.initiaAddress],
 ));
+const authenticatedWalletReady = computed(() => (
+  isAuthenticated.value
+  && walletConnected.value
+  && sessionMatchesConnectedWallet.value
+));
+const displayedWalletAddress = computed(() => (
+  initiaState.value.evmAddress
+  || initiaState.value.initiaAddress
+  || ''
+));
 const route = useRoute();
 const isConnectRoute = computed(() => route.path === '/connect');
+const isPublicRoute = computed(() => route.path === '/connect' || route.path === '/about');
 
 useHead({
   htmlAttrs: { lang: 'en' },
@@ -43,16 +48,6 @@ onMounted(() => {
 });
 
 watch(
-  [() => initiaState.value.ready, () => isAuthenticated.value, () => user.value?.authProvider, walletConnected, sessionMatchesConnectedWallet],
-  async ([ready, authenticated, authProvider, connected, matches]) => {
-    if (!ready || !authenticated || authProvider === 'playwright' || !connected || matches) return;
-    await signOut({ redirectToConnect: false, clearWalletState: false });
-    if (route.path !== '/connect') await navigateTo('/connect', { replace: true });
-  },
-  { immediate: true },
-);
-
-watch(
   [walletActionError, () => initiaState.value.error],
   ([walletErr, bridgeErr], [prevWalletErr, prevBridgeErr]) => {
     const message = walletErr || bridgeErr;
@@ -65,6 +60,25 @@ watch(
       durationMs: 8_000,
     });
   },
+);
+
+watch(
+  [
+    () => initiaState.value.ready,
+    isAuthenticated,
+    authenticatedWalletReady,
+    () => route.fullPath,
+  ],
+  async ([bridgeReady, authenticated, walletReady]) => {
+    if (!import.meta.client || !bridgeReady || !authenticated || walletReady || isPublicRoute.value) {
+      return;
+    }
+
+    const returnTo = `${route.path}${route.fullPath.slice(route.path.length)}`;
+    await signOut({ redirectToConnect: false, clearWalletState: false });
+    await navigateTo(`/connect?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
+  },
+  { immediate: true },
 );
 
 async function handleWalletClick() {
@@ -113,7 +127,7 @@ async function handleWalletClick() {
             class="wallet-dot"
             :class="{ 'wallet-dot--disconnected': !walletConnected }"
           />
-          <span v-if="user">{{ truncate(displayedWalletAddress) }}</span>
+          <span v-if="authenticatedWalletReady">{{ truncate(displayedWalletAddress) }}</span>
           <span v-else>Connect</span>
         </button>
       </div>
@@ -124,14 +138,14 @@ async function handleWalletClick() {
         <span v-if="IS_BETA" class="beta-badge">Beta</span>
       </NuxtLink>
       <div class="navbar-nav">
-        <template v-if="isAuthenticated">
+        <template v-if="authenticatedWalletReady">
           <NuxtLink to="/agents">Agents</NuxtLink>
           <NuxtLink to="/trades">Trades</NuxtLink>
         </template>
         <NuxtLink to="/about">About</NuxtLink>
       </div>
       <div class="navbar-auth">
-        <template v-if="isAuthenticated && user">
+        <template v-if="authenticatedWalletReady && user">
           <NuxtLink to="/settings" class="settings-icon-btn" title="Settings">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>

@@ -11,7 +11,9 @@ export default defineNuxtPlugin(() => {
     .catch(() => {})
     .finally(() => {
       if (!isAuthenticated.value && router.currentRoute.value.path !== '/connect') {
-        void navigateTo('/connect', { replace: true });
+        const route = router.currentRoute.value;
+        const returnTo = `${route.path}${route.fullPath.slice(route.path.length)}`;
+        void navigateTo(`/connect?returnTo=${encodeURIComponent(returnTo)}`, { replace: true });
       }
     });
 });
