@@ -11,7 +11,6 @@ import { eq } from 'drizzle-orm';
 import type { Env } from '../types/env.js';
 import { users } from '../db/schema.js';
 import {
-  verifySiweAndCreateSession,
   createNonce,
   createSession,
   getSession,
@@ -19,13 +18,44 @@ import {
   parseCookieValue,
   buildSessionCookie,
   buildExpiredSessionCookie,
-} from '../lib/auth.js';
+  verifySiweAndCreateSession,
+} from '../auth/session.js';
 import { validateBody } from '../lib/validation.js';
 import { z } from 'zod';
 import { encryptKey } from '../lib/crypto.js';
 import { generateId, nowIso } from '../lib/utils.js';
+import { forbiddenJson, internalServerErrorJson, notFoundJson, unauthorizedJson, upstreamFailureJson } from './_shared/json-response.js';
 
 const authRoute = new Hono<{ Bindings: Env }>();
+
+function serializeAuthUser(user: typeof users.$inferSelect) {
+  return {
+    id: user.id,
+    walletAddress: user.walletAddress,
+    email: user.email,
+    displayName: user.displayName,
+    authProvider: user.authProvider,
+    avatarUrl: user.avatarUrl,
+    role: user.role,
+    createdAt: user.createdAt,
+    openRouterKeySet: !!user.openRouterKey,
+  };
+}
+
+async function requireAuthenticatedSession(c: {
+  req: { header: (name: string) => string | undefined };
+  env: Env;
+  json: (body: unknown, status?: number) => Response;
+}) {
+  const cookieHeader = c.req.header('cookie') ?? '';
+  const token = parseCookieValue(cookieHeader, 'session');
+  if (!token) return { response: c.json({ error: 'Unauthorized' }, 401) };
+
+  const session = await getSession(c.env.CACHE, token, c.env.DB);
+  if (!session) return { response: c.json({ error: 'Unauthorized' }, 401) };
+
+  return { token, session };
+}
 
 /** GET /api/auth/nonce — generate and return a one-time sign-in nonce */
 authRoute.get('/nonce', async (c) => {
@@ -90,29 +120,19 @@ authRoute.post('/verify', async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Verification failed';
     console.error('[auth/verify] error:', msg, err);
-    return c.json({ error: msg }, 401);
+    return unauthorizedJson(c, msg);
   }
 
   const isHttps = c.req.url.startsWith('https://');
   c.header('Set-Cookie', buildSessionCookie(result.sessionToken, isHttps));
 
-  return c.json({
-    id: result.user.id,
-    walletAddress: result.user.walletAddress,
-    email: result.user.email,
-    displayName: result.user.displayName,
-    authProvider: result.user.authProvider,
-    avatarUrl: result.user.avatarUrl,
-    role: result.user.role,
-    createdAt: result.user.createdAt,
-    openRouterKeySet: !!result.user.openRouterKey,
-  });
+  return c.json(serializeAuthUser(result.user));
 });
 
 /** POST /api/auth/hackathon-session — bootstrap a session from connected wallet in localhost/hackathon mode. */
 authRoute.post('/hackathon-session', async (c) => {
   if (!isHackathonBypassAllowed(c)) {
-    return c.json({ error: 'Not Found' }, 404);
+    return notFoundJson(c);
   }
 
   const body = await validateBody(c, HackathonSessionSchema);
@@ -145,50 +165,27 @@ authRoute.post('/hackathon-session', async (c) => {
   const isHttps = c.req.url.startsWith('https://');
   c.header('Set-Cookie', buildSessionCookie(sessionToken, isHttps));
 
-  return c.json({
-    id: user.id,
-    walletAddress: user.walletAddress,
-    email: user.email,
-    displayName: user.displayName,
-    authProvider: user.authProvider,
-    avatarUrl: user.avatarUrl,
-    role: user.role,
-    createdAt: user.createdAt,
-    openRouterKeySet: !!user.openRouterKey,
-  });
+  return c.json(serializeAuthUser(user));
 });
 
 /** GET /api/auth/me — return currently authenticated user */
 authRoute.get('/me', async (c) => {
-  const cookieHeader = c.req.header('cookie') ?? '';
-  const token = parseCookieValue(cookieHeader, 'session');
-  if (!token) return c.json({ error: 'Unauthorized' }, 401);
-
-  const session = await getSession(c.env.CACHE, token, c.env.DB);
-  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+  const auth = await requireAuthenticatedSession(c);
+  if ('response' in auth) return auth.response;
 
   const orm = drizzle(c.env.DB);
-  const [user] = await orm.select().from(users).where(eq(users.id, session.userId));
-  if (!user) return c.json({ error: 'User not found' }, 404);
+  const [user] = await orm.select().from(users).where(eq(users.id, auth.session.userId));
+  if (!user) return notFoundJson(c, 'User');
 
-  return c.json({
-    id: user.id,
-    walletAddress: user.walletAddress,
-    email: user.email,
-    displayName: user.displayName,
-    authProvider: user.authProvider,
-    avatarUrl: user.avatarUrl,
-    role: user.role,
-    createdAt: user.createdAt,
-    openRouterKeySet: !!user.openRouterKey,
-  });
+  return c.json(serializeAuthUser(user));
 });
 
 /** POST /api/auth/logout — invalidate session */
 authRoute.post('/logout', async (c) => {
-  const cookieHeader = c.req.header('cookie') ?? '';
-  const token = parseCookieValue(cookieHeader, 'session');
-  if (token) await deleteSession(c.env.CACHE, token, c.env.DB);
+  const auth = await requireAuthenticatedSession(c);
+  if (!('response' in auth)) {
+    await deleteSession(c.env.CACHE, auth.token, c.env.DB);
+  }
 
   c.header('Set-Cookie', buildExpiredSessionCookie());
   return c.json({ ok: true });
@@ -202,12 +199,8 @@ const OpenRouterExchangeSchema = z.object({
 
 /** POST /api/auth/openrouter/exchange — exchange PKCE code for OR key, encrypt, store */
 authRoute.post('/openrouter/exchange', async (c) => {
-  const cookieHeader = c.req.header('cookie') ?? '';
-  const token = parseCookieValue(cookieHeader, 'session');
-  if (!token) return c.json({ error: 'Unauthorized' }, 401);
-
-  const session = await getSession(c.env.CACHE, token, c.env.DB);
-  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+  const auth = await requireAuthenticatedSession(c);
+  if ('response' in auth) return auth.response;
 
   const body = await validateBody(c, OpenRouterExchangeSchema);
 
@@ -224,7 +217,7 @@ authRoute.post('/openrouter/exchange', async (c) => {
     });
   } catch (fetchErr) {
     console.error('[auth/openrouter/exchange] Network error reaching OpenRouter:', fetchErr);
-    return c.json({ error: 'Could not reach OpenRouter — network error' }, 502);
+    return upstreamFailureJson(c, 'Could not reach OpenRouter — network error');
   }
 
   if (!res.ok) {
@@ -233,36 +226,32 @@ authRoute.post('/openrouter/exchange', async (c) => {
     // Parse JSON error if available, otherwise return raw text
     let detail = text;
     try { detail = JSON.parse(text)?.error ?? text; } catch { /* raw text is fine */ }
-    return c.json({ error: `OpenRouter exchange failed (${res.status}): ${detail}` }, 502);
+    return upstreamFailureJson(c, `OpenRouter exchange failed (${res.status}): ${detail}`);
   }
 
   const data = await res.json<{ key?: string }>();
-  if (!data.key) return c.json({ error: 'No key in OpenRouter response' }, 502);
+  if (!data.key) return upstreamFailureJson(c, 'No key in OpenRouter response');
 
   const encrypted = await encryptKey(data.key, c.env.KEY_ENCRYPTION_SECRET);
   const orm = drizzle(c.env.DB);
   await orm
     .update(users)
     .set({ openRouterKey: encrypted, updatedAt: nowIso() })
-    .where(eq(users.id, session.userId));
+    .where(eq(users.id, auth.session.userId));
 
   return c.json({ ok: true });
 });
 
 /** DELETE /api/auth/openrouter/disconnect — remove stored OR key */
 authRoute.delete('/openrouter/disconnect', async (c) => {
-  const cookieHeader = c.req.header('cookie') ?? '';
-  const token = parseCookieValue(cookieHeader, 'session');
-  if (!token) return c.json({ error: 'Unauthorized' }, 401);
-
-  const session = await getSession(c.env.CACHE, token, c.env.DB);
-  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+  const auth = await requireAuthenticatedSession(c);
+  if ('response' in auth) return auth.response;
 
   const orm = drizzle(c.env.DB);
   await orm
     .update(users)
     .set({ openRouterKey: null, updatedAt: nowIso() })
-    .where(eq(users.id, session.userId));
+    .where(eq(users.id, auth.session.userId));
 
   return c.json({ ok: true });
 });
@@ -274,10 +263,10 @@ authRoute.delete('/openrouter/disconnect', async (c) => {
  */
 authRoute.post('/dev-session', async (c) => {
   const secret = c.env.PLAYWRIGHT_SECRET;
-  if (!secret) return c.json({ error: 'Not Found' }, 404);
+  if (!secret) return notFoundJson(c);
 
   const provided = c.req.header('x-playwright-secret');
-  if (!provided || provided !== secret) return c.json({ error: 'Forbidden' }, 403);
+  if (!provided || provided !== secret) return forbiddenJson(c);
 
   const PLAYWRIGHT_WALLET = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
   const orm = drizzle(c.env.DB);
@@ -307,7 +296,7 @@ authRoute.post('/dev-session', async (c) => {
 
 authRoute.onError((err, c) => {
   console.error('[auth route]', err);
-  return c.json({ error: 'Internal server error' }, 500);
+  return internalServerErrorJson(c);
 });
 
 export default authRoute;

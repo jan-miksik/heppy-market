@@ -4,7 +4,10 @@ import { eq } from 'drizzle-orm';
 import type { Env } from '../../types/env.js';
 import type { AuthVariables } from '../../lib/auth.js';
 import { agentManagers } from '../../db/schema.js';
-import { parseJsonOr, parseJsonRequired } from '../../lib/json.js';
+import { formatStoredEntity } from '../_shared/format-stored-entity.js';
+import { notFoundJson } from '../_shared/json-response.js';
+import { requireOwnedEntity } from '../_shared/owned-entity.js';
+import { parseStoredJson, parseStoredJsonOr } from '../_shared/parse-stored-json.js';
 
 export type ManagersContext = Context<{ Bindings: Env; Variables: AuthVariables }>;
 export type ManagersRoute = Hono<{ Bindings: Env; Variables: AuthVariables }>;
@@ -12,18 +15,17 @@ export type ManagersDb = ReturnType<typeof drizzle>;
 export type ManagerRow = typeof agentManagers.$inferSelect;
 
 export function parseManagerConfig(raw: string): Record<string, unknown> {
-  return parseJsonRequired<Record<string, unknown>>(raw);
+  return parseStoredJson<Record<string, unknown>>(raw);
 }
 
 export function formatManager(r: ManagerRow) {
-  return {
-    ...r,
-    config: parseManagerConfig(r.config),
-  };
+  return formatStoredEntity(r, {
+    config: parseManagerConfig,
+  });
 }
 
 export function safeParseManagerLogResult(raw: string): Record<string, unknown> | null {
-  const parsed = parseJsonOr<unknown>(raw, null);
+  const parsed = parseStoredJsonOr<unknown>(raw, null);
   return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 }
 
@@ -32,14 +34,20 @@ export async function requireManagerOwnership(
   id: string,
   walletAddress: string
 ): Promise<ManagerRow | null> {
-  const [manager] = await db.select().from(agentManagers).where(eq(agentManagers.id, id));
-  if (!manager) return null;
-  if (manager.ownerAddress !== walletAddress) return null;
-  return manager;
+  return requireOwnedEntity(
+    db,
+    id,
+    walletAddress,
+    async (database, managerId) => {
+      const [manager] = await database.select().from(agentManagers).where(eq(agentManagers.id, managerId));
+      return manager ?? null;
+    },
+    (manager) => manager.ownerAddress,
+  );
 }
 
 export function managerNotFound(c: ManagersContext): Response {
-  return c.json({ error: 'Manager not found' }, 404);
+  return notFoundJson(c, 'Manager');
 }
 
 export async function withOwnedManager(

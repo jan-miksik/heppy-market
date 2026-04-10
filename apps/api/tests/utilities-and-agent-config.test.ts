@@ -1,12 +1,10 @@
 /**
- * Phase 1 tests — Foundation
- * Tests the Drizzle schema structure and utility functions.
- * These run in Node without requiring a Workers runtime.
+ * Utility helpers and agent-config validation tests.
  */
 import { describe, it, expect } from 'vitest';
 import { generateId, nowIso, clamp, autonomyLevelToInt, intToAutonomyLevel } from '../src/lib/utils.js';
 
-describe('Phase 1: Utilities', () => {
+describe('utility helpers', () => {
   it('generateId produces a non-empty string', () => {
     const id = generateId();
     expect(typeof id).toBe('string');
@@ -49,8 +47,7 @@ describe('Phase 1: Utilities', () => {
   });
 });
 
-describe('Phase 1: Agent Config Validation', async () => {
-  // Import via relative path so tests work outside Docker/workspace mounts.
+describe('agent config validation', async () => {
   const { AgentConfigSchema } = await import('../../packages/shared/src/validation.ts');
 
   it('validates default config', () => {

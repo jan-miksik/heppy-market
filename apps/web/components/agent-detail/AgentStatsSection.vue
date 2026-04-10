@@ -93,23 +93,8 @@ function formatCountdown(seconds: number | null): string {
 </template>
 
 <style scoped>
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.stat-card {
-  padding: 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
 .stat-card-active {
-  border-color: var(--accent, #6366f1);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .stat-label {
@@ -132,12 +117,12 @@ function formatCountdown(seconds: number | null): string {
   color: var(--text-dim);
 }
 
-.stat-value.positive { color: var(--green, #10b981); }
-.stat-value.negative { color: var(--red, #ef4444); }
+.stat-value.positive { color: var(--green); }
+.stat-value.negative { color: var(--red); }
 .stat-value.neutral { color: var(--text-dim); }
 
 .accent {
-  color: var(--accent, #6366f1);
+  color: var(--accent);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -161,7 +146,7 @@ function formatCountdown(seconds: number | null): string {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   animation: analyze-blink 1.2s ease-in-out infinite;
   flex-shrink: 0;
 }

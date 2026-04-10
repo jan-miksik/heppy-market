@@ -5,7 +5,10 @@ import type { Env } from '../../types/env.js';
 import type { AuthVariables } from '../../lib/auth.js';
 import { agents, trades, agentDecisions, performanceSnapshots, agentSelfModifications } from '../../db/schema.js';
 import { registerSchedulerAgent, unregisterSchedulerAgent } from '../../lib/do-clients.js';
-import { parseJsonObjectOrEmpty, parseJsonOrNull, parseJsonRequired } from '../../lib/json.js';
+import { formatStoredEntity } from '../_shared/format-stored-entity.js';
+import { notFoundJson } from '../_shared/json-response.js';
+import { requireOwnedEntity } from '../_shared/owned-entity.js';
+import { parseStoredJson, parseStoredJsonObject, parseStoredJsonOrNull } from '../_shared/parse-stored-json.js';
 
 export type AgentsContext = Context<{ Bindings: Env; Variables: AuthVariables }>;
 export type AgentsRoute = Hono<{ Bindings: Env; Variables: AuthVariables }>;
@@ -13,15 +16,14 @@ export type AgentsDb = ReturnType<typeof drizzle>;
 export type AgentRow = typeof agents.$inferSelect;
 
 export function parseAgentConfig(raw: string): Record<string, unknown> {
-  return parseJsonRequired<Record<string, unknown>>(raw);
+  return parseStoredJson<Record<string, unknown>>(raw);
 }
 
 export function formatAgent(r: AgentRow) {
-  return {
-    ...r,
-    config: parseAgentConfig(r.config),
-    initiaSyncState: r.initiaSyncState ? parseJsonOrNull<Record<string, unknown>>(r.initiaSyncState) : null,
-  };
+  return formatStoredEntity(r, {
+    config: parseAgentConfig,
+    initiaSyncState: (raw) => parseStoredJsonOrNull<Record<string, unknown>>(raw),
+  });
 }
 
 export function normalizeInitiaWalletAddress(value: unknown): string | null {
@@ -32,7 +34,7 @@ export function normalizeInitiaWalletAddress(value: unknown): string | null {
 }
 
 export function parseInitiaSyncState(raw: string | null): Record<string, unknown> {
-  return parseJsonObjectOrEmpty(raw);
+  return parseStoredJsonObject(raw);
 }
 
 export function getTradingAgentStub(env: Env, agentId: string) {
@@ -53,15 +55,20 @@ export async function requireOwnership(
   id: string,
   walletAddress: string
 ): Promise<AgentRow | null> {
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
-  if (!agent) return null;
-  if (!agent.ownerAddress) return null;
-  if (agent.ownerAddress.toLowerCase() !== walletAddress.toLowerCase()) return null;
-  return agent;
+  return requireOwnedEntity(
+    db,
+    id,
+    walletAddress,
+    async (database, agentId) => {
+      const [agent] = await database.select().from(agents).where(eq(agents.id, agentId));
+      return agent ?? null;
+    },
+    (agent) => agent.ownerAddress,
+  );
 }
 
 export function agentNotFound(c: AgentsContext): Response {
-  return c.json({ error: 'Agent not found' }, 404);
+  return notFoundJson(c, 'Agent');
 }
 
 export async function withOwnedAgent(

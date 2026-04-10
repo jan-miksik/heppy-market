@@ -6,10 +6,10 @@
  * Rate limit: ~30 req/min on free tier (KV cache handles this)
  */
 import { z } from 'zod';
+import { geckoOhlcvKey, geckoSearchKey } from '../cache/keys.js';
+import { HOT_CACHE_TTL_MS, MARKET_DATA_CACHE_TTL_SECONDS } from '../cache/ttl.js';
 
 const GECKO_BASE = 'https://api.geckoterminal.com/api/v2';
-const CACHE_TTL = 900; // seconds — 15 min matches frontend cache window
-const HOT_CACHE_TTL_MS = 20_000; // short per-isolate cache to suppress repeated KV reads
 const HOT_CACHE_MAX_ENTRIES = 2_000;
 
 type HotCacheEntry = {
@@ -186,7 +186,7 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
     }
     setHotCached(cacheKey, parsed.data);
     try {
-      await cache.put(cacheKey, JSON.stringify(json), { expirationTtl: CACHE_TTL });
+      await cache.put(cacheKey, JSON.stringify(json), { expirationTtl: MARKET_DATA_CACHE_TTL_SECONDS });
     } catch (err) {
       console.warn(`cache_error service=gecko-terminal op=put key=${cacheKey}`, err);
     }
@@ -198,7 +198,7 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
    * Returns normalised pool objects sorted by liquidity descending.
    */
   async function searchPools(query: string): Promise<GeckoPoolNorm[]> {
-    const cacheKey = `gecko:search:${query.toLowerCase().replace(/\s+/g, '-')}`;
+    const cacheKey = geckoSearchKey(query);
     const url = `${GECKO_BASE}/search/pools?query=${encodeURIComponent(query)}&network=base&sort=h24_volume_usd_liquidity_desc`;
     const data = await cachedFetch(cacheKey, url, GeckoSearchResponseSchema);
 
@@ -230,7 +230,7 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
    * Returns close prices oldest→newest (ready for technicalindicators).
    */
   async function getPoolPriceSeries(address: string, limit = 48, timeframe: 'hour' | 'day' = 'hour'): Promise<number[]> {
-    const cacheKey = `gecko:ohlcv:base:${address.toLowerCase()}:${timeframe}:${limit}`;
+    const cacheKey = geckoOhlcvKey(address, timeframe, limit);
     const url = `${GECKO_BASE}/networks/base/pools/${address}/ohlcv/${timeframe}?limit=${limit}&currency=usd`;
     const data = await cachedFetch(cacheKey, url, GeckoOHLCVSchema);
     // ohlcv_list is newest-first; reverse to oldest-first for TA libraries

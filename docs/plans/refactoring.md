@@ -25,21 +25,19 @@ A typical feature or bugfix should be solvable by opening a small, predictable s
 
 ## Current Verified Hotspots
 
-These are the main files still worth splitting or tightening:
+The original highest-risk hotspots were closed out:
 
-- `apps/api/src/agents/trading-agent.ts` (~632 LOC)
-- `apps/api/src/services/llm-router.ts` (~551 LOC)
-- `apps/api/src/services/coingecko-price.ts` (~437 LOC)
-- `apps/api/src/agents/agent-loop/market.ts` (~395 LOC)
-- `apps/api/src/routes/auth.ts` (~313 LOC)
-- `apps/api/src/routes/pairs.ts` (~284 LOC)
+- `apps/api/src/agents/trading-agent.ts` is now a thin compatibility export
+- `apps/api/src/services/llm-router.ts` is now a thin compatibility export
+- `apps/api/src/services/coingecko-price.ts` is now a thin compatibility export
+- `apps/api/src/agents/agent-loop/market.ts` is now a thin market-domain mapper
 
-Frontend files previously flagged as hotspots are now below the review threshold:
+Files still above the preferred 250 LOC target, but below the 350 LOC review threshold:
 
-- `apps/web/pages/agents/[id]/index.vue` (~185 LOC)
-- `apps/web/components/AgentConfigForm.vue` (~149 LOC)
-- `apps/web/components/ManagerConfigForm.vue` (~119 LOC)
-- `apps/web/utils/initia/react-bridge.ts` (~166 LOC)
+- `apps/api/src/routes/auth.ts` (~302 LOC)
+- `apps/api/src/routes/pairs.ts` (~291 LOC)
+
+Those remaining route files now rely on shared helpers under `apps/api/src/routes/_shared/*`, so they are no longer the kind of mixed-responsibility blockers that motivated the original plan.
 
 ## Architecture Rules
 
@@ -86,178 +84,130 @@ Completed:
 - The bridge surface is now organized around `apps/web/utils/initia/react-bridge.ts` plus focused helpers under `apps/web/utils/initia/bridge/*`.
 - Frontend wallet and flow orchestration moved toward feature-level ownership instead of accumulating in the bridge runtime.
 
-### Phase 3: Partial Agent Loop Modularization
+### Phase 3: Agent Loop Modularization
 
-Partially completed:
+Completed enough for the original goal:
 
-- `apps/api/src/agents/agent-loop/` already contains focused modules such as `base-flow.ts`, `execution.ts`, `initia-perp.ts`, `llm-config.ts`, `market.ts`, `queue.ts`, `risk-controls.ts`, and `types.ts`.
-- This means the agent-loop refactor has started, but the remaining boundary work should focus on the files that still mix multiple concerns.
+- `apps/api/src/agents/agent-loop/` contains focused modules such as `base-flow.ts`, `execution.ts`, `initia-perp.ts`, `llm-config.ts`, `market.ts`, `market-fetch.ts`, `queue.ts`, `risk-controls.ts`, and `types.ts`.
+- `market.ts` now stays focused on decision-input shaping while fetch-heavy work lives in narrower helpers.
 
-## Remaining Work
+### Phase 4: Trading Durable Object Modularization
 
-## Phase 4: Trading Durable Object Modularization
-
-Priority: highest
-
-Primary target:
-
-- `apps/api/src/agents/trading-agent.ts`
-
-Target structure:
+Completed:
 
 - `apps/api/src/agents/trading-agent/index.ts`
 - `apps/api/src/agents/trading-agent/state.ts`
 - `apps/api/src/agents/trading-agent/alarms.ts`
 - `apps/api/src/agents/trading-agent/websocket.ts`
 - `apps/api/src/agents/trading-agent/cache.ts`
-- `apps/api/src/agents/trading-agent/endpoints.ts`
-- keep `apps/api/src/agents/trading-agent/persistence.ts` aligned with the new boundary
+- `apps/api/src/agents/trading-agent/persistence.ts`
+- request handlers split across:
+  - `apps/api/src/agents/trading-agent/endpoints.ts`
+  - `apps/api/src/agents/trading-agent/endpoint-control.ts`
+  - `apps/api/src/agents/trading-agent/endpoint-inspection.ts`
+  - `apps/api/src/agents/trading-agent/endpoint-trades.ts`
 
-Expected outcome:
+Verified outcome:
 
-- transport, state, scheduling, and request handling stop living in one file
-- Durable Object behavior becomes discoverable by filename
-- tests can target narrower runtime units
+- the root Durable Object file is now a thin compatibility export
+- runtime behavior is discoverable by filename
+- request handling no longer shares one oversized module
 
-## Phase 5: LLM Router Split
+### Phase 5: LLM Router Split
 
-Priority: highest
+Completed:
 
-Primary target:
+- `apps/api/src/services/llm-router.ts` is now a thin export surface
+- the implementation lives under:
+  - `apps/api/src/services/llm-router/index.ts`
+  - `apps/api/src/services/llm-router/provider-selection.ts`
+  - `apps/api/src/services/llm-router/request-builders.ts`
+  - `apps/api/src/services/llm-router/response-parsers.ts`
+  - `apps/api/src/services/llm-router/types.ts`
 
-- `apps/api/src/services/llm-router.ts`
+### Phase 6: Market and Price Service Cleanup
 
-Target structure:
+Completed:
 
-- `apps/api/src/services/llm-router/index.ts`
-- `apps/api/src/services/llm-router/provider-selection.ts`
-- `apps/api/src/services/llm-router/request-builders.ts`
-- `apps/api/src/services/llm-router/response-parsers.ts`
-- `apps/api/src/services/llm-router/schema-instructions.ts` only if it remains meaningfully separate
+- `apps/api/src/services/coingecko-price.ts` is now a thin export surface
+- provider-specific work lives under `apps/api/src/services/coingecko-price/*`
+- cache keys and TTLs now have shared production sources under:
+  - `apps/api/src/cache/keys.ts`
+  - `apps/api/src/cache/ttl.ts`
+- cache tests import production constants instead of copying literals
 
-Expected outcome:
+### Phase 7: Route Helper Unification
 
-- provider selection, prompt construction, and response parsing are no longer interleaved
-- adding a provider or changing schema instructions becomes a local change
+Completed:
 
-## Phase 6: Market and Price Service Cleanup
+- shared route helpers now exist under:
+  - `apps/api/src/routes/_shared/owned-entity.ts`
+  - `apps/api/src/routes/_shared/json-response.ts`
+  - `apps/api/src/routes/_shared/parse-stored-json.ts`
+  - `apps/api/src/routes/_shared/format-stored-entity.ts`
+- `agents-route/shared.ts` and `managers-route/shared.ts` now reuse those helpers
+- `auth.ts` and `pairs.ts` now consume the shared response layer
 
-Priority: high
+### Phase 8: Shared Auth, Cache, and Constants Surface
 
-Primary targets:
+Completed:
 
-- `apps/api/src/services/coingecko-price.ts`
-- `apps/api/src/agents/agent-loop/market.ts`
+- auth session entrypoint: `apps/api/src/auth/session.ts`
+- cache constants: `apps/api/src/cache/ttl.ts`
+- cache keys: `apps/api/src/cache/keys.ts`
+- HTTP JSON responses: `apps/api/src/http/responses.ts`
 
-Split by concern:
+### Phase 9: README and Navigation Layer
 
-- fetch client
-- cache keys and TTL constants
-- response normalization
-- market-domain mapping
-- agent-loop decision input shaping
+Completed:
 
-Expected outcome:
+- `apps/web/features/agents/create/README.md`
+- `apps/web/features/agents/detail/README.md`
+- `apps/web/features/agents/edit/README.md`
+- `apps/web/features/agents/config/README.md`
+- `apps/web/features/managers/detail/README.md`
+- `apps/web/features/managers/config/README.md`
+- `apps/web/utils/initia/README.md`
+- `apps/api/src/agents/README.md`
+- `apps/api/src/routes/README.md`
+- `apps/api/src/services/README.md`
 
-- provider replacement becomes tractable
-- normalization becomes directly testable
-- cache behavior stops being duplicated
+### Phase 10: Replace Phase-Style Tests
 
-## Phase 7: Route Helper Unification
+Completed:
 
-Priority: medium-high
+- removed:
+  - `apps/api/tests/phase1.test.ts`
+  - `apps/api/tests/phase2.test.ts`
+  - `apps/api/tests/phase3.test.ts`
+  - `apps/api/tests/phase4.test.ts`
+  - `apps/api/tests/phase6.test.ts`
+- added behavior/module-named replacements:
+  - `apps/api/tests/utilities-and-agent-config.test.ts`
+  - `apps/api/tests/indicators-and-dex-data.test.ts`
+  - `apps/api/tests/paper-engine.test.ts`
+  - `apps/api/tests/interval-and-risk-controls.test.ts`
+  - `apps/api/tests/snapshot-metrics-and-retry.test.ts`
 
-Primary targets:
+## Verification
 
-- `apps/api/src/routes/auth.ts`
-- `apps/api/src/routes/pairs.ts`
-- shared helpers currently spread across `agents-route/*`, `managers-route/*`, and route-local utilities
+Verified on 2026-04-10:
 
-Suggested shared layout:
+- `pnpm --filter @something-in-loop/api build`
+- `pnpm --filter @something-in-loop/api test`
 
-- `apps/api/src/routes/_shared/owned-entity.ts`
-- `apps/api/src/routes/_shared/json-response.ts`
-- `apps/api/src/routes/_shared/parse-stored-json.ts`
-- `apps/api/src/routes/_shared/format-stored-entity.ts`
+Result:
 
-Likely shared helpers:
+- TypeScript build passed
+- API test suite passed: 28 files, 379 tests passed, 1 skipped
 
-- `withOwnedEntity`
-- `parseStoredJson`
-- `formatStoredEntity`
-- `notFoundJson`
+## Remaining Work
 
-Expected outcome:
+No required work remains for the original refactoring goal.
 
-- route handlers become shorter and more uniform
-- the same route pattern is reused across agents, managers, and general endpoints
+Optional follow-up only:
 
-## Phase 8: Shared Auth, Cache, and Constants Surface
-
-Priority: medium-high
-
-Current state:
-
-- auth already has a partial subsystem under `apps/api/src/lib/auth/*`
-- cache keys and TTL values are still worth consolidating if duplicated across services or tests
-
-Candidate modules:
-
-- `apps/api/src/auth/session.ts` or continue consolidating under `apps/api/src/lib/auth/*`
-- `apps/api/src/cache/keys.ts`
-- `apps/api/src/cache/ttl.ts`
-- `apps/api/src/http/responses.ts`
-
-Expected outcome:
-
-- tests import production constants instead of copying them
-- operational values have a single source of truth
-
-## Phase 9: README and Navigation Layer
-
-Priority: medium
-
-Goal:
-
-- every important feature or subsystem root should explain entrypoints, data flow, and where to edit first
-
-Verified current status:
-
-- done: `apps/web/features/agents/create/README.md`
-- missing: `apps/web/features/agents/detail/README.md`
-- missing: `apps/web/features/agents/edit/README.md`
-- missing: `apps/web/features/agents/config/README.md`
-- done: `apps/web/features/managers/detail/README.md`
-- missing: `apps/web/features/managers/config/README.md`
-- done: `apps/web/utils/initia/README.md`
-- done: `apps/api/src/agents/README.md`
-- done: `apps/api/src/routes/README.md`
-- missing: `apps/api/src/services/README.md`
-
-Each README should answer:
-
-- what is the entrypoint
-- what owns state
-- where behavior should be changed first
-- which related tests matter
-- which large file should not be edited first if a narrower module exists
-
-## Phase 10: Replace Phase-Style Tests
-
-Priority: medium
-
-Phase-style files still present:
-
-- `apps/api/tests/phase1.test.ts`
-- `apps/api/tests/phase2.test.ts`
-- `apps/api/tests/phase3.test.ts`
-- `apps/api/tests/phase4.test.ts`
-- `apps/api/tests/phase6.test.ts`
-
-Good examples already present:
-
-- `apps/api/tests/coingecko-price.test.ts`
-- `apps/api/tests/manager-loop.test.ts`
+- if desired, split `apps/api/src/routes/auth.ts` and `apps/api/src/routes/pairs.ts` further to get them below the preferred 250 LOC target, even though both are already below the 350 LOC review threshold and now sit on shared helper surfaces
 - `apps/api/tests/managers-route-utils.test.ts`
 - `apps/api/tests/pairs-normalization.test.ts`
 

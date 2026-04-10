@@ -3,19 +3,13 @@
  * Tests that cache keys are stable, unique per query, and that purge prefix matching works.
  */
 import { describe, it, expect } from 'vitest';
+import { dexPairKey, dexSearchKey, dexTokenPairsKey, geckoOhlcvKey, geckoSearchKey } from '../src/cache/keys.js';
+import { MARKET_DATA_CACHE_TTL_SECONDS, TOP_PAIRS_CACHE_TTL_SECONDS } from '../src/cache/ttl.js';
 import { CACHE_PREFIXES } from '../src/routes/health.js';
 
 // ── Cache key format ──────────────────────────────────────────────────────────
 
 describe('GeckoTerminal cache key generation', () => {
-  function geckoSearchKey(query: string): string {
-    return `gecko:search:${query.toLowerCase().replace(/\s+/g, '-')}`;
-  }
-
-  function geckoOhlcvKey(address: string, timeframe: 'hour' | 'day', limit: number): string {
-    return `gecko:ohlcv:base:${address.toLowerCase()}:${timeframe}:${limit}`;
-  }
-
   it('generates stable search keys (lowercase, spaces to dashes)', () => {
     expect(geckoSearchKey('WETH USDC')).toBe('gecko:search:weth-usdc');
     expect(geckoSearchKey('weth usdc')).toBe('gecko:search:weth-usdc');
@@ -49,18 +43,6 @@ describe('GeckoTerminal cache key generation', () => {
 });
 
 describe('DexScreener cache key generation', () => {
-  function dexSearchKey(query: string): string {
-    return `dex:search:${query.toLowerCase().replace(/\s+/g, '-')}`;
-  }
-
-  function dexTokenPairsKey(address: string): string {
-    return `dex:token-pairs:${address.toLowerCase()}`;
-  }
-
-  function dexPairKey(chain: string, pairAddress: string): string {
-    return `dex:pair:${chain}:${pairAddress.toLowerCase()}`;
-  }
-
   it('generates stable search keys', () => {
     expect(dexSearchKey('WETH USDC')).toBe('dex:search:weth-usdc');
   });
@@ -77,22 +59,19 @@ describe('DexScreener cache key generation', () => {
 // ── Cache TTL values ──────────────────────────────────────────────────────────
 
 describe('cache TTL strategy', () => {
-  const MARKET_DATA_TTL = 900; // 15 min
-  const TOP_PAIRS_TTL = 300;   // 5 min
-
   it('market data TTL is at least 5 minutes', () => {
-    expect(MARKET_DATA_TTL).toBeGreaterThanOrEqual(300);
+    expect(MARKET_DATA_CACHE_TTL_SECONDS).toBeGreaterThanOrEqual(300);
   });
 
   it('top pairs TTL is shorter than market data TTL', () => {
-    expect(TOP_PAIRS_TTL).toBeLessThan(MARKET_DATA_TTL);
+    expect(TOP_PAIRS_CACHE_TTL_SECONDS).toBeLessThan(MARKET_DATA_CACHE_TTL_SECONDS);
   });
 
   it('TTL values are positive integers', () => {
-    expect(Number.isInteger(MARKET_DATA_TTL)).toBe(true);
-    expect(Number.isInteger(TOP_PAIRS_TTL)).toBe(true);
-    expect(MARKET_DATA_TTL).toBeGreaterThan(0);
-    expect(TOP_PAIRS_TTL).toBeGreaterThan(0);
+    expect(Number.isInteger(MARKET_DATA_CACHE_TTL_SECONDS)).toBe(true);
+    expect(Number.isInteger(TOP_PAIRS_CACHE_TTL_SECONDS)).toBe(true);
+    expect(MARKET_DATA_CACHE_TTL_SECONDS).toBeGreaterThan(0);
+    expect(TOP_PAIRS_CACHE_TTL_SECONDS).toBeGreaterThan(0);
   });
 });
 

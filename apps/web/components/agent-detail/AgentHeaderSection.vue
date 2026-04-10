@@ -8,6 +8,8 @@ const props = defineProps<{
   analyzeStatusText: string;
   clearingHistory: boolean;
   menuOpen: boolean;
+  livePricesLoading: boolean;
+  livePricesError: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +44,8 @@ function formatInterval(val: string) {
       </div>
       <p class="page-subtitle">
         {{ agent.llmModel.split('/')[1] ?? agent.llmModel }} · {{ formatInterval(agent.config.analysisInterval) }} interval · temp {{ (agent.config.temperature ?? 0.7).toFixed(1) }}
+        <span v-if="livePricesLoading" class="mono" style="opacity: 0.7;"> · fetching live prices…</span>
+        <span v-else-if="livePricesError" class="mono" style="opacity: 0.7;"> · live price unavailable</span>
       </p>
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">
@@ -137,9 +141,9 @@ function formatInterval(val: string) {
 }
 
 .btn-analyze-active {
-  background: var(--surface-2, #1a1a2e);
-  border: 1px solid var(--accent, #6366f1);
-  color: var(--text, #e2e8f0);
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  color: var(--text);
   cursor: wait;
   gap: 6px;
   min-width: 180px;
@@ -149,7 +153,7 @@ function formatInterval(val: string) {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent, #6366f1);
+  background: var(--accent);
   animation: analyze-blink 1.2s ease-in-out infinite;
   flex-shrink: 0;
 }

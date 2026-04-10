@@ -235,10 +235,6 @@ export function useAgentDetailPage(id: string) {
     snapshots.value = p.snapshots;
   }
 
-  async name( params ) {
-
-  }
-
   async function loadAll() {
     loading.value = true;
     loadError.value = null;

@@ -4,7 +4,6 @@ import { useAgentDetailPage } from '~/features/agents/detail/useAgentDetailPage'
 
 import AgentHeaderSection from '~/components/agent-detail/AgentHeaderSection.vue';
 import AgentStatsSection from '~/components/agent-detail/AgentStatsSection.vue';
-import AgentOnchainSection from '~/components/agent-detail/AgentOnchainSection.vue';
 import AgentLiveStatusSection from '~/components/agent-detail/AgentLiveStatusSection.vue';
 import AgentDecisionsLog from '~/components/agent-detail/AgentDecisionsLog.vue';
 import AgentPositionsSection from '~/components/agent-detail/AgentPositionsSection.vue';
@@ -26,16 +25,9 @@ const {
   livePrices,
   livePricesLoading,
   livePricesError,
-  clearingHistory,
-  autoSignBusy,
-  autoSignError,
   menuOpen,
   personaEmoji,
-  isInitiaAgent,
-  autoSignEnabled,
-  autoSignButtonLabel,
-  autoSignButtonTitle,
-  autoSignMismatch,
+  clearingHistory,
   isModelUnavailableError,
   openTrades,
   closedTrades,
@@ -95,6 +87,8 @@ definePageMeta({ ssr: false });
         :is-analyzing="isAnalyzing"
         :analyze-status-text="analyzeStatusText"
         :clearing-history="clearingHistory"
+        :live-prices-loading="livePricesLoading"
+        :live-prices-error="livePricesError"
         @analyze="handleAnalyze"
         @start="handleStart"
         @stop="handleStop"
@@ -141,18 +135,6 @@ definePageMeta({ ssr: false });
         :total-tokens-used="totalTokensUsed"
         :total-prompt-tokens="totalPromptTokens"
         :total-completion-tokens="totalCompletionTokens"
-      />
-
-      <AgentOnchainSection
-        :agent="agent"
-        :is-initia-agent="isInitiaAgent"
-        :auto-sign-enabled="autoSignEnabled"
-        :auto-sign-busy="autoSignBusy"
-        :auto-sign-error="autoSignError"
-        :auto-sign-button-label="autoSignButtonLabel"
-        :auto-sign-button-title="autoSignButtonTitle"
-        :auto-sign-mismatch="autoSignMismatch"
-        @toggle-auto-sign="handleToggleAutoSign"
       />
 
       <AgentDecisionsLog

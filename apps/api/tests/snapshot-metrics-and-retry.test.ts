@@ -1,12 +1,11 @@
 /**
- * Phase 6 tests — Polish
- * Tests performance metrics computation, rate limiting, and retry logic.
+ * Snapshot metrics, retry helper, and rate-limit math tests.
  */
 import { describe, it, expect } from 'vitest';
 import { computeMetrics } from '../src/services/snapshot.js';
-import { retry, sleep } from '../src/lib/utils.js';
+import { retry } from '../src/lib/utils.js';
 
-describe('Phase 6: Performance Metrics', () => {
+describe('snapshot metrics', () => {
   it('computes metrics for empty trades', () => {
     const metrics = computeMetrics([], 10000, 10000);
     expect(metrics.totalTrades).toBe(0);
@@ -26,11 +25,11 @@ describe('Phase 6: Performance Metrics', () => {
     ];
     const metrics = computeMetrics(closed, 10000, 10137);
     expect(metrics.totalTrades).toBe(5);
-    expect(metrics.winRate).toBeCloseTo(0.6); // 3 wins / 5 trades
+    expect(metrics.winRate).toBeCloseTo(0.6);
     expect(metrics.totalPnlPct).toBeCloseTo(1.37, 1);
   });
 
-  it('computes Sharpe ratio for >= 5 trades', () => {
+  it('computes Sharpe ratio for at least five trades', () => {
     const closed = [
       { pnlPct: 5.2, pnlUsd: 52 },
       { pnlPct: -2.1, pnlUsd: -21 },
@@ -40,23 +39,19 @@ describe('Phase 6: Performance Metrics', () => {
     ];
     const metrics = computeMetrics(closed, 10000, 10137);
     expect(metrics.sharpeRatio).not.toBeNull();
-    expect(typeof metrics.sharpeRatio).toBe('number');
-    expect(metrics.sharpeRatio!).toBeGreaterThan(0); // positive expectancy
+    expect(metrics.sharpeRatio!).toBeGreaterThan(0);
   });
 
-  it('returns null Sharpe for < 5 trades', () => {
-    const closed = [
+  it('returns null Sharpe for fewer than five trades', () => {
+    const metrics = computeMetrics([
       { pnlPct: 5, pnlUsd: 50 },
       { pnlPct: -2, pnlUsd: -20 },
-    ];
-    const metrics = computeMetrics(closed, 10000, 10030);
+    ], 10000, 10030);
     expect(metrics.sharpeRatio).toBeNull();
   });
 
   it('computes max drawdown correctly', () => {
-    // cumulative PnL: 5, 8, 0, -4, 2, 0, 3
-    // peak = 8 at position 2, then drops to -4 at position 4 → drawdown of 12
-    const closed = [
+    const metrics = computeMetrics([
       { pnlPct: 5, pnlUsd: 50 },
       { pnlPct: 3, pnlUsd: 30 },
       { pnlPct: -8, pnlUsd: -80 },
@@ -64,67 +59,53 @@ describe('Phase 6: Performance Metrics', () => {
       { pnlPct: 6, pnlUsd: 60 },
       { pnlPct: -2, pnlUsd: -20 },
       { pnlPct: 3, pnlUsd: 30 },
-    ];
-    const metrics = computeMetrics(closed, 10000, 10030);
+    ], 10000, 10030);
     expect(metrics.maxDrawdown).not.toBeNull();
     expect(metrics.maxDrawdown!).toBeCloseTo(12, 1);
   });
 
-  it('returns null drawdown for < 2 trades', () => {
-    const closed = [{ pnlPct: 5, pnlUsd: 50 }];
-    const metrics = computeMetrics(closed, 10000, 10050);
+  it('returns null drawdown for fewer than two trades', () => {
+    const metrics = computeMetrics([{ pnlPct: 5, pnlUsd: 50 }], 10000, 10050);
     expect(metrics.maxDrawdown).toBeNull();
   });
 
   it('computes negative total PnL correctly', () => {
-    const closed = [
+    const metrics = computeMetrics([
       { pnlPct: -5, pnlUsd: -500 },
       { pnlPct: -3, pnlUsd: -300 },
-    ];
-    const metrics = computeMetrics(closed, 10000, 9200);
+    ], 10000, 9200);
     expect(metrics.totalPnlPct).toBeCloseTo(-8, 1);
     expect(metrics.winRate).toBe(0);
   });
 });
 
-describe('Phase 6: Retry logic', () => {
+describe('retry helper', () => {
   it('retries on failure and succeeds', async () => {
     let attempts = 0;
-    const result = await retry(
-      async () => {
-        attempts++;
-        if (attempts < 3) throw new Error('Transient error');
-        return 'success';
-      },
-      3,
-      10 // short delay for tests
-    );
+    const result = await retry(async () => {
+      attempts++;
+      if (attempts < 3) throw new Error('Transient error');
+      return 'success';
+    }, 3, 10);
     expect(result).toBe('success');
     expect(attempts).toBe(3);
   });
 
   it('throws after max attempts', async () => {
     let attempts = 0;
-    await expect(
-      retry(
-        async () => {
-          attempts++;
-          throw new Error('Always fails');
-        },
-        3,
-        10
-      )
-    ).rejects.toThrow('Always fails');
+    await expect(retry(async () => {
+      attempts++;
+      throw new Error('Always fails');
+    }, 3, 10)).rejects.toThrow('Always fails');
     expect(attempts).toBe(3);
   });
 
   it('succeeds on first attempt without retry', async () => {
-    const result = await retry(async () => 42, 3, 10);
-    expect(result).toBe(42);
+    expect(await retry(async () => 42, 3, 10)).toBe(42);
   });
 });
 
-describe('Phase 6: Rate limit calculation', () => {
+describe('rate limit math', () => {
   it('computes window key correctly', () => {
     const nowSec = Math.floor(Date.now() / 1000);
     const windowSecs = 60;

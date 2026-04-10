@@ -1,7 +1,9 @@
+import { COINGECKO_CHART_CACHE_TTL_SECONDS, COINGECKO_SPOT_CACHE_TTL_SECONDS } from '../../cache/ttl.js';
+
 export const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 export const COINPAPRIKA_BASE = 'https://api.coinpaprika.com/v1';
-export const CACHE_TTL_SECONDS = 60;
-export const CHART_CACHE_TTL_SECONDS = 300;
+export const CACHE_TTL_SECONDS = COINGECKO_SPOT_CACHE_TTL_SECONDS;
+export const CHART_CACHE_TTL_SECONDS = COINGECKO_CHART_CACHE_TTL_SECONDS;
 export const FETCH_TIMEOUT_MS = 8_000;
 
 const STABLE_QUOTES = new Set(['USD', 'USDC', 'USDBC', 'USDT', 'DAI']);

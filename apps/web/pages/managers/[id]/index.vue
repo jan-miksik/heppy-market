@@ -64,7 +64,7 @@ await init();
         :status-badge-class="statusBadgeClass"
         :action-loading="actionLoading"
         :deciding="!!doStatus?.deciding"
-        :last-decision-ms="doStatus?.lastDecisionMs"
+        :last-decision-ms="doStatus?.lastDecisionMs ?? undefined"
         @action="doAction"
         @trigger="triggerDecision"
         @delete="showDeleteModal = true"

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { dexPairKey, dexSearchKey, dexTokenPairsKey, dexTopPairsKey } from '../cache/keys.js';
+import { HOT_CACHE_TTL_MS, MARKET_DATA_CACHE_TTL_SECONDS, TOP_PAIRS_CACHE_TTL_SECONDS } from '../cache/ttl.js';
 
 // ─── DexScreener API types ────────────────────────────────────────────────────
 
@@ -70,9 +72,6 @@ const PairsResponseSchema = z.object({
 // ─── DexScreener client ───────────────────────────────────────────────────────
 
 const DEXSCREENER_BASE = 'https://api.dexscreener.com/latest/dex';
-const CACHE_TTL_SECONDS = 900; // 15 min — matches frontend cache window, shared across agents on same pair
-const TOP_PAIRS_CACHE_TTL = 300; // 5 minutes for top pairs list
-const HOT_CACHE_TTL_MS = 20_000; // short per-isolate cache to suppress repeated KV reads
 const HOT_CACHE_MAX_ENTRIES = 2_000;
 
 type HotCacheEntry = {
@@ -194,7 +193,7 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
     setHotCached(cacheKey, parsed.data);
     try {
       await cache.put(cacheKey, JSON.stringify(json), {
-        expirationTtl: CACHE_TTL_SECONDS,
+        expirationTtl: MARKET_DATA_CACHE_TTL_SECONDS,
       });
     } catch (err) {
       console.warn(`cache_error service=dex-data op=put key=${cacheKey}`, err);
@@ -205,7 +204,7 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
 
   return {
     async searchPairs(query: string): Promise<DexPair[]> {
-      const cacheKey = `dex:search:${query.toLowerCase().replace(/\s+/g, '-')}`;
+      const cacheKey = dexSearchKey(query);
       const url = `${DEXSCREENER_BASE}/search?q=${encodeURIComponent(query)}`;
       const data = await cachedFetch(cacheKey, url, SearchResponseSchema);
       return data.pairs ?? [];
@@ -215,21 +214,21 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
       chain: string,
       pairAddress: string
     ): Promise<DexPair[]> {
-      const cacheKey = `dex:pair:${chain}:${pairAddress.toLowerCase()}`;
+      const cacheKey = dexPairKey(chain, pairAddress);
       const url = `${DEXSCREENER_BASE}/pairs/${chain}/${pairAddress}`;
       const data = await cachedFetch(cacheKey, url, PairsResponseSchema);
       return data.pairs ?? [];
     },
 
     async getTokenPairs(tokenAddress: string): Promise<DexPair[]> {
-      const cacheKey = `dex:token:${tokenAddress.toLowerCase()}`;
+      const cacheKey = dexTokenPairsKey(tokenAddress);
       const url = `${DEXSCREENER_BASE}/tokens/${tokenAddress}`;
       const data = await cachedFetch(cacheKey, url, PairsResponseSchema);
       return data.pairs ?? [];
     },
 
     async getTopPairsForChain(chainId: string): Promise<DexPair[]> {
-      const cacheKey = `dex:top:${chainId.toLowerCase()}`;
+      const cacheKey = dexTopPairsKey(chainId);
       if (!bypassCache) {
         const hot = getHotCached<DexPair[]>(cacheKey);
         if (hot !== null) return hot;
@@ -278,7 +277,7 @@ export function createDexDataService(cache: KVNamespace, { bypassCache = false }
       setHotCached(cacheKey, sorted);
       try {
         await cache.put(cacheKey, JSON.stringify(sorted), {
-          expirationTtl: TOP_PAIRS_CACHE_TTL,
+          expirationTtl: TOP_PAIRS_CACHE_TTL_SECONDS,
         });
       } catch (err) {
         console.warn(`cache_error service=dex-data op=put key=${cacheKey}`, err);
