@@ -430,6 +430,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
               <td style="font-size: 18px; line-height: 1;">{{ agentEmoji(agent) }}</td>
               <td>
                 <span style="font-weight: 500; color: var(--text);">{{ agent.name }}</span>
+                <span v-if="agent.isPaper" class="paper-tag">PAPER</span>
                 <span v-if="agent.managerId" class="managed-tag">🧠 managed</span>
               </td>
               <td v-if="visibleColumns.status">
@@ -572,6 +573,22 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
   color: var(--text-muted);
   margin-left: 2px;
 }
+.paper-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  color: #d97706;
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+}
+
 .managed-tag {
   display: inline-flex;
   align-items: center;

@@ -46,18 +46,22 @@ export function registerAgentCoreRoutes(agentsRoute: AgentsRoute): void {
 
     const profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : null;
 
+    const isPaper = body.isPaper ?? false;
+
     await db.insert(agents).values({
       id,
       name: body.name,
       status: 'stopped',
       autonomyLevel: 2,
       chain,
+      isPaper,
       config: JSON.stringify(config),
       llmModel: body.llmModel,
       ownerAddress: walletAddress,
       profileId,
       personaMd: body.personaMd ?? null,
-      initiaWalletAddress: chain === 'initia' ? initiaWalletAddress : null,
+      // Paper agents never have on-chain state; ignore wallet address even if sent
+      initiaWalletAddress: (!isPaper && chain === 'initia') ? initiaWalletAddress : null,
       initiaMetadataHash: body.initiaMetadataHash ?? null,
       initiaMetadataVersion: body.initiaMetadataVersion ?? null,
       createdAt: now,
@@ -124,6 +128,7 @@ export function registerAgentCoreRoutes(agentsRoute: AgentsRoute): void {
         updates.profileId = typeof body.profileId === 'string' ? resolveAgentProfileId(body.profileId) : body.profileId ?? null;
       }
       if (body.personaMd !== undefined) updates.personaMd = body.personaMd ?? null;
+      if (body.isPaper !== undefined) updates.isPaper = body.isPaper;
       if (body.initiaWalletAddress !== undefined) updates.initiaWalletAddress = nextInitiaWalletAddress;
       if (body.initiaMetadataHash !== undefined) updates.initiaMetadataHash = body.initiaMetadataHash ?? null;
       if (body.initiaMetadataVersion !== undefined) updates.initiaMetadataVersion = body.initiaMetadataVersion ?? null;

@@ -1,14 +1,11 @@
 # Copy this file to .dev.vars for local development with wrangler dev
-# .dev.vars is gitignored — never commit your real keys
+INITIA_EVM_RPC=http://localhost:8545
 
 # Required: get a free key at https://openrouter.ai → Dashboard → API Keys
 OPENROUTER_API_KEY=sk-or-v1-xxxxx
 
-# Optional: only needed if you want to use Claude models (paid)
-# ANTHROPIC_API_KEY=sk-ant-xxxxx
-
-# Optional: Initia onchain executor settings (for autonomous executeTick)
-# INITIA_EVM_RPC=http://localhost:8545
-# INITIA_EVM_CHAIN_ID=2178983797612220
-# INITIA_AGENT_CONTRACT_ADDRESS=0x...
-# INITIA_EXECUTOR_PRIVATE_KEY=0x...
+KEY_ENCRYPTION_SECRET=
+INITIA_EVM_CHAIN_ID=
+INITIA_AGENT_CONTRACT_ADDRESS=
+MOCK_PERP_DEX_ADDRESS=
+INITIA_EXECUTOR_PRIVATE_KEY= 

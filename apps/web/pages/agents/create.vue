@@ -9,6 +9,7 @@ import { useAgentCreateFlow } from '~/features/agents/create/useAgentCreateFlow'
 const configFormRef = ref<InstanceType<typeof AgentConfigForm> | null>(null);
 const {
   step,
+  isPaper,
   fundAmount,
   faucetAmount,
   createdAgentId,
@@ -50,24 +51,40 @@ const {
           <span class="step-item__num">1</span>
           <span class="step-item__label">Configure agent</span>
         </button>
-        <span class="step-arrow">→</span>
-        <button
-          class="step-item"
-          :class="{ 'step-item--active': step === 2, 'step-item--pending': !createdAgentId }"
-          :disabled="!createdAgentId"
-          @click="goToStep(2)"
-        >
-          <span class="step-item__num">2</span>
-          <span class="step-item__label">Fund agent</span>
-        </button>
+        <template v-if="!isPaper">
+          <span class="step-arrow">→</span>
+          <button
+            class="step-item"
+            :class="{ 'step-item--active': step === 2, 'step-item--pending': !createdAgentId }"
+            :disabled="!createdAgentId"
+            @click="goToStep(2)"
+          >
+            <span class="step-item__num">2</span>
+            <span class="step-item__label">Fund agent</span>
+          </button>
+        </template>
       </nav>
 
       <div class="edit-bar__actions">
         <template v-if="step === 1">
+          <div class="mode-toggle">
+            <button
+              class="mode-toggle__btn"
+              :class="{ 'mode-toggle__btn--active': !isPaper }"
+              type="button"
+              @click="isPaper = false"
+            >Real</button>
+            <button
+              class="mode-toggle__btn"
+              :class="{ 'mode-toggle__btn--active': isPaper, 'mode-toggle__btn--paper': isPaper }"
+              type="button"
+              @click="isPaper = true"
+            >Paper</button>
+          </div>
           <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
-          <button type="submit" form="agent-config-form" class="edit-bar__save" :disabled="creating">
+          <button type="submit" form="agent-config-form" class="edit-bar__save" :class="{ 'edit-bar__save--paper': isPaper }" :disabled="creating">
             <span v-if="creating" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
-            {{ onchainStatus || (creating ? 'Creating...' : 'Create Agent →') }}
+            {{ creating ? 'Creating...' : (isPaper ? 'Create Paper Agent →' : (onchainStatus || 'Create Agent →')) }}
           </button>
         </template>
         <template v-else>
@@ -78,12 +95,17 @@ const {
       </div>
     </div>
 
+    <div v-if="isPaper && step === 1" class="paper-callout">
+      <span class="paper-callout__icon">📄</span>
+      <span>Paper Trading — simulated balance, no wallet or on-chain transaction needed. Set your starting balance below.</span>
+    </div>
+
     <div v-show="step === 1" class="edit-page__body">
       <div class="edit-page__left">
         <AgentConfigForm
           ref="configFormRef"
           hide-persona-editor
-          hide-balance-input
+          :hide-balance-input="false"
           :hide-footer="true"
           @submit="handleNext"
           @cancel="handleCancel"
@@ -95,7 +117,7 @@ const {
       </div>
     </div>
 
-    <div v-if="step === 2">
+    <div v-if="step === 2 && !isPaper">
       <AgentCreateFundingStep
         v-model:fund-amount="fundAmount"
         v-model:faucet-amount="faucetAmount"
@@ -280,6 +302,60 @@ const {
 
 .edit-bar__save:hover { background: #fff; }
 .edit-bar__save:disabled { opacity: 0.35; cursor: not-allowed; }
+.edit-bar__save--paper { background: #d97706; color: #fff; }
+.edit-bar__save--paper:hover { background: #f59e0b; }
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-right: 6px;
+}
+
+.mode-toggle__btn {
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #555;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mode-toggle__btn--active {
+  background: #2a2a2a;
+  color: #e0e0e0;
+}
+
+.mode-toggle__btn--paper.mode-toggle__btn--active {
+  background: color-mix(in srgb, #d97706 20%, transparent);
+  color: #d97706;
+}
+
+.paper-callout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, #d97706 8%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+  border-radius: 4px;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: #d97706;
+  max-width: 740px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.paper-callout__icon { font-style: normal; flex-shrink: 0; }
 
 .edit-page__body {
   display: flex;

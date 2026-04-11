@@ -22,6 +22,33 @@ const emit = defineEmits<{
 }>();
 
 const menuRef = ref<HTMLElement | null>(null);
+const { updateAgent } = useAgents();
+
+const editingBalance = ref(false);
+const balanceInput = ref('');
+const savingBalance = ref(false);
+
+function openBalanceEdit() {
+  balanceInput.value = String(props.agent.config.paperBalance ?? 0);
+  editingBalance.value = true;
+}
+
+function cancelBalanceEdit() {
+  editingBalance.value = false;
+}
+
+async function saveBalance() {
+  const val = Number(balanceInput.value);
+  if (!Number.isFinite(val) || val < 0) return;
+  savingBalance.value = true;
+  try {
+    await updateAgent(props.agent.id, { paperBalance: val });
+    props.agent.config.paperBalance = val;
+    editingBalance.value = false;
+  } finally {
+    savingBalance.value = false;
+  }
+}
 
 function formatInterval(val: string) {
   if (val === '1h') return '1h';
@@ -40,6 +67,7 @@ function formatInterval(val: string) {
           <span v-if="personaEmoji" class="agent-emoji" style="margin-right: 6px;">{{ personaEmoji }}</span>
           {{ agent.name }}
         </h1>
+        <span v-if="agent.isPaper" class="paper-badge">PAPER</span>
         <span class="badge" :class="`badge-${agent.status}`">{{ agent.status }}</span>
       </div>
       <p class="page-subtitle">
@@ -49,10 +77,40 @@ function formatInterval(val: string) {
       </p>
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">
-      <AgentFundPanel 
-        :agent-id="agent.id" 
-        :current-balance="agent.config.paperBalance" 
-        @done="(bal) => { agent.config.paperBalance = bal; }" 
+      <button
+        v-if="agent.isPaper"
+        class="btn btn-go-live btn-sm"
+        @click="$router.push(`/agents/create?from=${agent.id}`)"
+        title="Convert this paper agent to a real agent"
+      >
+        Go Live →
+      </button>
+      <template v-if="agent.isPaper">
+        <template v-if="editingBalance">
+          <input
+            v-model="balanceInput"
+            type="number"
+            min="0"
+            step="1"
+            class="balance-input"
+            :disabled="savingBalance"
+            @keydown.enter="saveBalance"
+            @keydown.esc="cancelBalanceEdit"
+          >
+          <button class="btn btn-success btn-sm" :disabled="savingBalance" @click="saveBalance">
+            {{ savingBalance ? '…' : '✓' }}
+          </button>
+          <button class="btn btn-ghost btn-sm" :disabled="savingBalance" @click="cancelBalanceEdit">✕</button>
+        </template>
+        <button v-else class="btn btn-ghost btn-sm" title="Edit paper balance" @click="openBalanceEdit">
+          ✎ Balance
+        </button>
+      </template>
+      <AgentFundPanel
+        v-else
+        :agent-id="agent.id"
+        :current-balance="agent.config.paperBalance"
+        @done="(bal) => { agent.config.paperBalance = bal; }"
       />
       <button
         class="btn btn-sm"
@@ -86,6 +144,49 @@ function formatInterval(val: string) {
 </template>
 
 <style scoped>
+.balance-input {
+  width: 100px;
+  height: 28px;
+  background: var(--bg, #0a0a0a);
+  border: 1px solid var(--accent, #7c6af7);
+  border-radius: 3px;
+  color: var(--text, #e0e0e0);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 0 8px;
+  outline: none;
+}
+
+.paper-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  color: #d97706;
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+}
+
+.btn-go-live {
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  color: #d97706;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn-go-live:hover {
+  background: color-mix(in srgb, #d97706 22%, transparent);
+  border-color: #d97706;
+}
+
 .agent-dot-menu {
   position: absolute;
   top: calc(100% + 4px);

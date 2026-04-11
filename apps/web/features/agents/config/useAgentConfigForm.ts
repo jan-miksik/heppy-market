@@ -8,6 +8,7 @@ import {
   resolveAgentProfileId,
 } from '@something-in-loop/shared';
 import type { CreateAgentPayload } from '~/composables/useAgents';
+import { useAgents } from '~/composables/useAgents';
 import type { ProfileItem } from '~/composables/useProfiles';
 
 export function useAgentConfigForm(props: {
@@ -17,7 +18,9 @@ export function useAgentConfigForm(props: {
   const { initConnect } = useOpenRouter();
   const route = useRoute();
 
+  const { getAgent } = useAgents();
   const isEditing = computed(() => !!props.initialValues);
+  const loadingFrom = ref(false);
   const isTester = computed(() => user.value?.role === 'tester');
   const hasOwnKey = computed(() => !!user.value?.openRouterKeySet);
   const openRouterRedirecting = ref(false);
@@ -229,6 +232,50 @@ export function useAgentConfigForm(props: {
         isRoleCustomized.value = true;
       }
       initialSubmitPayload.value = buildSubmitPayload();
+    } else if (route.query.from) {
+      // Pre-fill from a paper agent (Go Live flow)
+      loadingFrom.value = true;
+      getAgent(String(route.query.from))
+        .then((sourceAgent) => {
+          const cfg = sourceAgent.config ?? {};
+          const allowed = new Set<string>(AVAILABLE_PAIRS);
+
+          Object.assign(form, {
+            name: sourceAgent.name,
+            llmModel: sourceAgent.llmModel ?? DEFAULT_FREE_AGENT_MODEL,
+            pairs: ((cfg.pairs as string[]) ?? ['INIT/USD']).filter((p) => allowed.has(p)),
+            paperBalance: cfg.paperBalance ?? 10_000,
+            strategies: cfg.strategies ?? ['combined'],
+            analysisInterval: cfg.analysisInterval ?? '1h',
+            maxPositionSizePct: cfg.maxPositionSizePct ?? 5,
+            stopLossPct: cfg.stopLossPct ?? 5,
+            takeProfitPct: cfg.takeProfitPct ?? 7,
+            maxOpenPositions: cfg.maxOpenPositions ?? 3,
+            temperature: cfg.temperature ?? 0.7,
+            allowFallback: cfg.allowFallback ?? false,
+          });
+
+          if (form.pairs.length === 0) form.pairs = [AVAILABLE_PAIRS[0]];
+
+          if (cfg.behavior) behavior.value = cfg.behavior as Record<string, unknown>;
+          if (sourceAgent.profileId) {
+            selectedProfileId.value = resolveAgentProfileId(sourceAgent.profileId);
+          }
+          if (sourceAgent.personaMd) {
+            personaMd.value = sourceAgent.personaMd;
+            isPersonaCustomized.value = true;
+          } else if (selectedProfileId.value) {
+            generatePersonaMd();
+          }
+
+          syncNameWithModel.value = false;
+        })
+        .catch(() => {
+          form.name = generateName();
+        })
+        .finally(() => {
+          loadingFrom.value = false;
+        });
     } else {
       form.name = generateName();
     }
@@ -236,6 +283,7 @@ export function useAgentConfigForm(props: {
 
   return {
     form,
+    loadingFrom,
     behavior,
     personaMd,
     behaviorMd,

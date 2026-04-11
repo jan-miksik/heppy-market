@@ -12,6 +12,7 @@ export interface Agent {
   name: string;
   status: 'running' | 'stopped' | 'paused';
   chain: 'base' | 'initia';
+  isPaper: boolean;
   llmModel: string;
   config: {
     pairs: string[];
@@ -34,8 +35,10 @@ export interface Agent {
 }
 
 export interface CreateAgentPayload {
-  name: string;  pairs?: string[];
+  name: string;
+  pairs?: string[];
   chain?: 'base' | 'initia';
+  isPaper?: boolean;
   paperBalance?: number;
   strategies?: string[];
   analysisInterval?: string;

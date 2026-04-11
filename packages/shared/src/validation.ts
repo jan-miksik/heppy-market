@@ -73,6 +73,7 @@ export const AgentConfigSchema = z.object({
 
   // Trading
   chain: CHAIN_SCHEMA.default('base'),
+  isPaper: z.boolean().default(false),
   dexes: z
     .array(z.enum(['aerodrome', 'uniswap-v3']))
     .default(['aerodrome', 'uniswap-v3']),
@@ -164,6 +165,7 @@ export const CreateAgentRequestSchema = z.object({
   maxLlmCallsPerHour: z.number().min(1).max(60).default(12),
   temperature: z.number().min(0).max(2).default(0.7),
   chain: CHAIN_SCHEMA.default('base'),
+  isPaper: z.boolean().default(false),
   dexes: z
     .array(z.enum(['aerodrome', 'uniswap-v3']))
     .default(['aerodrome', 'uniswap-v3']),

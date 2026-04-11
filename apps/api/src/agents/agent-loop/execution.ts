@@ -82,13 +82,14 @@ export async function executeTradeDecision(
   const [agentRow] = await db
     .select({
       chain: agents.chain,
+      isPaper: agents.isPaper,
       initiaSyncState: agents.initiaSyncState,
     })
     .from(agents)
     .where(eq(agents.id, agentId))
     .limit(1);
   const initiaSyncState = parseInitiaSyncState(agentRow?.initiaSyncState ?? null);
-  const shouldAttemptOnchain = agentRow?.chain === 'initia';
+  const shouldAttemptOnchain = agentRow?.chain === 'initia' && !agentRow?.isPaper;
   let executedPaperTrade = false;
 
   const decisionId = generateId('dec');

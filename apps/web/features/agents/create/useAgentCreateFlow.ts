@@ -65,6 +65,7 @@ export function useAgentCreateFlow() {
   } = useAutoSignConsent({ autoSignMgr, enableAutoSign });
 
   const step = ref<1 | 2>(1);
+  const isPaper = ref(false);
   const fundAmount = ref('1000');
   const faucetAmount = ref('1000');
   const createdAgentId = ref<string | null>(null);
@@ -226,7 +227,34 @@ export function useAgentCreateFlow() {
     }
   }
 
+  async function handleNextPaper(payload: Partial<CreateAgentPayload>) {
+    creating.value = true;
+    try {
+      const agent = await createAgent({
+        ...requireCreateAgentPayload(payload),
+        isPaper: true,
+        chain: 'base',
+      });
+      createdAgentId.value = agent.id;
+      await startAgent(agent.id);
+      router.push(`/agents/${agent.id}`);
+    } catch (err) {
+      showNotification({
+        type: 'error',
+        title: 'Agent Creation Failed',
+        message: extractApiError(err),
+        durationMs: 8_000,
+      });
+    } finally {
+      creating.value = false;
+    }
+  }
+
   async function handleNext(payload: Partial<CreateAgentPayload>) {
+    if (isPaper.value) {
+      await handleNextPaper(payload);
+      return;
+    }
     await runWithAutoSignCheck('createAgentOnchain', async () => {
       await executeCreateStep(payload);
     });
@@ -413,6 +441,7 @@ export function useAgentCreateFlow() {
 
   return {
     step,
+    isPaper,
     fundAmount,
     faucetAmount,
     createdAgentId,

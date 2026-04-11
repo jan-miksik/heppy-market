@@ -32,6 +32,7 @@ export const agents = sqliteTable('agents', {
   managerId: text('manager_id'),
   personaMd: text('persona_md'),
   profileId: text('profile_id'),
+  isPaper: integer('is_paper', { mode: 'boolean' }).notNull().default(false),
   initiaWalletAddress: text('initia_wallet_address'),
   initiaMetadataHash: text('initia_metadata_hash'),
   initiaMetadataVersion: integer('initia_metadata_version'),
