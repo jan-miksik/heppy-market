@@ -30,6 +30,8 @@ export interface Env {
   INITIA_AGENT_CONTRACT_ADDRESS?: string;
   /** Optional private key used by backend executor to submit executeTick transactions. */
   INITIA_EXECUTOR_PRIVATE_KEY?: string;
+  /** Optional MockPerpDEX address used by Initia perp execution plans. */
+  MOCK_PERP_DEX_ADDRESS?: string;
   /** 64-char hex (32 bytes). Used to AES-GCM encrypt user API keys at rest. If absent, keys stored plain (dev only). */
   KEY_ENCRYPTION_SECRET?: string;
   /** Dev/test only. When set, enables POST /api/auth/dev-session for Playwright. Never set in production. */

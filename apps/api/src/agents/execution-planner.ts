@@ -1,4 +1,5 @@
 import type { PerpTradeDecision, AgentConfigOutput } from '@something-in-loop/shared';
+import { keccak256, toHex } from 'viem';
 import type { PerpPositionState } from './perp-state-machine.js';
 import { isLegalAction } from './perp-state-machine.js';
 import { PERP_DEX_REGISTRY } from './dex-registry.js';
@@ -9,6 +10,7 @@ export interface PerpExecutionPlanInput {
   vaultBalances: Record<string, bigint>;
   marketPriceUsd: number;
   agentConfig: AgentConfigOutput;
+  perpDexAddressOverride?: `0x${string}`;
   /** On-chain perp position ID — required for CLOSE actions */
   openPerpPositionId?: bigint;
 }
@@ -29,7 +31,7 @@ export interface PerpExecutionPlan {
 
 export type PerpExecutionResult =
   | PerpExecutionPlan
-  | { skip: 'illegal_transition' | 'no_balance' | 'hold' | 'missing_position_id' | 'below_min_collateral' };
+  | { skip: 'illegal_transition' | 'no_balance' | 'hold' | 'missing_position_id' | 'below_min_collateral' | 'missing_perp_dex_address' };
 
 const MIN_COLLATERAL_WEI = 1_000_000_000_000_000n; // 0.001 token (18 decimals)
 
@@ -38,7 +40,7 @@ const MIN_COLLATERAL_WEI = 1_000_000_000_000_000n; // 0.001 token (18 decimals)
  * Returns { skip } if the action should be skipped.
  */
 export function planPerpExecution(input: PerpExecutionPlanInput): PerpExecutionResult {
-  const { decision, currentState, vaultBalances, marketPriceUsd, agentConfig, openPerpPositionId } = input;
+  const { decision, currentState, vaultBalances, marketPriceUsd, agentConfig, perpDexAddressOverride, openPerpPositionId } = input;
 
   if (decision.action === 'HOLD') {
     return { skip: 'hold' };
@@ -53,6 +55,10 @@ export function planPerpExecution(input: PerpExecutionPlanInput): PerpExecutionR
   const platform = PERP_DEX_REGISTRY[platformId];
   if (!platform) {
     return { skip: 'no_balance' };
+  }
+  const perpDexAddress = normalizeAddress(perpDexAddressOverride ?? platform.perpDexAddress);
+  if (!perpDexAddress) {
+    return { skip: 'missing_perp_dex_address' };
   }
 
   const isOpen = decision.action === 'OPEN_LONG' || decision.action === 'OPEN_SHORT';
@@ -117,7 +123,7 @@ export function planPerpExecution(input: PerpExecutionPlanInput): PerpExecutionR
 
   return {
     action: decision.action,
-    perpDexAddress: platform.perpDexAddress,
+    perpDexAddress,
     perpDexPlatformId: platformId,
     market: decision.market,
     marketHash,
@@ -134,13 +140,11 @@ export function planPerpExecution(input: PerpExecutionPlanInput): PerpExecutionR
  * keccak256 hash of a market string, matching Solidity's keccak256(abi.encodePacked(string)).
  */
 function keccakMarketHash(market: string): `0x${string}` {
-  // We use a simple implementation that matches Solidity's keccak256(bytes(market))
-  // Import from viem at runtime to avoid circular deps
-  try {
-    const { keccak256, toHex } = require('viem');
-    return keccak256(toHex(market)) as `0x${string}`;
-  } catch {
-    // Fallback: return a deterministic placeholder
-    return `0x${'0'.repeat(64)}` as `0x${string}`;
-  }
+  return keccak256(toHex(market)) as `0x${string}`;
+}
+
+function normalizeAddress(value: unknown): `0x${string}` | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(trimmed) ? trimmed as `0x${string}` : null;
 }

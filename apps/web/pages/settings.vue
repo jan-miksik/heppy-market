@@ -7,6 +7,7 @@ const {
   chainAutoSignExpiresAt,
   chainAutoSignExpired,
   chainAutoSignNeedsRenewal,
+  chainAutoSignGrantEnabled,
 } = useAutoSign();
 const { state: initiaState, enableAutoSign, disableAutoSign } = useInitiaBridge();
 
@@ -39,25 +40,28 @@ function formatExpiryExact(target: Date): string {
   }).format(target);
 }
 
+// In settings, we control the Interwoven grant only. The per-agent onchain flag
+// (autoSignConfiguredOnchain) is managed from the Agent Detail page.
+// So use chainAutoSignGrantEnabled as the primary signal here.
+const grantActive = computed(() => chainAutoSignGrantEnabled.value);
+
 const autoSignStatusLabel = computed(() => {
-  if (chainAutoSignEnabled.value) return 'Active';
-  if (chainAutoSignNeedsRenewal.value) return chainAutoSignExpired.value ? 'Expired' : 'Needs renewal';
+  if (grantActive.value) return 'Active';
+  if (chainAutoSignExpired.value) return 'Expired';
   return 'Inactive';
 });
 
 const autoSignStatusClass = computed(() => {
-  if (chainAutoSignEnabled.value) return 'or-status--connected';
-  if (chainAutoSignNeedsRenewal.value) return 'or-status--warning';
+  if (grantActive.value) return 'or-status--connected';
+  if (chainAutoSignExpired.value) return 'or-status--warning';
   return 'or-status--none';
 });
 
 const autoSignToggleLabel = computed(() => {
   if (togglingChain.value) {
-    if (chainAutoSignEnabled.value) return 'Disabling…';
-    return chainAutoSignNeedsRenewal.value ? 'Renewing…' : 'Enabling…';
+    return grantActive.value ? 'Disabling…' : 'Enabling…';
   }
-  if (chainAutoSignEnabled.value) return 'Disable';
-  return chainAutoSignNeedsRenewal.value ? 'Renew' : 'Enable';
+  return grantActive.value ? 'Disable' : 'Enable';
 });
 
 const autoSignInfo = computed(() => {
@@ -67,23 +71,19 @@ const autoSignInfo = computed(() => {
 
   const expiresAt = chainAutoSignExpiresAt.value;
 
-  if (chainAutoSignEnabled.value && expiresAt) {
+  if (grantActive.value && expiresAt) {
     return `Expires after ${formatExpiryDistance(expiresAt)} (${formatExpiryExact(expiresAt)}).`;
   }
 
-  if (chainAutoSignEnabled.value) {
+  if (grantActive.value) {
     return 'Auto-sign is active until you revoke it in Interwoven.';
   }
 
-  if (chainAutoSignNeedsRenewal.value && expiresAt) {
+  if (chainAutoSignExpired.value && expiresAt) {
     return `The previous auto-sign approval expired ${formatExpiryDistance(expiresAt)} (${formatExpiryExact(expiresAt)}). Enable it again to renew.`;
   }
 
-  if (chainAutoSignConfigured.value) {
-    return 'Delegated execution is still configured onchain, but the Interwoven approval is no longer valid. Enable it again to renew.';
-  }
-
-  return 'When enabled, Interwoven approval is time-limited and may need renewal later.';
+  return 'When enabled, Interwoven will approve actions automatically — no wallet confirmation needed each time.';
 });
 
 async function handleDisconnect() {
@@ -108,7 +108,7 @@ async function handleConnect() {
 async function handleToggleChainAutoSign() {
   togglingChain.value = true;
   try {
-    if (chainAutoSignEnabled.value) {
+    if (grantActive.value) {
       await disableAutoSign();
     } else {
       await enableAutoSign();

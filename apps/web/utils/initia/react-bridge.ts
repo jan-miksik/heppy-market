@@ -181,7 +181,7 @@ function BridgeRuntime(props: { options: InitiaBridgeMountOptions; evmChain: any
       autoSignEnabled: autoSignConfiguredOnchain && autoSignGrantEnabled, autoSignConfiguredOnchain, autoSignGrantEnabled,
       autoSignExpiresAt: autoSignExpiresAt?.toISOString?.() ?? null, busyAction, lastTxHash, error, progressSteps,
     });
-  }, [agentState, autoSign, busyAction, chainOk, error, normalizedEvmAddress, normalizedInitiaAddress, lastTxHash, options.chainId, progressSteps, walletBalanceWei]);
+  }, [agentState, autoSign?.expiredAtByChain?.[options.chainId], autoSign?.isEnabledByChain?.[options.chainId], busyAction, chainOk, error, normalizedEvmAddress, normalizedInitiaAddress, lastTxHash, options.chainId, progressSteps, walletBalanceWei]);
 
   return null;
 }

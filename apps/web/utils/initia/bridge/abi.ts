@@ -149,21 +149,21 @@ export const AGENT_ABI = [
   },
   {
     type: 'function',
-    name: 'setExecutorApproval',
+    name: 'setDelegatedExecutorApproval',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'agentId', type: 'uint256' },
       { name: 'executor', type: 'address' },
       { name: 'canTick', type: 'bool' },
       { name: 'canTrade', type: 'bool' },
-      { name: 'maxValuePerTradeWei', type: 'uint128' },
-      { name: 'dailyLimitWei', type: 'uint128' },
+      { name: 'maxTradeNotionalValueWei', type: 'uint128' },
+      { name: 'dailyTradeNotionalLimitWei', type: 'uint128' },
     ],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'getExecutorApproval',
+    name: 'getDelegatedExecutorApproval',
     stateMutability: 'view',
     inputs: [
       { name: 'agentId', type: 'uint256' },
@@ -172,10 +172,10 @@ export const AGENT_ABI = [
     outputs: [
       { name: 'canTick', type: 'bool' },
       { name: 'canTrade', type: 'bool' },
-      { name: 'maxValuePerTradeWei', type: 'uint128' },
-      { name: 'dailyLimitWei', type: 'uint128' },
+      { name: 'maxTradeNotionalValueWei', type: 'uint128' },
+      { name: 'dailyTradeNotionalLimitWei', type: 'uint128' },
       { name: 'dayIndex', type: 'uint64' },
-      { name: 'spentTodayWei', type: 'uint128' },
+      { name: 'notionalSpentTodayWei', type: 'uint128' },
     ],
   },
 ] as const;

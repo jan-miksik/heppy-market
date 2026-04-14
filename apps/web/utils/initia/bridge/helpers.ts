@@ -9,13 +9,19 @@ import {
 } from '~/utils/initia/bridge-types';
 
 export function buildMsgCall(sender: string, contractAddress: string, input: string, value = '0x0') {
+  let decimalValue = "0";
+  if (value.startsWith('0x')) {
+    decimalValue = BigInt(value).toString(10);
+  } else {
+    decimalValue = BigInt(value || "0").toString(10);
+  }
   return {
     typeUrl: '/minievm.evm.v1.MsgCall',
     value: {
       sender: sender.toLowerCase(),
       contractAddr: contractAddress.toLowerCase(),
       input,
-      value,
+      value: decimalValue,
       accessList: [],
       authList: [],
     },

@@ -213,6 +213,7 @@ export async function runInitiaPerpPath(params: RunInitiaPerpPathParams): Promis
         vaultBalances,
         marketPriceUsd: pairData.priceUsd,
         agentConfig: config,
+        perpDexAddressOverride: env.MOCK_PERP_DEX_ADDRESS as `0x${string}` | undefined,
       })
     : ({ skip: 'no_balance' } as const);
 

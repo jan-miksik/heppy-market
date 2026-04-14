@@ -7,7 +7,7 @@ import { buildMsgCall, extractTxHash } from '~/utils/initia/bridge/helpers';
 function gasLimitForAction(action: string): number {
   switch (action) {
     case 'createAgentOnchain':
-      return 250_000;
+      return 600_000;
     case 'authorizeExecutor':
     case 'authorizeExecutorTarget':
       return 300_000;

@@ -173,7 +173,7 @@ export function useBridgeEvents(params: {
                 whitelistTxHash = await doAgentTx('authorizeExecutorTarget', whitelistInput, undefined, actionParams?.autoSign === true);
                 advanceStep(0);
               }
-              const approvalInput = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setExecutorApproval', args: [agentId, options.executorAddress as `0x${string}`, true, true, options.maxTradeValueWei || '0', options.dailyTradeValueWei || '0'] });
+              const approvalInput = encodeFunctionData({ abi: AGENT_ABI, functionName: 'setDelegatedExecutorApproval', args: [agentId, options.executorAddress as `0x${string}`, true, true, options.maxTradeValueWei || '0', options.dailyTradeValueWei || '0'] });
               const txHash = await doAgentTx('authorizeExecutor', approvalInput, undefined, actionParams?.autoSign === true);
               return { txHash, whitelistTxHash, onchainAgentId: agentId.toString() };
             } finally { clearSteps(); }
@@ -196,9 +196,7 @@ export function useBridgeEvents(params: {
               : ['Approve auto-sign in Interwoven']);
             setBusyAction('enableAutoSign');
             try {
-              await autoSign.enable(options.chainId, {
-                permissions: ['/minievm.evm.v1.MsgCall'],
-              });
+              await (autoSign.enable as any)(options.chainId, { permissions: ['/minievm.evm.v1.MsgCall'] });
               advanceStep(0);
 
               let txHash: string | null = null;

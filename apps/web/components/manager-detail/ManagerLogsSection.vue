@@ -68,7 +68,7 @@ defineEmits<{
             <ManagerPromptSection
               title="SYSTEM"
               :content="managerPrompt(log.result?.llmPromptText).system"
-              :is-open="expandedSections[log.id]?.has('system')"
+              :is-open="expandedSections[log.id]?.has('system') ?? false"
               variant="system"
               :show-md-preview="showMdPreview"
               @toggle="$emit('toggleSection', log.id, 'system')"
@@ -77,7 +77,7 @@ defineEmits<{
             <ManagerPromptSection
               title="PORTFOLIO CONTEXT"
               :content="managerPrompt(log.result?.llmPromptText).context"
-              :is-open="expandedSections[log.id]?.has('context')"
+              :is-open="expandedSections[log.id]?.has('context') ?? false"
               variant="market"
               :show-md-preview="showMdPreview"
               @toggle="$emit('toggleSection', log.id, 'context')"
@@ -86,7 +86,7 @@ defineEmits<{
             <ManagerPromptSection
               title="EDITABLE SETUP"
               :content="managerPrompt(log.result?.llmPromptText).editableSetup"
-              :is-open="expandedSections[log.id]?.has('setup')"
+              :is-open="expandedSections[log.id]?.has('setup') ?? false"
               variant="setup"
               :show-md-preview="showMdPreview"
               @toggle="$emit('toggleSection', log.id, 'setup')"
@@ -95,7 +95,7 @@ defineEmits<{
             <ManagerPromptSection
               title="RESPONSE"
               :content="log.result?.llmRawResponse || '(no raw response stored)'"
-              :is-open="expandedSections[log.id]?.has('response')"
+              :is-open="expandedSections[log.id]?.has('response') ?? false"
               variant="llm"
               :show-md-preview="showMdPreview"
               @toggle="$emit('toggleSection', log.id, 'response')"

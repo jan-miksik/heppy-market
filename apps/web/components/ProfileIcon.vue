@@ -50,13 +50,16 @@ const props = withDefaults(
       <path d="M10 26 L5 21 L10 16" />
     </g>
 
-    <!-- Joker — three-pointed jester hat with bells -->
-    <g v-else-if="profileId === 'joker'">
-      <path d="M5 23 L5 20 L10 12 L15 17 L16 8 L17 17 L22 12 L27 20 L27 23 Z" />
-      <path d="M3 23 L29 23" />
-      <circle cx="10" cy="10.5" r="2" fill="currentColor" stroke="none" />
-      <circle cx="16" cy="6.5" r="2" fill="currentColor" stroke="none" />
-      <circle cx="22" cy="10.5" r="2" fill="currentColor" stroke="none" />
+    <!-- Joker — three-pointed jester hat with face -->
+    <g v-else-if="profileId === 'joker'" transform="scale(1.3333)">
+      <path d="M12 9C12 9 14 3 19 4C19 4 18 8 15 10" />
+      <path d="M12 9C12 9 10 3 5 4C5 4 6 8 9 10" />
+      <path d="M12 9V4" />
+      <circle cx="19" cy="4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="3" r="1" fill="currentColor" stroke="none" />
+      <path d="M7 14C7 14 9 12 12 12C15 12 17 14 17 14C17 14 16 19 12 19C8 19 7 14 7 14Z" />
+      <path d="M9 15C10 16.5 14 16.5 15 15" :stroke-width="1 / 1.3333" />
     </g>
 
     <!-- Drunk Uncle — tilted beer mug with foam -->

@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { keccak256, toHex } from 'viem';
 import { planPerpExecution, type PerpExecutionPlanInput } from '../src/agents/execution-planner';
 import type { PerpTradeDecision } from '@something-in-loop/shared';
 import { AgentConfigSchema } from '@something-in-loop/shared';
 import { PERP_DEX_REGISTRY } from '../src/agents/dex-registry';
 
 const COLLATERAL_TOKEN = '0x1111111111111111111111111111111111111111' as const;
+const PERP_DEX_ADDRESS = '0x2222222222222222222222222222222222222222' as const;
 
 const baseConfig = AgentConfigSchema.parse({
   name: 'test',
@@ -102,6 +104,7 @@ describe('planPerpExecution — OPEN actions', () => {
     vaultBalances: { [COLLATERAL_TOKEN]: collateralBalance },
     marketPriceUsd: MARKET_PRICE,
     agentConfig: baseConfig,
+    perpDexAddressOverride: PERP_DEX_ADDRESS,
   };
 
   it('handles OPEN_LONG correctly', () => {
@@ -109,6 +112,8 @@ describe('planPerpExecution — OPEN actions', () => {
     if ('skip' in result) throw new Error('unexpected skip');
     expect(result.action).toBe('OPEN_LONG');
     expect(result.isLong).toBe(true);
+    expect(result.perpDexAddress).toBe(PERP_DEX_ADDRESS);
+    expect(result.marketHash).toBe(keccak256(toHex('BTC/USD')));
     expect(result.collateralAmount).toBe(500n * WAD); // 50% of 1000
     expect(result.leverage).toBe(1n);
   });
@@ -137,6 +142,7 @@ describe('planPerpExecution — CLOSE actions', () => {
       marketPriceUsd: MARKET_PRICE,
       agentConfig: baseConfig,
       openPerpPositionId: 42n,
+      perpDexAddressOverride: PERP_DEX_ADDRESS,
     });
     if ('skip' in result) throw new Error('unexpected skip');
     expect(result.action).toBe('CLOSE_LONG');
@@ -151,9 +157,24 @@ describe('planPerpExecution — CLOSE actions', () => {
       marketPriceUsd: MARKET_PRICE,
       agentConfig: baseConfig,
       openPerpPositionId: 43n,
+      perpDexAddressOverride: PERP_DEX_ADDRESS,
     });
     if ('skip' in result) throw new Error('unexpected skip');
     expect(result.action).toBe('CLOSE_SHORT');
     expect(result.perpPositionId).toBe(43n);
+  });
+});
+
+describe('planPerpExecution — env/runtime safety', () => {
+  it('returns skip:missing_perp_dex_address when no valid perp DEX address is available', () => {
+    const result = planPerpExecution({
+      decision: openLongDecision(),
+      currentState: 'FLAT',
+      vaultBalances: { [COLLATERAL_TOKEN]: 1000n * WAD },
+      marketPriceUsd: MARKET_PRICE,
+      agentConfig: baseConfig,
+      perpDexAddressOverride: 'not-an-address' as `0x${string}`,
+    });
+    expect(result).toEqual({ skip: 'missing_perp_dex_address' });
   });
 });

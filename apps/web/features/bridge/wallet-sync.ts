@@ -78,7 +78,7 @@ export function useWalletSync(params: {
               const [canTick, canTrade] = await publicClient.readContract({
                 address: normalizedContractAddress,
                 abi: AGENT_ABI,
-                functionName: 'getExecutorApproval',
+                functionName: 'getDelegatedExecutorApproval',
                 args: [activeAgentId, executorAddress],
               }) as any;
               executorAuthorized = Boolean(canTick) && Boolean(canTrade);
