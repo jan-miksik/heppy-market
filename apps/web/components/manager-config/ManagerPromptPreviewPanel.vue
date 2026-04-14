@@ -29,6 +29,15 @@ const previewLoading = ref(false);
 const previewError = ref('');
 const lastPromptText = ref('');
 const lastPromptAt = ref<string | null>(null);
+const bodyContentRef = ref<HTMLElement | null>(null);
+const bodyMaxHeight = ref('0px');
+let resizeObserver: ResizeObserver | null = null;
+
+function syncBodyHeight() {
+  bodyMaxHeight.value = promptPreviewExpanded.value
+    ? `${bodyContentRef.value?.scrollHeight ?? 0}px`
+    : '0px';
+}
 
 const editablePersonaMd = computed({
   get: () => props.personaMd,
@@ -89,6 +98,38 @@ watch(
   },
   { immediate: true }
 );
+
+watch(
+  [
+    promptPreviewExpanded,
+    showMdPreview,
+    systemExpanded,
+    contextExpanded,
+    setupExpanded,
+    editingSetup,
+    previewLoading,
+    previewError,
+    lastPromptText,
+    lastPromptAt,
+    editablePersonaMd,
+  ],
+  async () => {
+    await nextTick();
+    syncBodyHeight();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  resizeObserver = new ResizeObserver(() => syncBodyHeight());
+  if (bodyContentRef.value) {
+    resizeObserver.observe(bodyContentRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+});
 </script>
 
 <template>
@@ -98,8 +139,8 @@ watch(
       <span class="acf__chevron" :class="{ open: promptPreviewExpanded }">›</span>
     </button>
 
-    <div class="mpp__body" :class="{ open: promptPreviewExpanded }">
-      <div class="mpp__body-content">
+    <div class="mpp__body" :class="{ open: promptPreviewExpanded }" :style="{ maxHeight: bodyMaxHeight }">
+      <div ref="bodyContentRef" class="mpp__body-content">
         <button
           type="button"
           class="btn btn-ghost btn-sm mpp__md-toggle"
@@ -199,7 +240,7 @@ watch(
   text-align: left;
   cursor: pointer;
   background: color-mix(in srgb, var(--border, #2a2a2a) 30%, transparent);
-  gap: 12px;
+  gap: 8px;
   transition: background 0.15s;
 }
 
@@ -224,14 +265,9 @@ watch(
 .acf__chevron.open { transform: rotate(90deg); }
 
 .mpp__body {
-  max-height: 0;
   overflow: hidden;
   transition: max-height 0.3s ease;
   position: relative;
-}
-
-.mpp__body.open {
-  max-height: 2400px;
 }
 
 .mpp__body-content {

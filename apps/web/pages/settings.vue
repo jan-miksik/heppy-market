@@ -82,8 +82,6 @@ const autoSignInfo = computed(() => {
   if (chainAutoSignExpired.value && expiresAt) {
     return `The previous auto-sign approval expired ${formatExpiryDistance(expiresAt)} (${formatExpiryExact(expiresAt)}). Enable it again to renew.`;
   }
-
-  return 'When enabled, Interwoven will approve actions automatically — no wallet confirmation needed each time.';
 });
 
 async function handleDisconnect() {

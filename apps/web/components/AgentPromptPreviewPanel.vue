@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toRef, type PropType } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, type PropType } from 'vue';
 import PromptPreviewEditableSetupSection from '~/components/prompt-preview/PromptPreviewEditableSetupSection.vue';
 import PromptPreviewSourceSection from '~/components/prompt-preview/PromptPreviewSourceSection.vue';
 import { useAgentPromptPreview, type PromptFormState } from '~/composables/useAgentPromptPreview';
@@ -62,6 +62,17 @@ const {
   fallbackEditableSetup: toRef(props, 'fallbackEditableSetup'),
   initiallyExpanded: toRef(props, 'initiallyExpanded'),
 });
+const previewError = toRef(props, 'previewError');
+
+const bodyContentRef = ref<HTMLElement | null>(null);
+const bodyMaxHeight = ref('0px');
+let resizeObserver: ResizeObserver | null = null;
+
+function syncBodyHeight() {
+  bodyMaxHeight.value = promptPreviewExpanded.value
+    ? `${bodyContentRef.value?.scrollHeight ?? 0}px`
+    : '0px';
+}
 
 function togglePromptPreviewExpanded() {
   promptPreviewExpanded.value = !promptPreviewExpanded.value;
@@ -99,6 +110,39 @@ const editableSetupActions = {
   updatePersonaText,
   updateRoleText,
 };
+
+watch(
+  [
+    promptPreviewExpanded,
+    showMdPreview,
+    systemExpanded,
+    marketDataExpanded,
+    setupExpanded,
+    showSetupDiff,
+    liveSystemPrompt,
+    marketDataPreview,
+    liveEditableSetup,
+    liveConstraintsSection,
+    setupDiffHtml,
+    previewError,
+  ],
+  async () => {
+    await nextTick();
+    syncBodyHeight();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  resizeObserver = new ResizeObserver(() => syncBodyHeight());
+  if (bodyContentRef.value) {
+    resizeObserver.observe(bodyContentRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+});
 </script>
 
 <template>
@@ -108,8 +152,8 @@ const editableSetupActions = {
       <span class="acf__chevron" :class="{ open: promptPreviewExpanded }">›</span>
     </button>
 
-    <div class="prompt-preview__body" :class="{ open: promptPreviewExpanded }">
-      <div class="prompt-preview__body-content">
+    <div class="prompt-preview__body" :class="{ open: promptPreviewExpanded }" :style="{ maxHeight: bodyMaxHeight }">
+      <div ref="bodyContentRef" class="prompt-preview__body-content">
         <button type="button" class="btn btn-ghost btn-sm prompt-preview__md-toggle" @click="toggleShowMdPreview">
           {{ showMdPreview ? 'MD ●' : 'MD ○' }}
         </button>
@@ -183,7 +227,7 @@ const editableSetupActions = {
   text-align: left;
   cursor: pointer;
   background: color-mix(in srgb, var(--border, #2a2a2a) 30%, transparent);
-  gap: 12px;
+  gap: 8px;
   transition: background 0.15s;
 }
 
@@ -191,15 +235,26 @@ const editableSetupActions = {
   background: color-mix(in srgb, var(--border, #2a2a2a) 50%, transparent);
 }
 
+.prompt-preview__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.acf__chevron {
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--text-muted, #555);
+  transition: transform 0.2s;
+  display: inline-block;
+  transform: rotate(0deg);
+}
+
+.acf__chevron.open { transform: rotate(90deg); }
+
 .prompt-preview__body {
-  max-height: 0;
   overflow: hidden;
   transition: max-height 0.3s ease;
   position: relative;
-}
-
-.prompt-preview__body.open {
-  max-height: 2000px;
 }
 
 .prompt-preview__body-content {

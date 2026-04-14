@@ -115,7 +115,7 @@ async function handleWalletClick() {
     <header v-if="isConnectRoute" class="shellbar shellbar--connect">
       <NuxtLink to="/connect" class="shellbar-brand">
         <img :src="initRootLogoWithText" alt="initRoot" class="brand-logo brand-logo--shell" />
-        <span v-if="IS_BETA" class="beta-badge">Beta</span>
+        <span v-if="IS_BETA" class="beta-badge">Hackathon</span>
       </NuxtLink>
       <div class="shellbar-auth">
         <button
@@ -135,7 +135,7 @@ async function handleWalletClick() {
     <nav v-else class="navbar">
       <NuxtLink to="/agents" class="navbar-brand">
         <img :src="initRootLogoWithText" alt="initRoot" class="brand-logo" />
-        <span v-if="IS_BETA" class="beta-badge">Beta</span>
+        <span v-if="IS_BETA" class="beta-badge">Hackathon</span>
       </NuxtLink>
       <div class="navbar-nav">
         <template v-if="authenticatedWalletReady">
