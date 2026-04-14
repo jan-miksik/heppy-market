@@ -58,7 +58,7 @@ const steps = computed(() => state.value.progressSteps ?? []);
   position: fixed;
   top: 68px;
   left: 16px;
-  z-index: 180;
+  z-index: 10010;
   display: flex;
   flex-direction: column;
   gap: 8px;

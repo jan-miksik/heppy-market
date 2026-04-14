@@ -40,15 +40,15 @@ export function buildManagerPrompt(ctx: BuildManagerPromptParams): string {
   const marketSummary =
     marketData.length > 0
       ? marketData
-          .map((m) => `${m.pair}: $${m.priceUsd} (1h: ${m.priceChange.h1 ?? 'N/A'}%, 24h: ${m.priceChange.h24 ?? 'N/A'}%)`)
-          .join('\n')
+        .map((m) => `${m.pair}: $${m.priceUsd} (1h: ${m.priceChange.h1 ?? 'N/A'}%, 24h: ${m.priceChange.h24 ?? 'N/A'}%)`)
+        .join('\n')
       : 'No market data available';
 
   const memorySummary =
     memory.hypotheses.length > 0
       ? memory.hypotheses
-          .map((h) => `- "${h.description}" (tested: ${h.tested_at}, outcome: ${h.outcome}, valid: ${h.still_valid})`)
-          .join('\n')
+        .map((h) => `- "${h.description}" (tested: ${h.tested_at}, outcome: ${h.outcome}, valid: ${h.still_valid})`)
+        .join('\n')
       : 'No prior hypotheses.';
 
   const riskSummary = `MaxDrawdown: ${(managerConfig.riskParams.maxTotalDrawdown * 100).toFixed(0)}%, MaxAgents: ${managerConfig.riskParams.maxAgents}, MaxCorrelated: ${managerConfig.riskParams.maxCorrelatedPositions}`;
@@ -88,15 +88,13 @@ When creating or modifying agents, "analysisInterval" MUST be one of:
 - "1h"
 - "4h"
 - "1d"
-Do not use unsupported legacy values like "1m", "5m", "15m", "30m", or numeric seconds/minutes.
 
 ## Available LLM Models For Agents
-Use only these llmModel IDs when creating or modifying agents:
+${hasUserOpenRouterKey
+      ? 'The user has OpenRouter connected, use any supported llmModel ID. More specific model setup belongs in the Edit context, if not specified use low-cost free models or paid models (up to $3 per 1M tokens). '
+      : 'The user has no connected OpenRouter key, so you must use one of these free llmModel IDs when creating or modifying agents:'}
 ${availableModels.map((m) => `- "${m}"`).join('\n')}
 
-${hasUserOpenRouterKey
-  ? 'The user has OpenRouter connected, so you may use free models and low-cost paid models (up to $3 per 1M tokens).'
-  : 'The user has no connected OpenRouter key, so you must use free models only.'}
 If unsure, default to "${DEFAULT_FREE_AGENT_MODEL}".
 
 ## Available Agent Profiles

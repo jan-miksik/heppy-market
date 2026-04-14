@@ -15,7 +15,9 @@ const emit = defineEmits<{ select: [profile: ProfileItem] }>();
     :class="{ 'pcard--selected': selected }"
     @click="emit('select', profile)"
   >
-    <div class="pcard__emoji">{{ profile.emoji }}</div>
+    <div class="pcard__icon">
+      <ProfileIcon :profile-id="profile.id" :size="32" />
+    </div>
     <div class="pcard__name">{{ profile.name }}</div>
     <div class="pcard__desc">{{ profile.description }}</div>
     <div v-if="selected" class="pcard__check">✓</div>
@@ -51,10 +53,17 @@ const emit = defineEmits<{ select: [profile: ProfileItem] }>();
   background: color-mix(in srgb, var(--accent, #7c6af7) 12%, var(--surface, #141414));
   box-shadow: 0 0 0 1px var(--accent, #7c6af7), 0 4px 16px color-mix(in srgb, var(--accent, #7c6af7) 20%, transparent);
 }
-.pcard__emoji {
-  font-size: 26px;
-  line-height: 1;
+.pcard__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  color: var(--text, #e0e0e0);
   flex-shrink: 0;
+  transition: color 0.15s;
+}
+.pcard--selected .pcard__icon {
+  color: var(--accent, #7c6af7);
 }
 .pcard__name {
   font-size: 11px;

@@ -38,4 +38,10 @@ export interface Env {
   HACKATHON_AUTH_BYPASS?: string;
   /** Optional debug flag to log full LLM prompts/responses. Keep unset/false in production. */
   LOG_LLM_DEBUG?: string;
+  /** Max agents one user can create. If unset, unlimited. */
+  MAX_AGENTS_PER_USER?: string;
+  /** Max managers one user can create. If unset, unlimited. */
+  MAX_MANAGERS_PER_USER?: string;
+  /** Default managed-agent limit for newly created managers. Falls back to 2 if unset. */
+  DEFAULT_MANAGER_MAX_AGENTS?: string;
 }

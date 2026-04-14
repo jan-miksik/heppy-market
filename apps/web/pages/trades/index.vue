@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
+import type { PaperMode } from '~/components/PaperToggle.vue';
 
 definePageMeta({ ssr: false });
 
-const TRADE_HISTORY_PAPER_STORAGE_KEY = 'heppy:trades:showPaperAgents';
+const TRADE_HISTORY_PAPER_STORAGE_KEY = 'heppy:trades:paperMode';
 
 const { trades, loading, error, fetchTrades } = useTrades();
 const { stats, error: realStatsError, fetchStats } = useTrades();
@@ -12,7 +13,7 @@ const { agents, fetchAgents } = useAgents();
 
 const statusFilter = ref('');
 const limitFilter = ref(100);
-const storedShowPaper = ref<boolean | null>(null);
+const storedPaperMode = ref<PaperMode | null>(null);
 const preferencesReady = ref(false);
 const agentsReady = ref(false);
 
@@ -20,12 +21,23 @@ const realAgents = computed(() => agents.value.filter((agent) => !agent.isPaper)
 const paperAgents = computed(() => agents.value.filter((agent) => agent.isPaper));
 const hasRealAgents = computed(() => realAgents.value.length > 0);
 const hasPaperAgents = computed(() => paperAgents.value.length > 0);
-const showingPaperFallback = computed(() => !hasRealAgents.value && hasPaperAgents.value);
-const showPaperTrades = computed(() => (hasRealAgents.value ? (storedShowPaper.value ?? false) : hasPaperAgents.value));
-const toggleDisabled = computed(() => showingPaperFallback.value);
-const primaryStats = computed(() => (hasRealAgents.value ? stats.value : paperStats.value));
+
+const paperMode = computed<PaperMode>(() => {
+  if (!hasRealAgents.value && hasPaperAgents.value) return 'paper';
+  if (hasRealAgents.value && !hasPaperAgents.value) return 'live';
+  return storedPaperMode.value ?? 'live';
+});
+
+const showPaperBand = computed(() => paperMode.value === 'all' && hasPaperAgents.value);
+const isPaperOnly = computed(() => paperMode.value === 'paper');
+const primaryStats = computed(() => (isPaperOnly.value ? paperStats.value : stats.value));
 const pageError = computed(() => error.value ?? realStatsError.value ?? paperStatsError.value ?? null);
-const showPaperMiniStats = computed(() => hasRealAgents.value && showPaperTrades.value && hasPaperAgents.value);
+
+const tradesSummaryText = computed(() => {
+  if (paperMode.value === 'paper') return `Showing ${trades.value.length} paper trades`;
+  if (paperMode.value === 'all') return `Showing ${trades.value.length} live + paper trades`;
+  return `Showing ${trades.value.length} live trades`;
+});
 
 const agentEmojiMap = computed<Record<string, string>>(() => {
   const map: Record<string, string> = {};
@@ -37,28 +49,25 @@ const agentEmojiMap = computed<Record<string, string>>(() => {
   return map;
 });
 
-const tradesSummaryText = computed(() => {
-  if (showingPaperFallback.value) return `Showing ${trades.value.length} paper trades`;
-  if (showPaperTrades.value) return `Showing ${trades.value.length} real + paper trades`;
-  return `Showing ${trades.value.length} real trades`;
-});
-
-function readStoredPaperPreference(): boolean | null {
+function readStoredPaperMode(): PaperMode | null {
   if (!import.meta.client) return null;
   const raw = localStorage.getItem(TRADE_HISTORY_PAPER_STORAGE_KEY);
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
+  if (raw === 'live' || raw === 'all' || raw === 'paper') return raw;
+  // Back-compat with old boolean-shaped keys
+  const legacy = localStorage.getItem('heppy:trades:showPaperAgents');
+  if (legacy === 'true') return 'all';
+  if (legacy === 'false') return 'live';
   return null;
 }
 
-function saveStoredPaperPreference(value: boolean) {
+function saveStoredPaperMode(value: PaperMode) {
   if (!import.meta.client) return;
-  localStorage.setItem(TRADE_HISTORY_PAPER_STORAGE_KEY, String(value));
+  localStorage.setItem(TRADE_HISTORY_PAPER_STORAGE_KEY, value);
 }
 
-function setShowPaperTrades(value: boolean) {
-  storedShowPaper.value = value;
-  saveStoredPaperPreference(value);
+function setPaperMode(value: PaperMode) {
+  storedPaperMode.value = value;
+  saveStoredPaperMode(value);
 }
 
 function winRateClass(rate: number): 'positive' | 'negative' | 'neutral' {
@@ -77,21 +86,28 @@ function formatSignedPct(value: number, digits = 2): string {
 async function loadTradeData(force = false) {
   if (!preferencesReady.value || !agentsReady.value) return;
 
+  const isPaperParam =
+    paperMode.value === 'live' ? false
+    : paperMode.value === 'paper' ? true
+    : undefined;
+
   const tradeParams = {
     status: statusFilter.value || undefined,
     limit: limitFilter.value,
-    isPaper: showingPaperFallback.value ? true : showPaperTrades.value ? undefined : false,
+    isPaper: isPaperParam,
   };
 
   const requests: Promise<unknown>[] = [
     fetchTrades(tradeParams, { force }),
   ];
 
-  if (hasRealAgents.value) {
-    requests.push(fetchStats({ isPaper: false, force }));
-    if (showPaperMiniStats.value) requests.push(fetchPaperStats({ isPaper: true, force }));
-  } else if (hasPaperAgents.value) {
+  if (paperMode.value === 'paper') {
     requests.push(fetchPaperStats({ isPaper: true, force }));
+  } else {
+    requests.push(fetchStats({ isPaper: false, force }));
+    if (paperMode.value === 'all' && hasPaperAgents.value) {
+      requests.push(fetchPaperStats({ isPaper: true, force }));
+    }
   }
 
   await Promise.all(requests);
@@ -106,14 +122,14 @@ function onTradeClosed(updatedTrade: (typeof trades.value)[number]) {
 }
 
 onMounted(async () => {
-  storedShowPaper.value = readStoredPaperPreference();
+  storedPaperMode.value = readStoredPaperMode();
   preferencesReady.value = true;
   await fetchAgents();
   agentsReady.value = true;
   await loadTradeData();
 });
 
-watch([statusFilter, limitFilter, showPaperTrades, hasRealAgents, hasPaperAgents], () => {
+watch([statusFilter, limitFilter, paperMode], () => {
   if (!preferencesReady.value || !agentsReady.value) return;
   void loadTradeData();
 });
@@ -125,49 +141,118 @@ watch([statusFilter, limitFilter, showPaperTrades, hasRealAgents, hasPaperAgents
       <div>
         <h1 class="page-title">Trade History</h1>
         <p class="page-subtitle">
-          Review real and paper trades together, or hide paper activity when you want a cleaner view.
+          Review live and paper trades together, or filter to just one side.
         </p>
       </div>
+      <PaperToggle
+        v-if="hasRealAgents || hasPaperAgents"
+        :model-value="paperMode"
+        :has-live="hasRealAgents"
+        :has-paper="hasPaperAgents"
+        @update:model-value="setPaperMode"
+      />
     </div>
 
     <div v-if="primaryStats" class="stats-grid" style="margin-bottom: 24px;">
-      <div class="stat-card">
-        <div class="stat-label">Total Trades</div>
-        <div class="stat-value">{{ primaryStats.totalTrades }}</div>
-        <div class="stat-change">{{ primaryStats.openTrades }} open</div>
-        <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-          paper {{ paperStats.totalTrades }} · {{ paperStats.openTrades }} open
+      <div
+        class="stat-card"
+        :class="{
+          'stat-card--paper-split': showPaperBand && paperStats,
+          'stat-card--paper-only': isPaperOnly,
+          'stat-card--paper-lead': (showPaperBand && paperStats) || isPaperOnly,
+        }"
+      >
+        <div class="stat-card__band">
+          <div class="stat-label">Total Trades</div>
+          <div class="stat-value">{{ primaryStats.totalTrades }}</div>
+          <div class="stat-change">{{ primaryStats.openTrades }} open</div>
         </div>
+        <Transition name="paper-band">
+          <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper stat-card__band--paper-lead">
+            <div class="stat-card__paper-label">Total Trades</div>
+            <div class="stat-card__paper-value">{{ paperStats.totalTrades }}</div>
+            <div class="stat-card__paper-meta">{{ paperStats.openTrades }} open</div>
+          </div>
+        </Transition>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Win Rate</div>
-        <div class="stat-value" :class="winRateClass(primaryStats.winRate)">
-          {{ primaryStats.winRate.toFixed(1) }}%
+
+      <div
+        class="stat-card"
+        :class="{
+          'stat-card--paper-split': showPaperBand && paperStats,
+          'stat-card--paper-only': isPaperOnly,
+        }"
+      >
+        <div class="stat-card__band">
+          <div class="stat-label">Win Rate</div>
+          <div class="stat-value" :class="winRateClass(primaryStats.winRate)">
+            {{ primaryStats.winRate.toFixed(1) }}%
+          </div>
+          <div class="stat-change">across closed trades</div>
         </div>
-        <div class="stat-change">across closed trades</div>
-        <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-          paper {{ paperStats.winRate.toFixed(1) }}%
-        </div>
+        <Transition name="paper-band">
+          <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper">
+            <div class="stat-card__paper-label">Win Rate</div>
+            <div class="stat-card__paper-value">{{ paperStats.winRate.toFixed(1) }}%</div>
+            <div class="stat-card__paper-meta">across closed trades</div>
+          </div>
+        </Transition>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Total P&amp;L</div>
-        <div class="stat-value" :class="primaryStats.totalPnlUsd >= 0 ? 'positive' : 'negative'">
-          {{ formatSignedUsd(primaryStats.totalPnlUsd) }}
+
+      <div
+        class="stat-card"
+        :class="{
+          'stat-card--paper-split': showPaperBand && paperStats,
+          'stat-card--paper-only': isPaperOnly,
+        }"
+      >
+        <div class="stat-card__band">
+          <div class="stat-label">Total P&amp;L</div>
+          <div class="stat-value" :class="primaryStats.totalPnlUsd >= 0 ? 'positive' : 'negative'">
+            {{ formatSignedUsd(primaryStats.totalPnlUsd) }}
+          </div>
+          <div class="stat-change">closed trades</div>
         </div>
-        <div class="stat-change">closed trades</div>
-        <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-          paper {{ formatSignedUsd(paperStats.totalPnlUsd) }}
-        </div>
+        <Transition name="paper-band">
+          <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper">
+            <div class="stat-card__paper-label">Total P&amp;L</div>
+            <div
+              class="stat-card__paper-value"
+              :class="paperStats.totalPnlUsd >= 0 ? 'positive' : 'negative'"
+            >
+              {{ formatSignedUsd(paperStats.totalPnlUsd) }}
+            </div>
+            <div class="stat-card__paper-meta">closed trades</div>
+          </div>
+        </Transition>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg P&amp;L</div>
-        <div class="stat-value" :class="primaryStats.avgPnlPct >= 0 ? 'positive' : 'negative'">
-          {{ formatSignedPct(primaryStats.avgPnlPct) }}
+
+      <div
+        class="stat-card"
+        :class="{
+          'stat-card--paper-split': showPaperBand && paperStats,
+          'stat-card--paper-only': isPaperOnly,
+        }"
+      >
+        <div class="stat-card__band">
+          <div class="stat-label">Avg P&amp;L</div>
+          <div class="stat-value" :class="primaryStats.avgPnlPct >= 0 ? 'positive' : 'negative'">
+            {{ formatSignedPct(primaryStats.avgPnlPct) }}
+          </div>
+          <div class="stat-change">per closed trade</div>
         </div>
-        <div class="stat-change">per closed trade</div>
-        <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-          paper {{ formatSignedPct(paperStats.avgPnlPct) }}
-        </div>
+        <Transition name="paper-band">
+          <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper">
+            <div class="stat-card__paper-label">Avg P&amp;L</div>
+            <div
+              class="stat-card__paper-value"
+              :class="paperStats.avgPnlPct >= 0 ? 'positive' : 'negative'"
+            >
+              {{ formatSignedPct(paperStats.avgPnlPct) }}
+            </div>
+            <div class="stat-card__paper-meta">per closed trade</div>
+          </div>
+        </Transition>
       </div>
     </div>
 
@@ -190,15 +275,6 @@ watch([statusFilter, limitFilter, showPaperTrades, hasRealAgents, hasPaperAgents
             <option :value="500">500</option>
           </select>
         </div>
-        <label class="paper-toggle" :class="{ 'paper-toggle--disabled': toggleDisabled }">
-          <input
-            :checked="showPaperTrades"
-            :disabled="toggleDisabled"
-            type="checkbox"
-            @change="setShowPaperTrades(($event.target as HTMLInputElement).checked)"
-          />
-          <span>Show paper agents</span>
-        </label>
         <span class="trades-filters__summary">{{ tradesSummaryText }}</span>
       </div>
     </div>
@@ -223,6 +299,10 @@ watch([statusFilter, limitFilter, showPaperTrades, hasRealAgents, hasPaperAgents
 </template>
 
 <style scoped>
+.page-header {
+  gap: 16px;
+}
+
 .trades-filters {
   display: flex;
   gap: 12px;
@@ -241,26 +321,4 @@ watch([statusFilter, limitFilter, showPaperTrades, hasRealAgents, hasPaperAgents
   color: var(--text-muted);
 }
 
-.paper-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.paper-toggle--disabled {
-  opacity: 0.7;
-}
-
-.paper-toggle input {
-  width: auto;
-}
-
-.stat-change-secondary {
-  color: #d97706;
-  opacity: 0.85;
-}
 </style>

@@ -29,6 +29,7 @@ const {
   hasOwnKey,
   modelCatalog,
   syncName,
+  persistModelAsDefault,
   submitting,
   validationError,
   finetuneOpen,
@@ -70,7 +71,9 @@ function handleSubmit() {
 
     <BasicsSection
       v-model:sync-name-with-model="syncName"
+      v-model:persist-model-as-default="persistModelAsDefault"
       :form="form"
+      :show-persist-model-default="!isEdit"
       :model-catalog="modelCatalog"
       :has-own-key="hasOwnKey"
       :is-persona-customized="isPersonaCustomized"

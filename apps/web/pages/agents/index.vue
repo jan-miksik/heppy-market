@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
+import type { PaperMode } from '~/components/PaperToggle.vue';
 
 definePageMeta({ ssr: false });
-const AGENTS_PAPER_STORAGE_KEY = 'heppy:agents:showPaperAgents';
+const AGENTS_PAPER_STORAGE_KEY = 'heppy:agents:paperMode';
 const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent, updateAgent } = useAgents();
 const { stats, error: tradesError, fetchStats } = useTrades();
 const { stats: paperStats, fetchStats: fetchPaperStats } = useTrades();
@@ -15,26 +16,29 @@ const runningCount = computed(() => agents.value.filter((a) => a.status === 'run
 
 const realAgents = computed(() => agents.value.filter((a) => !a.isPaper));
 const paperAgents = computed(() => agents.value.filter((a) => a.isPaper));
-const storedShowPaperAgents = ref<boolean | null>(null);
-const showPaperFallback = computed(() => realAgents.value.length === 0 && paperAgents.value.length > 0);
-const showPaperAgents = computed(() => (
-  realAgents.value.length > 0
-    ? (storedShowPaperAgents.value ?? false)
-    : paperAgents.value.length > 0
-));
-const toggleDisabled = computed(() => showPaperFallback.value);
+const hasRealAgents = computed(() => realAgents.value.length > 0);
+const hasPaperAgents = computed(() => paperAgents.value.length > 0);
+const storedPaperMode = ref<PaperMode | null>(null);
+
+const paperMode = computed<PaperMode>(() => {
+  if (!hasRealAgents.value && hasPaperAgents.value) return 'paper';
+  if (hasRealAgents.value && !hasPaperAgents.value) return 'live';
+  return storedPaperMode.value ?? 'live';
+});
+
 const visibleAgents = computed(() => {
-  if (realAgents.value.length === 0) return paperAgents.value;
-  return showPaperAgents.value ? agents.value : realAgents.value;
+  switch (paperMode.value) {
+    case 'live': return realAgents.value;
+    case 'paper': return paperAgents.value;
+    case 'all': return agents.value;
+    default: return realAgents.value;
+  }
 });
-const primaryTradeStats = computed(() => (realAgents.value.length > 0 ? stats.value : paperStats.value));
-const primaryRealizedPnlUsd = computed(() => (realAgents.value.length > 0 ? realizedPnlUsd.value : paperRealizedPnlUsd.value));
-const showPaperMiniStats = computed(() => realAgents.value.length > 0 && showPaperAgents.value && paperAgents.value.length > 0);
-const agentsSummaryText = computed(() => {
-  if (showPaperFallback.value) return `Showing ${visibleAgents.value.length} paper agents`;
-  if (showPaperAgents.value) return `Showing ${visibleAgents.value.length} real + paper agents`;
-  return `Showing ${visibleAgents.value.length} real agents`;
-});
+
+const isPaperOnly = computed(() => paperMode.value === 'paper');
+const showPaperBand = computed(() => paperMode.value === 'all' && hasPaperAgents.value);
+const primaryTradeStats = computed(() => (isPaperOnly.value ? paperStats.value : stats.value));
+const primaryRealizedPnlUsd = computed(() => (isPaperOnly.value ? paperRealizedPnlUsd.value : realizedPnlUsd.value));
 
 const managedAgents = computed(() => agents.value.filter((a) => !!a.managerId));
 
@@ -192,22 +196,24 @@ function winRateClass(rate?: number | null): 'positive' | 'negative' | 'neutral'
   return rate >= 50 ? 'positive' : 'negative';
 }
 
-function readStoredPaperPreference(): boolean | null {
+function readStoredPaperMode(): PaperMode | null {
   if (!import.meta.client) return null;
   const raw = localStorage.getItem(AGENTS_PAPER_STORAGE_KEY);
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
+  if (raw === 'live' || raw === 'all' || raw === 'paper') return raw;
+  const legacy = localStorage.getItem('heppy:agents:showPaperAgents');
+  if (legacy === 'true') return 'all';
+  if (legacy === 'false') return 'live';
   return null;
 }
 
-function saveStoredPaperPreference(value: boolean) {
+function saveStoredPaperMode(value: PaperMode) {
   if (!import.meta.client) return;
-  localStorage.setItem(AGENTS_PAPER_STORAGE_KEY, String(value));
+  localStorage.setItem(AGENTS_PAPER_STORAGE_KEY, value);
 }
 
-function setShowPaperAgents(value: boolean) {
-  storedShowPaperAgents.value = value;
-  saveStoredPaperPreference(value);
+function setPaperMode(value: PaperMode) {
+  storedPaperMode.value = value;
+  saveStoredPaperMode(value);
 }
 
 async function loadAgentPerformance(agentId: string) {
@@ -277,7 +283,7 @@ function handleGlobalClick(e: MouseEvent) {
 
 onMounted(() => {
   if (import.meta.client) {
-    storedShowPaperAgents.value = readStoredPaperPreference();
+    storedPaperMode.value = readStoredPaperMode();
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
@@ -351,8 +357,14 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
       <div>
         <h1 class="page-title">Agents</h1>
       </div>
-      <div style="display: flex; gap: 8px; align-items: center;">
-
+      <div class="page-header__actions">
+        <PaperToggle
+          v-if="agents.length > 0"
+          :model-value="paperMode"
+          :has-live="hasRealAgents"
+          :has-paper="hasPaperAgents"
+          @update:model-value="setPaperMode"
+        />
         <button class="btn btn-primary" @click="$router.push('/agents/create')">
           + New Agent
         </button>
@@ -364,33 +376,77 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
     <template v-if="!loading">
       <div v-if="primaryTradeStats && visibleAgents.length > 0" class="stats-section" style="margin-bottom: 16px;">
         <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-label">Total Trades</div>
-            <div class="stat-value">{{ primaryTradeStats.totalTrades }}</div>
-            <div class="stat-change">{{ primaryTradeStats.openTrades }} open</div>
-            <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-              paper {{ paperStats.totalTrades }} · {{ paperStats.openTrades }} open
+          <div
+            class="stat-card"
+            :class="{
+              'stat-card--paper-split': showPaperBand && paperStats,
+              'stat-card--paper-only': isPaperOnly,
+              'stat-card--paper-lead': (showPaperBand && paperStats) || isPaperOnly,
+            }"
+          >
+            <div class="stat-card__band">
+              <div class="stat-label">Total Trades</div>
+              <div class="stat-value">{{ primaryTradeStats.totalTrades }}</div>
+              <div class="stat-change">{{ primaryTradeStats.openTrades }} open</div>
             </div>
+            <Transition name="paper-band">
+              <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper stat-card__band--paper-lead">
+                <div class="stat-card__paper-label">Total Trades</div>
+                <div class="stat-card__paper-value">{{ paperStats.totalTrades }}</div>
+                <div class="stat-card__paper-meta">{{ paperStats.openTrades }} open</div>
+              </div>
+            </Transition>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Win Rate</div>
-            <div class="stat-value" :class="winRateClass(primaryTradeStats.winRate)">
-              {{ primaryTradeStats.winRate.toFixed(1) + '%' }}
+
+          <div
+            class="stat-card"
+            :class="{
+              'stat-card--paper-split': showPaperBand && paperStats,
+              'stat-card--paper-only': isPaperOnly,
+            }"
+          >
+            <div class="stat-card__band">
+              <div class="stat-label">Win Rate</div>
+              <div class="stat-value" :class="winRateClass(primaryTradeStats.winRate)">
+                {{ primaryTradeStats.winRate.toFixed(1) + '%' }}
+              </div>
+              <div class="stat-change">across closed trades</div>
             </div>
-            <div class="stat-change">across closed trades</div>
-            <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-              paper {{ paperStats.winRate.toFixed(1) }}%
-            </div>
+            <Transition name="paper-band">
+              <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper">
+                <div class="stat-card__paper-label">Win Rate</div>
+                <div class="stat-card__paper-value">{{ paperStats.winRate.toFixed(1) }}%</div>
+                <div class="stat-card__paper-meta">across closed trades</div>
+              </div>
+            </Transition>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Total P&amp;L</div>
-            <div class="stat-value" :class="primaryRealizedPnlUsd >= 0 ? 'positive' : 'negative'">
-              {{ formatUsdNoNegativeZero(primaryRealizedPnlUsd, 0) }}
+
+          <div
+            class="stat-card"
+            :class="{
+              'stat-card--paper-split': showPaperBand && paperStats,
+              'stat-card--paper-only': isPaperOnly,
+            }"
+          >
+            <div class="stat-card__band">
+              <div class="stat-label">Total P&amp;L</div>
+              <div class="stat-value" :class="primaryRealizedPnlUsd >= 0 ? 'positive' : 'negative'">
+                {{ formatUsdNoNegativeZero(primaryRealizedPnlUsd, 0) }}
+              </div>
+              <div class="stat-change">{{ isPaperOnly ? 'closed trades · simulated' : 'closed trades' }}</div>
             </div>
-            <div class="stat-change">{{ realAgents.length > 0 ? 'closed trades' : 'closed trades · simulated' }}</div>
-            <div v-if="showPaperMiniStats && paperStats" class="stat-change stat-change-secondary">
-              paper {{ formatUsdNoNegativeZero(paperRealizedPnlUsd, 0) }}
-            </div>
+            <Transition name="paper-band">
+              <div v-if="showPaperBand && paperStats" class="stat-card__band stat-card__band--paper">
+                <div class="stat-card__paper-label">Total P&amp;L</div>
+                <div
+                  class="stat-card__paper-value"
+                  :class="paperRealizedPnlUsd >= 0 ? 'positive' : 'negative'"
+                >
+                  {{ formatUsdNoNegativeZero(paperRealizedPnlUsd, 0) }}
+                </div>
+                <div class="stat-card__paper-meta">closed trades · simulated</div>
+              </div>
+            </Transition>
           </div>
         </div>
       </div>
@@ -417,19 +473,6 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
 
     <!-- TABLE VIEW -->
     <div v-else>
-      <div class="card agents-toolbar">
-        <label class="paper-toggle" :class="{ 'paper-toggle--disabled': toggleDisabled }">
-          <input
-            :checked="showPaperAgents"
-            :disabled="toggleDisabled"
-            type="checkbox"
-            @change="setShowPaperAgents(($event.target as HTMLInputElement).checked)"
-          />
-          <span>Show paper agents</span>
-        </label>
-        <span class="agents-toolbar__summary">{{ agentsSummaryText }}</span>
-      </div>
-
       <div class="table-wrap" style="overflow: visible;">
         <table>
           <thead>
@@ -509,6 +552,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
               v-for="agent in sortedAgents"
               :key="agent.id"
               class="agent-table-row"
+              :class="{ 'row--paper': agent.isPaper }"
               @click="$router.push(`/agents/${agent.id}`)"
             >
               <td style="font-size: 18px; line-height: 1;">{{ agentEmoji(agent) }}</td>
@@ -659,41 +703,11 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
   opacity: 0.8;
 }
 
-.agents-toolbar {
+.page-header__actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.agents-toolbar__summary {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.paper-toggle {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.paper-toggle--disabled {
-  opacity: 0.7;
-}
-
-.paper-toggle input {
-  width: auto;
-}
-
-.stat-change-secondary {
-  color: #d97706;
-  opacity: 0.85;
+  flex-wrap: wrap;
 }
 
 .agent-table-row {

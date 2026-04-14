@@ -33,14 +33,14 @@ const toneClass = computed(() => `prompt-pill--${props.tone}`);
 </script>
 
 <template>
-  <button class="prompt-pill" :class="toneClass" @click="toggle()">
+  <button type="button" class="prompt-pill" :class="toneClass" @click="toggle()">
     <span>{{ label }}</span>
     <span class="acf__chevron" :class="{ open: expanded }">›</span>
   </button>
   <div v-if="expanded" class="pill-content">
     <pre v-if="!showMdPreview" class="dec-code-block dec-code-block--scrollable">{{ content }}</pre>
     <!-- eslint-disable-next-line vue/no-v-html -->
-    <div v-else class="dec-code-block dec-code-block--scrollable" v-html="renderMarkdown(content)" />
+    <div v-else class="dec-code-block dec-code-block--scrollable md-content" v-html="renderMarkdown(content)" />
   </div>
 </template>
 

@@ -93,7 +93,7 @@ watch(
 
 <template>
   <div class="mpp">
-    <button class="mpp__toggle" @click="promptPreviewExpanded = !promptPreviewExpanded">
+    <button type="button" class="mpp__toggle" @click="promptPreviewExpanded = !promptPreviewExpanded">
       <span class="mpp__title">Prompt Preview</span>
       <span class="acf__chevron" :class="{ open: promptPreviewExpanded }">›</span>
     </button>
@@ -133,7 +133,7 @@ watch(
               <!-- eslint-disable-next-line vue/no-v-html -->
               <div
                 v-else
-                class="dec-code-block dec-code-block--scrollable"
+                class="dec-code-block dec-code-block--scrollable md-content"
                 v-html="renderMarkdown(contextPreview)"
               />
             </div>
@@ -168,7 +168,7 @@ watch(
             <template v-else-if="setupExpanded">
               <pre v-if="!showMdPreview" class="mpp__code-block">{{ editableSetup }}</pre>
               <!-- eslint-disable-next-line vue/no-v-html -->
-              <div v-else class="mpp__code-block mpp__code-block--md" v-html="renderMarkdown(editableSetup)" />
+              <div v-else class="mpp__code-block mpp__code-block--md md-content" v-html="renderMarkdown(editableSetup)" />
             </template>
           </div>
         </div>
@@ -334,13 +334,6 @@ watch(
   word-break: break-word;
   font-family: 'JetBrains Mono', monospace;
 }
-
-.mpp__code-block--md :deep(p) { margin: 0 0 6px; }
-.mpp__code-block--md :deep(ul) { margin: 4px 0; padding-left: 16px; }
-.mpp__code-block--md :deep(li) { margin-bottom: 2px; }
-.mpp__code-block--md :deep(h1),
-.mpp__code-block--md :deep(h2),
-.mpp__code-block--md :deep(h3) { margin: 6px 0 2px; font-size: 12px; font-weight: 700; }
 
 .mpp__persona-wrap {
   padding: 16px;

@@ -2,6 +2,8 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import type { Env } from '../../types/env.js';
 import { agents } from '../../db/schema.js';
+import { agentManagers } from '../../db/schema.js';
+import { getDefaultManagerMaxAgents, getMaxAgentsPerUser } from '../../lib/entity-limits.js';
 import { generateId, nowIso } from '../../lib/utils.js';
 import { normalizePairsForDex } from '../../lib/pairs.js';
 import {
@@ -214,6 +216,32 @@ export async function executeManagerAction(
 
     case 'create_agent': {
       if (!params) return { success: false, error: 'create_agent requires params' };
+      const [manager] = await db.select().from(agentManagers).where(eq(agentManagers.id, managerId));
+      if (!manager) return { success: false, error: `Manager ${managerId} not found` };
+
+      const totalOwnedAgents = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.ownerAddress, ownerAddress));
+      const maxAgentsPerUser = getMaxAgentsPerUser(env);
+      if (maxAgentsPerUser !== null && totalOwnedAgents.length >= maxAgentsPerUser) {
+        return { success: false, error: `Owner ${ownerAddress} reached the max agent limit (${maxAgentsPerUser})` };
+      }
+
+      const managerConfig = JSON.parse(manager.config) as { riskParams?: { maxAgents?: unknown } };
+      const configuredMaxAgents = managerConfig.riskParams?.maxAgents;
+      const maxManagedAgents =
+        typeof configuredMaxAgents === 'number' && Number.isFinite(configuredMaxAgents) && configuredMaxAgents >= 1
+          ? configuredMaxAgents
+          : getDefaultManagerMaxAgents(env);
+      const existingManagedAgents = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.managerId, managerId));
+      if (existingManagedAgents.length >= maxManagedAgents) {
+        return { success: false, error: `Manager ${managerId} reached the max managed agent limit (${maxManagedAgents})` };
+      }
+
       const sanitizedParams = sanitizeManagerAgentParams(params as Record<string, unknown>);
       const agentName = String(sanitizedParams.name ?? 'Manager-created Paper Agent');
       const paperBalance = Number(sanitizedParams.paperBalance ?? 10000);

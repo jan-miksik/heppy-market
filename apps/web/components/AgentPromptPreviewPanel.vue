@@ -103,14 +103,14 @@ const editableSetupActions = {
 
 <template>
   <div class="prompt-preview">
-    <button class="prompt-preview__toggle" @click="togglePromptPreviewExpanded">
+    <button type="button" class="prompt-preview__toggle" @click="togglePromptPreviewExpanded">
       <span class="prompt-preview__title">Prompt Preview</span>
       <span class="acf__chevron" :class="{ open: promptPreviewExpanded }">›</span>
     </button>
 
     <div class="prompt-preview__body" :class="{ open: promptPreviewExpanded }">
       <div class="prompt-preview__body-content">
-        <button class="btn btn-ghost btn-sm prompt-preview__md-toggle" @click="toggleShowMdPreview">
+        <button type="button" class="btn btn-ghost btn-sm prompt-preview__md-toggle" @click="toggleShowMdPreview">
           {{ showMdPreview ? 'MD ●' : 'MD ○' }}
         </button>
         <div v-if="previewError" class="prompt-preview__error">{{ previewError }}</div>

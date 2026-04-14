@@ -7,6 +7,7 @@ import {
 } from '../src/agents/manager-loop.js';
 import type { ManagedAgentSnapshot, ManagerMemory, ManagerDecision } from '../src/agents/manager-loop.js';
 import { DEFAULT_FREE_AGENT_MODEL } from '@something-in-loop/shared';
+import { agentManagers, agents } from '../src/db/schema.js';
 
 const doClientMocks = vi.hoisted(() => ({
   startTradingAgentDo: vi.fn(),
@@ -56,8 +57,19 @@ const mockManagerConfig = {
   riskParams: { maxTotalDrawdown: 0.2, maxAgents: 10, maxCorrelatedPositions: 3 },
 };
 
-function createMockDb(agentRows: Array<Record<string, unknown>>) {
+function createMockDb(
+  agentRows: Array<Record<string, unknown>>,
+  managerRows: Array<Record<string, unknown>> = [
+    {
+      id: 'manager_001',
+      config: JSON.stringify({
+        riskParams: { maxTotalDrawdown: 0.2, maxAgents: 10, maxCorrelatedPositions: 3 },
+      }),
+    },
+  ],
+) {
   const rows = agentRows.map((row) => ({ ...row }));
+  const managers = managerRows.map((row) => ({ ...row }));
   const insertSpy = vi.fn(async (values: Record<string, unknown>) => {
     rows.push({ ...values });
   });
@@ -71,12 +83,17 @@ function createMockDb(agentRows: Array<Record<string, unknown>>) {
 
   return {
     rows,
+    managers,
     insertSpy,
     updateCalls,
     db: {
       select: () => ({
-        from: () => ({
-          where: async () => rows,
+        from: (table: unknown) => ({
+          where: async () => {
+            if (table === agents) return rows;
+            if (table === agentManagers) return managers;
+            return [];
+          },
         }),
       }),
       insert: () => ({
@@ -331,6 +348,44 @@ describe('executeManagerAction', () => {
     expect(config.initiaMetadataHash).toBeUndefined();
     expect(config.llmModel).toBe(DEFAULT_FREE_AGENT_MODEL);
     expect(doClientMocks.startTradingAgentDo).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents manager-created agents beyond the configured manager maxAgents', async () => {
+    const { db, insertSpy } = createMockDb(
+      [
+        {
+          id: 'agent_001',
+          managerId: 'manager_001',
+          ownerAddress: 'owner_addr',
+          config: JSON.stringify({ isPaper: true }),
+        },
+      ],
+      [
+        {
+          id: 'manager_001',
+          config: JSON.stringify({
+            riskParams: { maxTotalDrawdown: 0.2, maxAgents: 1, maxCorrelatedPositions: 3 },
+          }),
+        },
+      ],
+    );
+
+    const result = await executeManagerAction(
+      {
+        action: 'create_agent',
+        reasoning: 'launch one more',
+        params: { name: 'Overflow Agent' },
+      },
+      db,
+      {} as any,
+      'manager_001',
+      'owner_addr',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('max managed agent limit (1)');
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(doClientMocks.startTradingAgentDo).not.toHaveBeenCalled();
   });
 
   it('keeps manager-modified agents in paper mode and strips live fields', async () => {

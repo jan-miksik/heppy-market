@@ -4,6 +4,8 @@ import { ENTITY_NAME_MAX_CHARS, DEFAULT_FREE_AGENT_MODEL } from '@something-in-l
 const props = defineProps<{
   form: any;
   syncNameWithModel: boolean;
+  persistModelAsDefault?: boolean;
+  showPersistModelDefault?: boolean;
   modelCatalog: any;
   hasOwnKey: boolean;
   openRouterRedirecting?: boolean;
@@ -16,6 +18,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:syncNameWithModel', val: boolean): void;
+  (e: 'update:persistModelAsDefault', val: boolean): void;
   (e: 'profileSelected', profile: any): void;
   (e: 'connectOpenRouter'): void;
 }>();
@@ -42,7 +45,17 @@ const emit = defineEmits<{
 
     <!-- LLM Model -->
     <div class="form-group">
-      <label class="form-label">LLM Model</label>
+      <div class="acf__model-label-row">
+        <label class="form-label">LLM Model</label>
+        <label v-if="showPersistModelDefault" class="acf__sync-check">
+          <input
+            :checked="persistModelAsDefault"
+            type="checkbox"
+            @change="$emit('update:persistModelAsDefault', ($event.target as HTMLInputElement).checked)"
+          />
+          <span>set as default</span>
+        </label>
+      </div>
       <ModelPickerField
         :model-value="form.llmModel ?? DEFAULT_FREE_AGENT_MODEL"
         :catalog="modelCatalog"
@@ -82,6 +95,7 @@ const emit = defineEmits<{
 .acf__name-input:focus { border-color: var(--accent, #7c6af7); }
 .acf__name-count { font-size: 11px; color: var(--text-muted, #555); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .acf__sync-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted, #555); cursor: pointer; white-space: nowrap; }
+.acf__model-label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .acf__section { display: flex; flex-direction: column; gap: 10px; margin-top: 2rem; }
 .acf__section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted, #555); display: flex; align-items: center; gap: 8px; }
 .acf__profile-desc { font-size: 12px; color: var(--text-secondary, #888); line-height: 1.5; padding: 8px 12px; background: color-mix(in srgb, var(--accent, #7c6af7) 6%, transparent); border-left: 2px solid var(--accent, #7c6af7); border-radius: 0 6px 6px 0; }

@@ -30,6 +30,7 @@ const {
   modelCatalog,
   openRouterRedirecting,
   syncNameWithModel,
+  persistModelAsDefault,
   submitting,
   validationError,
   configOpen,
@@ -83,7 +84,9 @@ defineExpose({ form, behavior, personaMd, restorePersona });
 
     <BasicsSection
       v-model:sync-name-with-model="syncNameWithModel"
+      v-model:persist-model-as-default="persistModelAsDefault"
       :form="form"
+      :show-persist-model-default="!isEditing"
       :model-catalog="modelCatalog"
       :has-own-key="hasOwnKey"
       :open-router-redirecting="openRouterRedirecting"

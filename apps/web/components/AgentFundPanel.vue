@@ -14,8 +14,24 @@ const emit = defineEmits<{
 }>();
 
 const { updateAgent } = useAgents();
-const { state: initiaState, openConnect, openBridge, refresh, mintShowcaseToken, depositShowcaseToken, withdrawShowcaseToken } = useInitiaBridge();
+const {
+  state: initiaState,
+  openConnect,
+  openBridge,
+  refresh,
+  mintShowcaseToken,
+  depositShowcaseToken,
+  withdrawShowcaseToken,
+  enableAutoSign,
+} = useInitiaBridge();
+const autoSignMgr = useAutoSign();
 const { request } = useApi();
+const {
+  consentModalOpen,
+  runWithAutoSignCheck,
+  handleConsentProceed,
+  handleConsentCancel,
+} = useAutoSignConsent({ autoSignMgr, enableAutoSign });
 const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
 const BRIDGE_SRC_DENOM = 'uinit';
 
@@ -193,19 +209,20 @@ async function handleMintFaucet() {
     return;
   }
   clearMessages();
-  mintingFaucet.value = true;
-  try {
-    if (!initiaState.value.initiaAddress) {
-      await openConnect();
+  await runWithAutoSignCheck('mintShowcaseToken', async () => {
+    mintingFaucet.value = true;
+    try {
+      await ensureWalletConnected();
+      const autoSign = autoSignMgr.isEnabled('mintShowcaseToken') && autoSignMgr.chainAutoSignGrantEnabled.value;
+      const result = await mintShowcaseToken(String(amt), { autoSign });
+      await refresh();
+      successMsg.value = `Minted ${amt.toLocaleString()} iUSD-demo.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
+    } catch (e) {
+      error.value = extractApiError(e);
+    } finally {
+      mintingFaucet.value = false;
     }
-    const result = await mintShowcaseToken(String(amt));
-    await refresh();
-    successMsg.value = `Minted ${amt.toLocaleString()} iUSD-demo.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
-  } catch (e) {
-    error.value = extractApiError(e);
-  } finally {
-    mintingFaucet.value = false;
-  }
+  });
 }
 
 const busy = computed(() => funding.value || withdrawing.value || bridging.value || mintingFaucet.value);
@@ -319,6 +336,12 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
       </div>
     </Transition>
   </Teleport>
+
+  <AutoSignConsentModal
+    :open="consentModalOpen"
+    @proceed="handleConsentProceed"
+    @cancel="handleConsentCancel"
+  />
 </template>
 
 <style scoped>

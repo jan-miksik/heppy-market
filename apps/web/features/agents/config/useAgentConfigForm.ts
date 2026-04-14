@@ -24,6 +24,9 @@ export function useAgentConfigForm(props: {
   const isTester = computed(() => user.value?.role === 'tester');
   const hasOwnKey = computed(() => !!user.value?.openRouterKeySet);
   const openRouterRedirecting = ref(false);
+  const defaultModelPrefKey = 'agent-config:default-llm-model:create';
+  const persistModelAsDefault = ref(false);
+  const hasHydratedModelDefaultPref = ref(false);
 
   const modelCatalog = computed(() => {
     return buildAgentModelCatalog({
@@ -116,6 +119,19 @@ export function useAgentConfigForm(props: {
 
   const syncNameWithModel = ref(true);
 
+  function syncPersistedModelToggle() {
+    if (isEditing.value) {
+      persistModelAsDefault.value = false;
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(defaultModelPrefKey);
+      persistModelAsDefault.value = !!saved && saved === (form.llmModel ?? DEFAULT_FREE_AGENT_MODEL);
+    } catch {
+      persistModelAsDefault.value = false;
+    }
+  }
+
   function generatePersonaMd() {
     if (!selectedProfileId.value) return;
     personaMd.value = getAgentPersonaTemplate(selectedProfileId.value, form.name || 'Agent');
@@ -143,6 +159,25 @@ export function useAgentConfigForm(props: {
       generatePersonaMd();
     }
   }, { deep: true });
+
+  watch(() => form.llmModel, () => {
+    if (!hasHydratedModelDefaultPref.value || isEditing.value) return;
+    if (persistModelAsDefault.value) {
+      try {
+        localStorage.setItem(defaultModelPrefKey, form.llmModel ?? DEFAULT_FREE_AGENT_MODEL);
+      } catch { /* ignore */ }
+      return;
+    }
+    syncPersistedModelToggle();
+  });
+
+  watch(persistModelAsDefault, (enabled) => {
+    if (!hasHydratedModelDefaultPref.value || isEditing.value) return;
+    try {
+      if (enabled) localStorage.setItem(defaultModelPrefKey, form.llmModel ?? DEFAULT_FREE_AGENT_MODEL);
+      else if (localStorage.getItem(defaultModelPrefKey) === (form.llmModel ?? DEFAULT_FREE_AGENT_MODEL)) localStorage.removeItem(defaultModelPrefKey);
+    } catch { /* ignore */ }
+  });
 
   // Methods
   function onProfileSelected(profile: ProfileItem) {
@@ -232,6 +267,7 @@ export function useAgentConfigForm(props: {
         isRoleCustomized.value = true;
       }
       initialSubmitPayload.value = buildSubmitPayload();
+      hasHydratedModelDefaultPref.value = true;
     } else if (route.query.from) {
       // Pre-fill from a paper agent (Go Live flow)
       loadingFrom.value = true;
@@ -275,9 +311,16 @@ export function useAgentConfigForm(props: {
         })
         .finally(() => {
           loadingFrom.value = false;
+          hasHydratedModelDefaultPref.value = true;
         });
     } else {
+      try {
+        const savedDefaultModel = localStorage.getItem(defaultModelPrefKey);
+        if (savedDefaultModel) form.llmModel = savedDefaultModel;
+      } catch { /* ignore */ }
       form.name = generateName();
+      syncPersistedModelToggle();
+      hasHydratedModelDefaultPref.value = true;
     }
   });
 
@@ -299,6 +342,7 @@ export function useAgentConfigForm(props: {
     modelCatalog,
     openRouterRedirecting,
     syncNameWithModel,
+    persistModelAsDefault,
     submitting,
     validationError,
     configOpen,

@@ -42,6 +42,9 @@ export function useManagerConfigForm(props: {
 
   const finetuneOpen = ref(false);
   const managerConfigOpen = ref(false);
+  const defaultModelPrefKey = 'manager-config:default-llm-model:create';
+  const persistModelAsDefault = ref(false);
+  const hasHydratedModelDefaultPref = ref(false);
 
   const autoNamePrefKey = computed(() =>
     props.isEdit ? 'manager-config:auto-name-enabled:edit' : 'manager-config:auto-name-enabled:create'
@@ -65,6 +68,19 @@ export function useManagerConfigForm(props: {
 
   const personaMd = ref(props.initial?.personaMd ?? '');
   const isPersonaCustomized = ref(!!props.initial?.personaMd);
+
+  function syncPersistedModelToggle() {
+    if (props.isEdit) {
+      persistModelAsDefault.value = false;
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(defaultModelPrefKey);
+      persistModelAsDefault.value = !!saved && saved === form.llmModel;
+    } catch {
+      persistModelAsDefault.value = false;
+    }
+  }
 
   function buildBehaviorSummaryMd(b: Record<string, unknown>): string {
     const MGMT: Record<string, string> = { aggressive: 'Aggressive', balanced: 'Balanced', conservative: 'Conservative', passive: 'Passive' };
@@ -156,6 +172,17 @@ export function useManagerConfigForm(props: {
     }
   });
 
+  watch(() => form.llmModel, () => {
+    if (!hasHydratedModelDefaultPref.value || props.isEdit) return;
+    if (persistModelAsDefault.value) {
+      try {
+        localStorage.setItem(defaultModelPrefKey, form.llmModel);
+      } catch { /* ignore */ }
+      return;
+    }
+    syncPersistedModelToggle();
+  });
+
   onMounted(() => {
     try {
       const saved = localStorage.getItem(autoNamePrefKey.value);
@@ -168,15 +195,32 @@ export function useManagerConfigForm(props: {
       hasHydratedAutoNamePref.value = true;
     }
 
+    if (!props.isEdit) {
+      try {
+        const savedDefaultModel = localStorage.getItem(defaultModelPrefKey);
+        if (savedDefaultModel) form.llmModel = savedDefaultModel;
+      } catch { /* ignore */ }
+      syncPersistedModelToggle();
+    }
+
     if (syncName.value && (!props.isEdit || !form.name.trim())) {
       form.name = generateName();
     }
+    hasHydratedModelDefaultPref.value = true;
   });
 
   watch(syncName, (enabled) => {
     if (!hasHydratedAutoNamePref.value) return;
     try {
       localStorage.setItem(autoNamePrefKey.value, enabled ? 'true' : 'false');
+    } catch { /* ignore */ }
+  });
+
+  watch(persistModelAsDefault, (enabled) => {
+    if (!hasHydratedModelDefaultPref.value || props.isEdit) return;
+    try {
+      if (enabled) localStorage.setItem(defaultModelPrefKey, form.llmModel);
+      else if (localStorage.getItem(defaultModelPrefKey) === form.llmModel) localStorage.removeItem(defaultModelPrefKey);
     } catch { /* ignore */ }
   });
 
@@ -199,15 +243,13 @@ When creating or modifying agents, "analysisInterval" MUST be one of:
 - "1h"
 - "4h"
 - "1d"
-Do not use unsupported legacy values like "1m", "5m", "15m", "30m", or numeric seconds/minutes.
 
 ## Available LLM Models For Agents
-Use only these llmModel IDs when creating or modifying agents:
+${hasOwnKey.value
+  ? 'The user has OpenRouter connected, so you may use any supported llmModel ID. Use low-cost paid models when needed (up to $3 per 1M tokens). More specific model setup belongs in the Edit context.'
+  : 'The user has no connected OpenRouter key, so you must use one of these free llmModel IDs when creating or modifying agents:'}
 ${modelAllowlist}
 
-${hasOwnKey.value
-  ? 'The user has OpenRouter connected, so you may use free models and low-cost paid models (up to $3 per 1M tokens).'
-  : 'The user has no connected OpenRouter key, so you must use free models only.'}
 If unsure, default to "${DEFAULT_FREE_AGENT_MODEL}".
 
 ## Available Agent Profiles
@@ -267,6 +309,7 @@ Example:
     hasOwnKey,
     modelCatalog,
     syncName,
+    persistModelAsDefault,
     submitting,
     validationError,
     finetuneOpen,

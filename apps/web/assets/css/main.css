@@ -75,6 +75,109 @@ body {
   min-height: 100vh;
 }
 
+.md-content {
+  font-family: var(--font-body);
+  font-size: inherit;
+  line-height: 1.7;
+  color: inherit;
+}
+
+.md-content > :first-child {
+  margin-top: 0;
+}
+
+.md-content > :last-child {
+  margin-bottom: 0;
+}
+
+.md-content h1,
+.md-content h2,
+.md-content h3,
+.md-content h4,
+.md-content h5,
+.md-content h6 {
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 1.15em 0 0.45em;
+}
+
+.md-content h1 { font-size: 1.65em; }
+.md-content h2 { font-size: 1.4em; }
+.md-content h3 { font-size: 1.22em; }
+.md-content h4 { font-size: 1.08em; }
+.md-content h5,
+.md-content h6 {
+  font-size: 1em;
+}
+
+.md-content p,
+.md-content ul,
+.md-content ol,
+.md-content pre,
+.md-content blockquote {
+  margin: 0 0 0.9em;
+}
+
+.md-content ul,
+.md-content ol {
+  padding-left: 1.35em;
+}
+
+.md-content li + li {
+  margin-top: 0.3em;
+}
+
+.md-content a {
+  text-underline-offset: 0.18em;
+}
+
+.md-content strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.md-content em {
+  font-style: italic;
+}
+
+.md-content code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-light) 55%, transparent);
+  border-radius: 4px;
+  padding: 0.08em 0.36em;
+}
+
+.md-content pre {
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 6px;
+  padding: 0.85em 0.95em;
+}
+
+.md-content pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.md-content blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  padding-left: 0.9em;
+  color: var(--text-dim);
+}
+
+.md-content hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.2em 0;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -292,6 +395,8 @@ a:hover {
 .stat-card {
   background: var(--bg-card);
   padding: var(--space-md) var(--space-lg);
+  position: relative;
+  transition: background 300ms ease, border-color 260ms ease;
 }
 
 .stat-label {
@@ -311,6 +416,7 @@ a:hover {
   color: var(--text);
   letter-spacing: -0.02em;
   line-height: 1;
+  transition: color 220ms ease;
 }
 
 .stat-value.positive {
@@ -326,6 +432,169 @@ a:hover {
   font-size: 10px;
   color: var(--text-muted);
   margin-top: 5px;
+}
+
+/* ── Stat card: paper-split (dual band) ─────────────────────── */
+.stat-card--paper-split {
+  padding: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  overflow: hidden;
+}
+
+.stat-card--paper-split .stat-card__band {
+  padding: var(--space-md) var(--space-lg);
+}
+
+.stat-card__band--paper {
+  position: relative;
+  border-top: 1px solid color-mix(in srgb, #d97706 24%, var(--border));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, #d97706 8%, transparent) 0%,
+      color-mix(in srgb, #d97706 3%, transparent) 100%
+    );
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Single corner chip, only on the first paper band — labels the whole paper row. */
+.stat-card__band--paper-lead::before {
+  content: "PAPER";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  padding: 3px 8px 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #0a0a0a;
+  background: #d97706;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.stat-card__band--paper-lead {
+  padding-top: calc(var(--space-md) + 8px);
+}
+
+.stat-card__paper-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, #d97706 75%, var(--text-muted));
+}
+
+.stat-card__paper-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: #d97706;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  transition: color 200ms ease;
+}
+
+.stat-card__paper-value.positive {
+  color: #e4a237;
+}
+
+.stat-card__paper-value.negative {
+  color: #c66a3a;
+}
+
+.stat-card__paper-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: color-mix(in srgb, #d97706 55%, var(--text-muted));
+  line-height: 1.2;
+}
+
+/* ── Paper band transition ──────────────────────────────────── */
+.paper-band-enter-active,
+.paper-band-leave-active {
+  transition:
+    opacity 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    max-height 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    padding-top 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    padding-bottom 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-top-width 260ms ease;
+  overflow: hidden;
+}
+.paper-band-enter-from,
+.paper-band-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+}
+.paper-band-enter-to,
+.paper-band-leave-from {
+  opacity: 1;
+  max-height: 160px;
+}
+
+/* ── Stat card: paper-only fallback (single-band, amber) ────── */
+.stat-card--paper-only {
+  position: relative;
+  border-top: 1px solid color-mix(in srgb, #d97706 35%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, #d97706 6%, var(--bg-card)) 0%,
+      var(--bg-card) 100%
+    );
+}
+
+/* Corner chip on the first paper-only card — same treatment as paper-lead */
+.stat-card--paper-only.stat-card--paper-lead::before {
+  content: "PAPER";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  padding: 3px 8px 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #0a0a0a;
+  background: #d97706;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.stat-card--paper-only.stat-card--paper-lead {
+  padding-top: calc(var(--space-md) + 8px);
+}
+
+.stat-card--paper-only .stat-value {
+  color: #d97706;
+  transition: color 200ms ease;
+}
+
+.stat-card--paper-only .stat-value.positive {
+  color: #e4a237;
+}
+
+.stat-card--paper-only .stat-value.negative {
+  color: #c66a3a;
+}
+
+/* ── Paper-row highlighting in tables ───────────────────────── */
+.row--paper > td {
+  background: color-mix(in srgb, #d97706 5%, transparent);
+  transition: background 160ms ease;
+}
+.row--paper:hover > td {
+  background: color-mix(in srgb, #d97706 10%, var(--bg-hover)) !important;
 }
 
 .tokens-summary-row {

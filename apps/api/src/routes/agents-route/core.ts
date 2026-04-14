@@ -7,6 +7,7 @@ import {
   resolveAgentProfileId,
 } from '@something-in-loop/shared';
 import { agents } from '../../db/schema.js';
+import { getMaxAgentsPerUser } from '../../lib/entity-limits.js';
 import { normalizePairsForDex } from '../../lib/pairs.js';
 import { nowIso, generateId } from '../../lib/utils.js';
 import { validateBody } from '../../lib/validation.js';
@@ -32,6 +33,25 @@ export function registerAgentCoreRoutes(agentsRoute: AgentsRoute): void {
     const body = await validateBody(c, CreateAgentRequestSchema);
     const walletAddress = c.get('walletAddress');
     const db = drizzle(c.env.DB);
+    const maxAgentsPerUser = getMaxAgentsPerUser(c.env);
+
+    if (maxAgentsPerUser !== null) {
+      const ownedAgents = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.ownerAddress, walletAddress));
+
+      if (ownedAgents.length >= maxAgentsPerUser) {
+        return c.json(
+          {
+            error: `Agent limit reached. You can create up to ${maxAgentsPerUser} agents.`,
+            code: 'AGENT_LIMIT_REACHED',
+            limit: maxAgentsPerUser,
+          },
+          409,
+        );
+      }
+    }
 
     const chain = body.chain ?? 'base';
     const initiaWalletAddress = normalizeInitiaWalletAddress(body.initiaWalletAddress);

@@ -24,7 +24,7 @@ defineEmits<{
       <pre v-if="!showMdPreview" class="dec-code-block">{{ content }}</pre>
       <div
         v-else
-        class="dec-code-block chat-reasoning chat-reasoning--md"
+        class="dec-code-block chat-reasoning md-content"
         v-html="sectionHtml(content, true)"
       />
     </div>
@@ -73,6 +73,4 @@ defineEmits<{
 }
 
 .chat-reasoning { font-size: 14px; line-height: 1.6; color: var(--text); }
-.chat-reasoning :deep(p) { margin: 0 0 6px; }
-.chat-reasoning :deep(ul) { margin: 4px 0; padding-left: 16px; }
 </style>

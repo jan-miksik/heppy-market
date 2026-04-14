@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { renderMarkdown } from '~/utils/markdown';
+
 const props = defineProps<{
   modelValue: string;
   loading?: boolean;
@@ -28,17 +30,6 @@ function handleInput(e: Event) {
   emit('update:modelValue', v);
   emit('edited');
 }
-
-function renderMd(md: string): string {
-  return md
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/\n\n/g, '</p><p>');
-}
 </script>
 
 <template>
@@ -57,7 +48,7 @@ function renderMd(md: string): string {
       </template>
     </div>
 
-    <div v-if="showPreview" class="pe__preview" v-html="renderMd(localValue)" />
+    <div v-if="showPreview" class="pe__preview md-content" v-html="renderMarkdown(localValue)" />
     <textarea
       v-else
       class="pe__textarea"

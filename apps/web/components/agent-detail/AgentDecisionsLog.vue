@@ -164,7 +164,7 @@ function timeAgo(iso: string) {
               </div>
             </div>
             <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="chat-reasoning" :class="{ 'chat-reasoning--md': showMdPreview }" v-html="decisionHtml(dec.reasoning, showMdPreview)" />
+            <div class="chat-reasoning" :class="showMdPreview ? ['chat-reasoning--md', 'md-content'] : []" v-html="decisionHtml(dec.reasoning, showMdPreview)" />
             <div class="dec-meta">
               {{ dec.llmModel.split('/').pop() }} · {{ timeAgo(dec.createdAt) }}
               <span v-if="modDecisionIds.has(dec.id)" class="badge-self-mod">✎ self-modified</span>
@@ -191,7 +191,7 @@ function timeAgo(iso: string) {
                   <!-- eslint-disable-next-line vue/no-v-html -->
                   <div
                     v-else
-                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    class="dec-code-block chat-reasoning chat-reasoning--md md-content"
                     v-html="decisionHtml(dec.promptSections.system, true)"
                   />
                 </div>
@@ -205,7 +205,7 @@ function timeAgo(iso: string) {
                   <!-- eslint-disable-next-line vue/no-v-html -->
                   <div
                     v-else
-                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    class="dec-code-block chat-reasoning chat-reasoning--md md-content"
                     v-html="decisionHtml(dec.promptSections.marketData, true)"
                   />
                 </div>
@@ -219,7 +219,7 @@ function timeAgo(iso: string) {
                   <!-- eslint-disable-next-line vue/no-v-html -->
                   <div
                     v-else
-                    class="dec-code-block chat-reasoning chat-reasoning--md"
+                    class="dec-code-block chat-reasoning chat-reasoning--md md-content"
                     v-html="decisionHtml(dec.promptSections.editableSetup, true)"
                   />
                 </div>
@@ -240,7 +240,7 @@ function timeAgo(iso: string) {
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <div
                   v-else
-                  class="dec-code-block chat-reasoning chat-reasoning--md"
+                  class="dec-code-block chat-reasoning chat-reasoning--md md-content"
                   v-html="decisionHtml(dec.llmRawResponse, true)"
                 />
               </div>
@@ -413,16 +413,6 @@ function timeAgo(iso: string) {
   line-height: 1.6;
   color: var(--text);
 }
-
-.chat-reasoning :deep(p) { margin: 0 0 6px; }
-.chat-reasoning :deep(ul) { margin: 4px 0; padding-left: 16px; }
-.chat-reasoning :deep(li) { margin-bottom: 2px; }
-.chat-reasoning :deep(h1),
-.chat-reasoning :deep(h2),
-.chat-reasoning :deep(h3) { margin: 6px 0 2px; font-size: 12px; font-weight: 700; }
-.chat-reasoning :deep(strong) { font-weight: 700; }
-.chat-reasoning :deep(em) { font-style: italic; }
-.chat-reasoning :deep(code) { font-family: var(--font-mono, monospace); font-size: 11px; }
 
 .badge-self-mod {
   display: inline-flex;

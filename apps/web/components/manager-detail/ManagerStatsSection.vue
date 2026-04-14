@@ -42,12 +42,12 @@ defineProps<{
         <div class="stat-label">Max Agents</div>
         <div class="stat-value">{{ manager.config?.riskParams?.maxAgents ?? '—' }}</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">LLM Tokens Used</div>
-        <div class="stat-value token-value">
-          {{ totalTokensUsed.toLocaleString('en') }}
-        </div>
-      </div>
+    </div>
+
+    <!-- LLM Tokens Used — below the stats bars -->
+    <div class="token-row">
+      <span class="token-label">LLM tokens used</span>
+      <span class="token-count">{{ totalTokensUsed.toLocaleString('en') }}</span>
     </div>
   </div>
 </template>
@@ -83,7 +83,27 @@ defineProps<{
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: -16px;
+}
+
+.token-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.token-count {
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
 }
 
 .stat-card {
@@ -112,6 +132,7 @@ defineProps<{
 
 @media (max-width: 1080px) {
   .stats-grid { grid-template-columns: repeat(3, 1fr); }
+  .token-row { margin-top: 6px; }
 }
 
 @media (max-width: 640px) {

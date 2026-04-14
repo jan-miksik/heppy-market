@@ -2,6 +2,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { CreateManagerRequestSchema, UpdateManagerRequestSchema } from '@something-in-loop/shared';
 import { agentDecisions, agentManagerLogs, agentManagers, agents, performanceSnapshots, trades } from '../../db/schema.js';
+import { getDefaultManagerMaxAgents, getMaxManagersPerUser } from '../../lib/entity-limits.js';
 import { nowIso, generateId } from '../../lib/utils.js';
 import { validateBody } from '../../lib/validation.js';
 import { normalizeManagerDecisionInterval, syncRunningManagerDecisionInterval } from '../../lib/manager-interval-sync.js';
@@ -27,6 +28,25 @@ export function registerManagerCoreRoutes(managersRoute: ManagersRoute): void {
     const body = await validateBody(c, CreateManagerRequestSchema);
     const walletAddress = c.get('walletAddress');
     const db = drizzle(c.env.DB);
+    const maxManagersPerUser = getMaxManagersPerUser(c.env);
+
+    if (maxManagersPerUser !== null) {
+      const ownedManagers = await db
+        .select({ id: agentManagers.id })
+        .from(agentManagers)
+        .where(eq(agentManagers.ownerAddress, walletAddress));
+
+      if (ownedManagers.length >= maxManagersPerUser) {
+        return c.json(
+          {
+            error: `Manager limit reached. You can create up to ${maxManagersPerUser} managers.`,
+            code: 'MANAGER_LIMIT_REACHED',
+            limit: maxManagersPerUser,
+          },
+          409,
+        );
+      }
+    }
 
     const id = generateId('mgr');
     const now = nowIso();
@@ -34,7 +54,7 @@ export function registerManagerCoreRoutes(managersRoute: ManagersRoute): void {
       llmModel: body.llmModel,
       temperature: body.temperature,
       decisionInterval: body.decisionInterval,
-      riskParams: body.riskParams ?? { maxTotalDrawdown: 0.2, maxAgents: 10, maxCorrelatedPositions: 3 },
+      riskParams: body.riskParams ?? { maxTotalDrawdown: 0.2, maxAgents: getDefaultManagerMaxAgents(c.env), maxCorrelatedPositions: 3 },
       ...(body.behavior ? { behavior: body.behavior } : {}),
       ...(body.profileId ? { profileId: body.profileId } : {}),
     };

@@ -54,7 +54,7 @@ defineEmits<{
             </span>
           </div>
           <!-- eslint-disable-next-line vue/no-v-html -->
-          <div class="chat-reasoning" :class="{ 'chat-reasoning--md': showMdPreview }" v-html="sectionHtml(log.reasoning, showMdPreview)" />
+          <div class="chat-reasoning" :class="showMdPreview ? ['chat-reasoning--md', 'md-content'] : []" v-html="sectionHtml(log.reasoning, showMdPreview)" />
           <p v-if="log.result?.detail" class="dec-meta">{{ log.result.detail }}</p>
           <p v-if="log.result?.error" class="dec-meta error-text">{{ log.result.error }}</p>
         </div>
@@ -164,6 +164,7 @@ defineEmits<{
   color: var(--text-muted);
   cursor: pointer;
   text-align: left;
+  justify-content: flex-start;
 }
 .dec-details-btn:hover { color: var(--text); }
 
@@ -214,8 +215,6 @@ defineEmits<{
 }
 
 .chat-reasoning { font-size: 14px; line-height: 1.6; color: var(--text); }
-.chat-reasoning :deep(p) { margin: 0 0 6px; }
-.chat-reasoning :deep(ul) { margin: 4px 0; padding-left: 16px; }
 
 .log-pagination {
   display: flex;

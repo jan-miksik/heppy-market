@@ -216,7 +216,11 @@ function formatAmountUsd(amountUsd: number): string {
           </td>
         </tr>
         <template v-for="trade in sortedTrades" :key="trade.id">
-          <tr class="tt-row" @click="toggleRow(trade.id)">
+          <tr
+            class="tt-row"
+            :class="{ 'row--paper': trade.isPaper }"
+            @click="toggleRow(trade.id)"
+          >
             <td class="tt-cell-expand">
               {{ expandedRows.has(trade.id) ? '▼' : '▶' }}
             </td>

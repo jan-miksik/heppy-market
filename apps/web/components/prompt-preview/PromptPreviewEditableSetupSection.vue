@@ -122,12 +122,13 @@ function onPersonaInput(event: Event) {
 <template>
   <div class="prompt-section prompt-section--editable">
     <div class="prompt-section__toggle-row">
-      <button class="prompt-section__toggle" style="flex:1" @click="actions.toggleExpanded()">
+      <button type="button" class="prompt-section__toggle" style="flex:1" @click="actions.toggleExpanded()">
         <span class="prompt-section__label">[EDITABLE SETUP]</span>
         <span v-if="setupChanged" class="prompt-section__edited-badge">edited</span>
         <span class="acf__chevron" :class="{ open: setupExpanded }">›</span>
       </button>
       <button
+        type="button"
         v-if="setupExpanded && !editingSetup && !showMdPreview && setupChanged"
         class="btn btn-ghost btn-sm"
         style="margin-right:8px"
@@ -136,6 +137,7 @@ function onPersonaInput(event: Event) {
         {{ showSetupDiff ? 'Text' : 'Diff' }}
       </button>
       <button
+        type="button"
         v-if="setupExpanded && !editingSetup && canEditSetup"
         class="btn btn-ghost btn-sm"
         style="margin-right:8px"
@@ -144,6 +146,7 @@ function onPersonaInput(event: Event) {
         Edit
       </button>
       <button
+        type="button"
         v-if="setupExpanded && editingSetup"
         class="btn btn-ghost btn-sm"
         style="margin-right:8px"
@@ -166,7 +169,7 @@ function onPersonaInput(event: Event) {
     <!-- eslint-disable-next-line vue/no-v-html -->
     <div
       v-else-if="setupExpanded && !editingSetup && showMdPreview"
-      class="prompt-section__content prompt-section__content--setup"
+      class="prompt-section__content prompt-section__content--setup md-content"
       v-html="renderMarkdown(liveEditableSetup)"
     />
 
@@ -240,7 +243,7 @@ function onPersonaInput(event: Event) {
         <div class="setup-part__label">Constraints <span class="setup-part__auto-tag">auto-generated</span></div>
         <pre v-if="!showMdPreview" class="prompt-section__content">{{ liveConstraintsSection }}</pre>
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div v-else class="prompt-section__content" v-html="renderMarkdown(liveConstraintsSection)" />
+        <div v-else class="prompt-section__content md-content" v-html="renderMarkdown(liveConstraintsSection)" />
       </div>
     </template>
   </div>
