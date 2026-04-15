@@ -1,13 +1,26 @@
 # create .dev.vars and copy these keys there
-# $ cp .dev.vars.example .dev.vars
+# cp .dev.vars.example .dev.vars
 
+# Initia EVM RPC endpoint — use localhost for local node, or a remote RPC URL for testnet/mainnet
 INITIA_EVM_RPC=http://localhost:8545
 
-# Required: get a free key at https://openrouter.ai → Dashboard → API Keys
+# Required: get a free key at https://openrouter.ai
 OPENROUTER_API_KEY=sk-or-v1-xxxxx
 
+# Secret used by the Playwright test runner to authenticate against the local API
+PLAYWRIGHT_SECRET=playwright-dev-secret
+
+# Secret used to encrypt stored private keys in the database — any random string, keep it stable
 KEY_ENCRYPTION_SECRET=
+
+# Chain ID of the Initia EVM network
 INITIA_EVM_CHAIN_ID=
+
+# Deployed address of the on-chain agent registry/manager contract
 INITIA_AGENT_CONTRACT_ADDRESS=
+
+# Deployed address of the mock perpetual DEX contract
 MOCK_PERP_DEX_ADDRESS=
-INITIA_EXECUTOR_PRIVATE_KEY= 
+
+# Private key of the executor wallet that signs and submits on-chain transactions
+INITIA_EXECUTOR_PRIVATE_KEY=

@@ -1,70 +1,33 @@
 # Manual Setup
 
-## Initia Appchain Setup
+This guide is the repo-accurate fallback when you do not want to use the one-shot bootstrap script.
 
-For Initia-specific setup, use the `initia-appchain-dev` skill as the reference workflow. This project expects an Initia **EVM** appchain reachable through:
+If you want the fastest local path, use [`setupLocalAndStart.sh`](../setupLocalAndStart.sh) instead. That script installs dependencies, optionally starts a local Initia rollup, deploys contracts, writes local env files, applies D1 migrations, and starts both apps.
 
-- EVM JSON-RPC, usually `http://localhost:8545`
-- Tendermint RPC, usually `http://localhost:26657`
-- Cosmos REST, usually `http://localhost:1317`
+## Current Local Defaults
 
-The current local defaults in this repo assume:
+The codebase currently defaults to this local Initia setup unless you override it with env vars:
 
+- EVM JSON-RPC: `http://localhost:8545`
+- Tendermint RPC: `http://localhost:26657`
+- Cosmos REST: `http://localhost:1317`
+- Indexer: `http://localhost:8080`
+- Initia web app: `http://localhost:5173`
 - Rollup chain id: `pillow-rollup`
 - EVM chain id: `2178983797612220`
 
-Those are only defaults. If your local appchain uses different values, set the matching env vars instead of changing app code.
+These are defaults only. If your local Initia appchain uses different values, set the matching env vars instead of changing app code.
 
-### Can someone use their own local Initia appchain?
+## Can You Use Your Own Initia Chain?
 
-Yes, if all of the following are true:
+Yes, if all of these are true:
 
 - It is an Initia EVM-compatible local appchain.
-- The RPC endpoints are reachable by this app.
+- The RPC endpoints are reachable from this repo.
 - You deploy this repo's contracts to that chain.
-- You put your chain id, RPC URLs, and deployed contract addresses into the env files.
+- You update the local env files with your actual chain ids, RPC URLs, and deployed contract addresses.
 
-In practice, the setup is:
-
-1. Start your own local Initia appchain.
-2. Deploy `Agent.sol`, `IUSDDemoToken` + `IUSDDemoFaucet`, and `MockPerpDEX`.
-3. Update the env vars in `apps/api/.dev.vars` and `apps/web/.env`.
-4. Run `pnpm run dev:api` and `pnpm run dev:web`.
-
-So yes: if someone already has a local Initia appchain, they can use this app. They do not just change the appchain name. They must also deploy the contracts on that appchain and map the deployed values into the env files.
-
-## Quick Start
-
-### Option A: one-shot local setup
-
-The repo includes [`doItAll.sh`](./doItAll.sh), which can:
-
-- install workspace dependencies
-- start the local Initia rollup with `weave`
-- deploy the contracts
-- write `apps/web/.env`
-- write `apps/api/.dev.vars`
-- apply local D1 migrations
-
-Run:
-
-```bash
-chmod +x doItAll.sh
-./doItAll.sh
-```
-
-Useful variants:
-
-```bash
-./doItAll.sh --skip-chain
-./doItAll.sh --skip-chain --skip-contracts
-```
-
-
-
-### Option B: manual setup
-
-Use this if you want full control or if you are connecting the app to your own local Initia appchain.
+That means the setup is not just "change the appchain name". You also need matching contract deployments and matching env values.
 
 ## Prerequisites
 
@@ -72,18 +35,22 @@ Use this if you want full control or if you are connecting the app to your own l
 - `pnpm`
 - Foundry: `forge` and `cast`
 - `jq`
-- `minitiad`
-- `weave` if you want this repo to start the local rollup for you
+- `curl`
+- `weave` if you want this repo to start a local Initia rollup for you
 
-Install dependencies from the repo root:
+Install workspace dependencies from the repo root:
 
 ```bash
 pnpm install
 ```
 
+## Fully Manual Setup
+
+Use this path if you want full control, or if you are connecting the app to your own running local Initia chain.
+
 ## Env Files
 
-Create the local env files from the examples:
+Create the local env files:
 
 ```bash
 cp .env.example .env
@@ -93,59 +60,62 @@ cp apps/web/.env.example apps/web/.env
 
 ### 1. Root `.env`
 
-Used for shared local values and by `doItAll.sh`.
+Used by the bootstrap script and shared local defaults.
+
+Start from [`.env.example`](../.env.example):
 
 ```dotenv
 OPENROUTER_API_KEY=
 INITIATE_MNEMONIC=
+MAX_AGENTS_PER_USER=5
+MAX_MANAGERS_PER_USER=1
+DEFAULT_MANAGER_MAX_AGENTS=2
 ```
 
 Notes:
 
-- `OPENROUTER_API_KEY`: required for agent analysis. A free OpenRouter account works, but free limits are hit sooner. Accounts with at least `$10` credit usually get higher free-model limits.
-- `INITIATE_MNEMONIC`: use a common local test mnemonic if you want repeatable local setup. Example format:
-
-```dotenv
-INITIATE_MNEMONIC=test test test test test test test test test test test junk
-```
+- `OPENROUTER_API_KEY`: required for the app to run locally.
+- `INITIATE_MNEMONIC`: optional unless you want the bootstrap script to derive a deployer key.
+- `MAX_AGENTS_PER_USER`, `MAX_MANAGERS_PER_USER`, `DEFAULT_MANAGER_MAX_AGENTS`: optional local limits.
 
 ### 2. `apps/api/.dev.vars`
 
-Local secrets for Wrangler dev:
+Wrangler reads this file for local Worker secrets.
+
+Minimal working example:
 
 ```dotenv
-KEY_ENCRYPTION_SECRET=
-INITIA_EVM_CHAIN_ID=
-INITIA_AGENT_CONTRACT_ADDRESS=
-MOCK_PERP_DEX_ADDRESS=
-INITIA_EXECUTOR_PRIVATE_KEY=
-```
-
-This file also needs `OPENROUTER_API_KEY`. The example file already includes it, plus `INITIA_EVM_RPC`.
-
-Recommended shape:
-
-```dotenv
-INITIA_EVM_RPC=http://localhost:8545
 OPENROUTER_API_KEY=
-KEY_ENCRYPTION_SECRET=
-INITIA_EVM_CHAIN_ID=
-INITIA_AGENT_CONTRACT_ADDRESS=
-MOCK_PERP_DEX_ADDRESS=
-INITIA_EXECUTOR_PRIVATE_KEY=
+PLAYWRIGHT_SECRET=playwright-dev-secret
 ```
 
-What these values mean:
+Recommended example when you want backend-driven Initia execution enabled:
 
-- `KEY_ENCRYPTION_SECRET`: 64-character hex string used by the API to encrypt stored user keys.
-- `INITIA_EVM_CHAIN_ID`: your Initia EVM chain id.
-- `INITIA_AGENT_CONTRACT_ADDRESS`: deployed `Agent.sol` address.
-- `MOCK_PERP_DEX_ADDRESS`: deployed `MockPerpDEX` address.
-- `INITIA_EXECUTOR_PRIVATE_KEY`: private key of the executor account used by the API.
+```dotenv
+OPENROUTER_API_KEY=
+PLAYWRIGHT_SECRET=playwright-dev-secret
+INITIA_EVM_RPC=http://localhost:8545
+INITIA_EVM_CHAIN_ID=2178983797612220
+INITIA_AGENT_CONTRACT_ADDRESS=
+INITIA_EXECUTOR_PRIVATE_KEY=
+MOCK_PERP_DEX_ADDRESS=
+KEY_ENCRYPTION_SECRET=
+```
+
+What these values do:
+
+- `OPENROUTER_API_KEY`: enables LLM-backed agent analysis.
+- `PLAYWRIGHT_SECRET`: enables the local dev session helper route used by Playwright and other local test flows.
+- `INITIA_EVM_RPC`: backend RPC URL for Initia executor calls.
+- `INITIA_EVM_CHAIN_ID`: backend chain id for the Initia executor. If omitted, the API falls back to `2178983797612220`.
+- `INITIA_AGENT_CONTRACT_ADDRESS`: fallback contract address for backend executor calls.
+- `INITIA_EXECUTOR_PRIVATE_KEY`: executor key used by the API to submit onchain transactions.
+- `MOCK_PERP_DEX_ADDRESS`: backend address for mock perp execution flows.
+- `KEY_ENCRYPTION_SECRET`: optional 64-character hex string used to AES-GCM encrypt stored user API keys. If omitted, local dev falls back to plaintext storage.
 
 ### 3. `apps/web/.env`
 
-Frontend runtime values:
+Start from [`apps/web/.env.example`](../apps/web/.env.example):
 
 ```dotenv
 NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS=
@@ -154,35 +124,63 @@ NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_FAUCET_ADDRESS=
 NUXT_PUBLIC_INITIA_MOCK_PERP_DEX_ADDRESS=
 NUXT_PUBLIC_INITIA_EXECUTOR_ADDRESS=
 NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS=
+NUXT_PUBLIC_INITIA_EXECUTOR_MAX_TRADE_WEI=1000000000000000000
+NUXT_PUBLIC_INITIA_EXECUTOR_DAILY_LIMIT_WEI=5000000000000000000
 ```
 
-In practice you will usually also want these when using a non-default local chain:
+If you are using a non-default local chain, you will usually also want to add:
 
 ```dotenv
-NUXT_PUBLIC_INITIA_ROLLUP_CHAIN_ID=
-NUXT_PUBLIC_INITIA_EVM_CHAIN_ID=
+NUXT_PUBLIC_INITIA_ROLLUP_CHAIN_ID=pillow-rollup
+NUXT_PUBLIC_INITIA_EVM_CHAIN_ID=2178983797612220
 NUXT_PUBLIC_INITIA_EVM_RPC=http://localhost:8545
 NUXT_PUBLIC_INITIA_RPC_URL=http://localhost:26657
 NUXT_PUBLIC_INITIA_REST_URL=http://localhost:1317
+NUXT_PUBLIC_INITIA_INDEXER_URL=http://localhost:8080
+NUXT_PUBLIC_INITIA_WEB_URL=http://localhost:5173
 ```
 
-What these values mean:
+Additional optional public bridge defaults supported by the frontend:
+
+```dotenv
+NUXT_PUBLIC_INITIA_BRIDGE_SRC_CHAIN_ID=initiation-2
+NUXT_PUBLIC_INITIA_BRIDGE_SRC_DENOM=uinit
+NUXT_PUBLIC_INITIA_BRIDGE_URL=https://bridge.testnet.initia.xyz
+```
+
+What the main frontend values do:
 
 - `NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS`: deployed `Agent.sol` address.
 - `NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_ADDRESS`: deployed `IUSDDemoToken` address.
 - `NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_FAUCET_ADDRESS`: deployed `IUSDDemoFaucet` address.
 - `NUXT_PUBLIC_INITIA_MOCK_PERP_DEX_ADDRESS`: deployed `MockPerpDEX` address.
 - `NUXT_PUBLIC_INITIA_EXECUTOR_ADDRESS`: public address of the executor account.
-- `NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS`: call target used in the showcase flow. For local setup this is usually the same as `MockPerpDEX`.
+- `NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS`: call target used in the showcase flow. Locally this is usually the same as `MockPerpDEX`.
+
+## Start Or Reuse Your Local Initia Chain
+
+If you want this repo to handle chain startup as part of the full local bootstrap, use:
+
+```bash
+./setupLocalAndStart.sh --skip-contracts
+```
+
+If you already run your own chain yourself, make sure these endpoints are reachable before continuing:
+
+- `http://localhost:8545`
+- `http://localhost:26657`
+- `http://localhost:1317`
+
+Adjust env vars if your chain uses different URLs.
 
 ## Deploy Contracts
 
-Deploy from [`contracts`](./contracts). The repo contains:
+Deploy from [`contracts`](../contracts). The repo contains scripts for:
 
 - `Agent.sol`
 - `IUSDDemoToken.sol`
 - `IUSDDemoFaucet.sol`
-- `MockPerpDEX`
+- `MockPerpDEX.sol`
 
 Example deployment flow:
 
@@ -201,53 +199,66 @@ forge script script/DeployMockPerpDEX.s.sol:DeployMockPerpDEX \
   --rpc-url http://localhost:8545 --broadcast --slow
 ```
 
-Map the deployment outputs into env vars like this:
+The deployment scripts print contract addresses to stdout. Map the outputs into env vars like this:
 
 | Deployment output | Put it into |
-|---|---|
+| --- | --- |
 | `Agent` address | `INITIA_AGENT_CONTRACT_ADDRESS`, `NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS` |
 | `IUSDDemoToken` address | `NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_ADDRESS` |
 | `IUSDDemoFaucet` address | `NUXT_PUBLIC_INITIA_SHOWCASE_TOKEN_FAUCET_ADDRESS` |
 | `MockPerpDEX` address | `MOCK_PERP_DEX_ADDRESS`, `NUXT_PUBLIC_INITIA_MOCK_PERP_DEX_ADDRESS`, `NUXT_PUBLIC_INITIA_SHOWCASE_TARGET_ADDRESS` |
 | Executor wallet private key | `INITIA_EXECUTOR_PRIVATE_KEY` |
 | Executor wallet address | `NUXT_PUBLIC_INITIA_EXECUTOR_ADDRESS` |
-| Your chain id | `INITIA_EVM_CHAIN_ID`, `NUXT_PUBLIC_INITIA_EVM_CHAIN_ID` |
+| Your EVM chain id | `INITIA_EVM_CHAIN_ID`, `NUXT_PUBLIC_INITIA_EVM_CHAIN_ID` |
 
-## Install And Run
+## Apply Local API Migrations
 
-From the repo root:
+The API uses Wrangler local D1 for dev.
+
+From [`apps/api`](../apps/api):
 
 ```bash
-pnpm install
+pnpm migration:apply:local
 ```
 
-Start the API:
+## Run The Apps
+
+From the repo root, start the API:
 
 ```bash
 pnpm run dev:api
 ```
 
-In a second terminal, start the web app:
+In a second terminal, start the frontend:
 
 ```bash
 pnpm run dev:web
 ```
 
-Then open the local web URL and connect with InterwovenKit.
+Expected local URLs:
+
+- Web: `http://localhost:3001`
+- API: `http://localhost:8787`
+- API health: `http://localhost:8787/api/health`
 
 ## Minimal Manual Flow
 
-If you already have your own local Initia appchain, the shortest working flow is:
+If you already have your own Initia chain running, the shortest valid setup is:
 
-1. Copy the example env files.
-2. Put `OPENROUTER_API_KEY` and `INITIATE_MNEMONIC` into root `.env`.
-3. Deploy the contracts to your own local Initia EVM appchain.
-4. Put the contract addresses, executor key, chain id, and RPC values into `apps/api/.dev.vars` and `apps/web/.env`.
-5. Run `pnpm run dev:api`.
-6. Run `pnpm run dev:web`.
+1. Copy `.env.example` to `.env`.
+2. Copy `apps/web/.env.example` to `apps/web/.env`.
+3. Create `apps/api/.dev.vars` manually.
+4. Put `OPENROUTER_API_KEY` into `.env` and `apps/api/.dev.vars` if you want LLM-backed agents.
+5. Deploy `Agent.sol`, `IUSDDemoToken.sol`, `IUSDDemoFaucet.sol`, and `MockPerpDEX.sol` to your chain.
+6. Put the deployed addresses and chain-specific RPC values into `apps/web/.env`.
+7. If you want backend executor support, put the matching Initia executor values into `apps/api/.dev.vars`.
+8. Apply local D1 migrations from `apps/api`.
+9. Run `pnpm run dev:api`.
+10. Run `pnpm run dev:web`.
 
 ## References
 
-- Detailed local setup: [`docs/LOCAL_SETUP.md`](./docs/LOCAL_SETUP.md)
-- Contract details: [`contracts/README.md`](./contracts/README.md)
-- One-shot local bootstrap: [`doItAll.sh`](./doItAll.sh)
+- Fast bootstrap: [`setupLocalAndStart.sh`](../setupLocalAndStart.sh)
+- Main project README: [`README.md`](../README.md)
+- Deploy docs: [`docs/DEPLOY.md`](./DEPLOY.md)
+- Contract details: [`contracts/README.md`](../contracts/README.md)

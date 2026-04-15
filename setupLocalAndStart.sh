@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# doItAll.sh — One-shot local setup for initRoot
+# prepareAllForLocalRun.sh — One-shot local setup for initRoot
 #
 # What it does:
 #   1. Checks prerequisites
 #   2. Installs pnpm dependencies
 #   3. Starts the Initia pillow-rollup EVM chain (via weave)
 #   4. Deploys all contracts (Agent, iUSD demo, MockPerpDEX)
-#   5. Writes .env and apps/api/.dev.vars from deployed addresses
+#   5. Writes apps/web/.env and apps/api/.dev.vars
 #   6. Applies local Cloudflare D1 migrations
 #   7. Starts the API (port 8787) and Web (port 3001)
 #
@@ -15,10 +15,10 @@
 #   --skip-contracts  Skip contract deployment (use addresses already in apps/web/.env)
 #
 # Usage:
-#   chmod +x doItAll.sh
-#   ./doItAll.sh
-#   ./doItAll.sh --skip-chain
-#   ./doItAll.sh --skip-chain --skip-contracts
+#   chmod +x prepareAllForLocalRun.sh
+#   ./prepareAllForLocalRun.sh
+#   ./prepareAllForLocalRun.sh --skip-chain
+#   ./prepareAllForLocalRun.sh --skip-chain --skip-contracts
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ err()  { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 
 echo -e "${BOLD}"
 echo "╔══════════════════════════════════════════╗"
-echo "║   initRoot — doItAll local setup         ║"
+echo "║ initRoot — prepare local setup           ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -205,11 +205,8 @@ if [[ "$SKIP_CONTRACTS" == false ]]; then
 
   # ─── 5d. Write apps/web/.env ──────────────────────────────────────────────
   log "Writing apps/web/.env..."
-  REOWN_ID=$(grep -E '^REOWN_PROJECT_ID=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || echo "0d1af33ea5d0930355178d3d8c820785")
-
   cat > "$REPO_ROOT/apps/web/.env" <<EOF
-REOWN_PROJECT_ID=${REOWN_ID}
-PLAYWRIGHT_SECRET=playwright-dev-secret
+
 
 NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS=${AGENT_ADDRESS}
 
@@ -236,6 +233,28 @@ fi
 # wrangler dev reads .dev.vars for secrets in local mode
 log "Writing apps/api/.dev.vars..."
 
+# If contracts were skipped, read addresses from the already-written apps/web/.env
+if [[ "$SKIP_CONTRACTS" == true ]]; then
+  AGENT_ADDRESS=$(grep -E '^NUXT_PUBLIC_INITIA_CONTRACT_ADDRESS=' "$REPO_ROOT/apps/web/.env" 2>/dev/null | cut -d= -f2- | tr -d ' ' || echo "")
+  PERP_DEX=$(grep -E '^NUXT_PUBLIC_INITIA_MOCK_PERP_DEX_ADDRESS=' "$REPO_ROOT/apps/web/.env" 2>/dev/null | cut -d= -f2- | tr -d ' ' || echo "")
+fi
+
+# Resolve executor key if not already set (contracts were skipped)
+if [[ -z "${PRIVATE_KEY:-}" ]]; then
+  PRIVATE_KEY=$(resolve_private_key)
+fi
+
+# Resolve chain ID from the running node
+CHAIN_ID=$(cast chain-id --rpc-url "$EVM_RPC" 2>/dev/null || echo "")
+[[ -z "$CHAIN_ID" ]] && warn "Could not resolve INITIA_EVM_CHAIN_ID — fill it in manually in apps/api/.dev.vars"
+
+# Get or generate KEY_ENCRYPTION_SECRET
+KEY_ENC_SECRET=$(grep -E '^KEY_ENCRYPTION_SECRET=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || echo "")
+if [[ -z "$KEY_ENC_SECRET" ]]; then
+  KEY_ENC_SECRET=$(openssl rand -hex 32 2>/dev/null || true)
+  warn "Generated random KEY_ENCRYPTION_SECRET — store it in root .env if you want to reuse encrypted keys"
+fi
+
 OR_KEY=$(grep -E '^OPENROUTER_API_KEY=' "$REPO_ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2- || echo "")
 if [[ -z "$OR_KEY" ]]; then
   echo ""
@@ -248,6 +267,12 @@ fi
 cat > "$REPO_ROOT/apps/api/.dev.vars" <<EOF
 OPENROUTER_API_KEY=${OR_KEY}
 PLAYWRIGHT_SECRET=playwright-dev-secret
+KEY_ENCRYPTION_SECRET=${KEY_ENC_SECRET}
+INITIA_EVM_RPC=${EVM_RPC}
+INITIA_EVM_CHAIN_ID=${CHAIN_ID}
+INITIA_AGENT_CONTRACT_ADDRESS=${AGENT_ADDRESS:-}
+MOCK_PERP_DEX_ADDRESS=${PERP_DEX:-}
+INITIA_EXECUTOR_PRIVATE_KEY=${PRIVATE_KEY:-}
 EOF
 ok "apps/api/.dev.vars written"
 
