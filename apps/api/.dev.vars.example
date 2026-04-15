@@ -1,4 +1,6 @@
-# Copy this file to .dev.vars for local development with wrangler dev
+# create .dev.vars and copy these keys there
+# $ cp .dev.vars.example .dev.vars
+
 INITIA_EVM_RPC=http://localhost:8545
 
 # Required: get a free key at https://openrouter.ai → Dashboard → API Keys

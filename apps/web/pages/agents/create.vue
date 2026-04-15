@@ -141,6 +141,18 @@ const {
     @proceed="handleConsentProceed"
     @cancel="handleConsentCancel"
   />
+
+  <Teleport to="body">
+    <div v-if="creating" class="create-overlay">
+      <div class="create-overlay__inner">
+        <div class="page-loader-track">
+          <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+          <span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" /><span class="page-loader-block" />
+        </div>
+        <span class="create-overlay__label">Creating agent…</span>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -376,5 +388,32 @@ const {
 
 @media (max-width: 1000px) {
   .edit-page__body { max-width: 100%; }
+}
+
+.create-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-overlay__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.create-overlay__label {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #666);
 }
 </style>

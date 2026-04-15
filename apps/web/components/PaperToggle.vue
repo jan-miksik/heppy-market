@@ -1,5 +1,5 @@
 <script setup lang="ts">
-export type PaperMode = 'live' | 'all' | 'paper';
+import type { PaperMode } from '~/composables/usePaperModePreference';
 
 interface Props {
   modelValue: PaperMode;

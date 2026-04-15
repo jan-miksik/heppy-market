@@ -1,6 +1,15 @@
 ## initRoot – Project Overview
 
-**initRoot** (monorepo name `something-in-loop`) is an AI‑assisted paper‑trading platform for DEXes on the Base chain.
+## TL;DR
+
+- **Frontend**: Nuxt SPA on **Cloudflare Pages**, with a Pages Function proxy and Service Binding to the API Worker.
+- **Backend**: Hono‑based **Cloudflare Worker** using **D1**, **KV**, **Durable Objects**, and **cron triggers**.
+- **Shared**: Single `packages/shared` package owns all validation schemas and prompt-builder functions — used by API and frontend.
+- **Security model**: API is **internal-only**; the browser talks only to the Pages origin, and Cloudflare's internal Service Binding handles communication to the Worker.
+
+
+
+**initRoot** (monorepo name `initRoot`) is an AI‑assisted paper‑trading platform for DEXes.
 
 - **Frontend (`apps/web`)**
   - **Nuxt 4 SPA** (no SSR) with Vue 3 `<script setup>` and TypeScript.
@@ -250,9 +259,3 @@ apps/web/pages/
 
 ---
 
-## TL;DR
-
-- **Frontend**: Nuxt SPA on **Cloudflare Pages**, with a Pages Function proxy and Service Binding to the API Worker.
-- **Backend**: Hono‑based **Cloudflare Worker** using **D1**, **KV**, **Durable Objects**, and **cron triggers**.
-- **Shared**: Single `packages/shared` package owns all validation schemas and prompt-builder functions — used by API and frontend.
-- **Security model**: API is **internal-only**; the browser talks only to the Pages origin, and Cloudflare's internal Service Binding handles communication to the Worker.

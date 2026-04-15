@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ModelCatalogItem } from '@something-in-loop/shared';
+import { deriveModelPickerState } from '~/utils/llm-models';
 
 const props = withDefaults(defineProps<{
   modelValue: string;
@@ -24,19 +25,13 @@ const modelPickerRef = ref<HTMLElement | null>(null);
 const dropdownModel = ref('');
 const customModel = ref('');
 
-function isCatalogModel(id: string) {
-  return props.catalog.some((item) => item.id === id);
-}
-
 function syncInternalValue(value: string) {
-  if (isCatalogModel(value)) {
-    dropdownModel.value = value;
-    customModel.value = '';
-    return;
-  }
-
-  customModel.value = value;
-  dropdownModel.value = props.catalog[0]?.id ?? value;
+  const next = deriveModelPickerState({
+    value,
+    catalog: props.catalog,
+  });
+  dropdownModel.value = next.dropdownModel;
+  customModel.value = next.customModel;
 }
 
 watch(

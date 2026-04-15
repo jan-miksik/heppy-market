@@ -26,7 +26,9 @@ export interface Agent {
     slippageSimulation: number;
     temperature: number;
     allowFallback?: boolean;
-    behavior?: Record<string, unknown>;  };
+    behavior?: Record<string, unknown>;
+    profileId?: string;
+  };
   managerId?: string | null;
   profileId?: string | null;
   personaMd?: string | null;

@@ -249,7 +249,7 @@ export function useAgentCreateFlow() {
       });
       createdAgentId.value = agent.id;
       await startAgent(agent.id);
-      router.push(`/agents/${agent.id}`);
+      router.push(`/agents/${agent.id}?justCreated=1`);
     } catch (err) {
       showNotification({
         type: 'error',

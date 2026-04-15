@@ -11,6 +11,7 @@ import {
 } from '@something-in-loop/shared';
 import type { ProfileItem } from '~/composables/useProfiles';
 import { useAuth } from '~/composables/useAuth';
+import { resolveHydratedLlmModel } from '~/utils/llm-models';
 
 export function useManagerConfigForm(props: {
   initial?: any;
@@ -203,7 +204,11 @@ export function useManagerConfigForm(props: {
     if (!props.isEdit) {
       try {
         const savedDefaultModel = localStorage.getItem(defaultModelPrefKey);
-        if (savedDefaultModel) form.llmModel = savedDefaultModel;
+        form.llmModel = resolveHydratedLlmModel({
+          savedModel: savedDefaultModel,
+          catalog: modelCatalog.value,
+          hasOwnKey: hasOwnKey.value,
+        });
       } catch { /* ignore */ }
       syncPersistedModelToggle();
     }

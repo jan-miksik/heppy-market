@@ -97,27 +97,33 @@ function sortIcon(key: SortKey) {
 }
 
 function effectiveTradePnl(trade: Trade): { pnlPct: number; pnlUsd: number } {
-  const unrealized = getUnrealizedPnl(trade);
+  if (trade.status === 'open') {
+    const unrealized = getUnrealizedPnl(trade);
+    return {
+      pnlPct: unrealized?.pnlPct ?? (trade.pnlPct != null ? Number(trade.pnlPct) : Number.NEGATIVE_INFINITY),
+      pnlUsd: unrealized?.pnlUsd ?? (trade.pnlUsd != null ? Number(trade.pnlUsd) : Number.NEGATIVE_INFINITY),
+    };
+  }
   return {
-    pnlPct: unrealized?.pnlPct ?? trade.pnlPct ?? Number.NEGATIVE_INFINITY,
-    pnlUsd: unrealized?.pnlUsd ?? trade.pnlUsd ?? Number.NEGATIVE_INFINITY,
+    pnlPct: trade.pnlPct != null ? Number(trade.pnlPct) : Number.NEGATIVE_INFINITY,
+    pnlUsd: trade.pnlUsd != null ? Number(trade.pnlUsd) : Number.NEGATIVE_INFINITY,
   };
 }
 
 function tradeSortValue(trade: Trade, key: SortKey): string | number {
   switch (key) {
     case 'pair':
-      return trade.pair;
+      return trade.pair || '';
     case 'amountUsd':
-      return trade.amountUsd;
+      return Number(trade.amountUsd) || 0;
     case 'confidenceBefore':
-      return trade.confidenceBefore;
+      return Number(trade.confidenceBefore) || 0;
     case 'pnlPct':
       return effectiveTradePnl(trade).pnlPct;
     case 'pnlUsd':
       return effectiveTradePnl(trade).pnlUsd;
     case 'openedAt':
-      return trade.openedAt;
+      return trade.openedAt || '';
   }
 }
 
@@ -252,7 +258,7 @@ function formatAmountUsd(amountUsd: number): string {
             <td class="mono" :class="trade.confidenceBefore >= 0.7 ? 'positive' : 'neutral'" style="font-size: 12px;">
               {{ (trade.confidenceBefore * 100).toFixed(0) }}%
             </td>
-            <td class="mono">
+            <td class="mono" style="white-space: nowrap;">
               <template v-if="trade.status === 'open'">
                 <template v-for="pnl in [getUnrealizedPnl(trade)]" :key="trade.id + '-pnl'">
                   <TransitionGroup v-if="pnl" tag="span" name="pnl" mode="out-in">

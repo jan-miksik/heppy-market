@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router';
+import { watch } from 'vue';
 import { useAgentDetailPage } from '~/features/agents/detail/useAgentDetailPage';
 
 import AgentHeaderSection from '~/components/agent-detail/AgentHeaderSection.vue';
@@ -10,6 +11,7 @@ import AgentPositionsSection from '~/components/agent-detail/AgentPositionsSecti
 
 const route = useRoute();
 const id = route.params.id as string;
+const justCreated = route.query.justCreated === '1';
 
 const {
   agent,
@@ -58,6 +60,15 @@ const {
 } = useAgentDetailPage(id);
 
 definePageMeta({ ssr: false });
+
+if (justCreated) {
+  const stopWatch = watch(loading, (isLoading) => {
+    if (!isLoading && agent.value) {
+      stopWatch();
+      handleAnalyze();
+    }
+  });
+}
 </script>
 
 <template>

@@ -10,6 +10,7 @@ import {
 import type { CreateAgentPayload } from '~/composables/useAgents';
 import { useAgents } from '~/composables/useAgents';
 import type { ProfileItem } from '~/composables/useProfiles';
+import { resolveHydratedLlmModel } from '~/utils/llm-models';
 
 export function useAgentConfigForm(props: {
   initialValues?: Partial<CreateAgentPayload & { pairs: string[] }>;
@@ -316,7 +317,11 @@ export function useAgentConfigForm(props: {
     } else {
       try {
         const savedDefaultModel = localStorage.getItem(defaultModelPrefKey);
-        if (savedDefaultModel) form.llmModel = savedDefaultModel;
+        form.llmModel = resolveHydratedLlmModel({
+          savedModel: savedDefaultModel,
+          catalog: modelCatalog.value,
+          hasOwnKey: hasOwnKey.value,
+        });
       } catch { /* ignore */ }
       form.name = generateName();
       syncPersistedModelToggle();

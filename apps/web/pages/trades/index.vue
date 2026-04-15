@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
-import type { PaperMode } from '~/components/PaperToggle.vue';
+import type { PaperMode } from '~/composables/usePaperModePreference';
 
 definePageMeta({ ssr: false });
-
-const TRADE_HISTORY_PAPER_STORAGE_KEY = 'heppy:trades:paperMode';
 
 const { trades, loading, error, fetchTrades } = useTrades();
 const { stats, error: realStatsError, fetchStats } = useTrades();
 const { stats: paperStats, error: paperStatsError, fetchStats: fetchPaperStats } = useTrades();
 const { agents, fetchAgents } = useAgents();
+const { paperModePreference: storedPaperMode, setPaperModePreference } = usePaperModePreference();
 
 const statusFilter = ref('');
 const limitFilter = ref(100);
-const storedPaperMode = ref<PaperMode | null>(null);
 const preferencesReady = ref(false);
 const agentsReady = ref(false);
 
@@ -49,25 +47,8 @@ const agentProfileIdMap = computed<Record<string, string>>(() => {
   return map;
 });
 
-function readStoredPaperMode(): PaperMode | null {
-  if (!import.meta.client) return null;
-  const raw = localStorage.getItem(TRADE_HISTORY_PAPER_STORAGE_KEY);
-  if (raw === 'live' || raw === 'all' || raw === 'paper') return raw;
-  // Back-compat with old boolean-shaped keys
-  const legacy = localStorage.getItem('heppy:trades:showPaperAgents');
-  if (legacy === 'true') return 'all';
-  if (legacy === 'false') return 'live';
-  return null;
-}
-
-function saveStoredPaperMode(value: PaperMode) {
-  if (!import.meta.client) return;
-  localStorage.setItem(TRADE_HISTORY_PAPER_STORAGE_KEY, value);
-}
-
 function setPaperMode(value: PaperMode) {
-  storedPaperMode.value = value;
-  saveStoredPaperMode(value);
+  setPaperModePreference(value);
 }
 
 function winRateClass(rate: number): 'positive' | 'negative' | 'neutral' {
@@ -122,7 +103,6 @@ function onTradeClosed(updatedTrade: (typeof trades.value)[number]) {
 }
 
 onMounted(async () => {
-  storedPaperMode.value = readStoredPaperMode();
   preferencesReady.value = true;
   await fetchAgents();
   agentsReady.value = true;

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
-import type { PaperMode } from '~/components/PaperToggle.vue';
+import type { PaperMode } from '~/composables/usePaperModePreference';
 
 definePageMeta({ ssr: false });
-const AGENTS_PAPER_STORAGE_KEY = 'heppy:agents:paperMode';
 const { agents, loading, error, fetchAgents, createAgent, startAgent, stopAgent, deleteAgent, updateAgent } = useAgents();
 const { stats, error: tradesError, fetchStats } = useTrades();
 const { stats: paperStats, fetchStats: fetchPaperStats } = useTrades();
 const { request } = useApi();
+const { paperModePreference: storedPaperMode, setPaperModePreference } = usePaperModePreference();
 const router = useRouter();
 const refreshing = ref(false);
 
@@ -18,7 +18,6 @@ const realAgents = computed(() => agents.value.filter((a) => !a.isPaper));
 const paperAgents = computed(() => agents.value.filter((a) => a.isPaper));
 const hasRealAgents = computed(() => realAgents.value.length > 0);
 const hasPaperAgents = computed(() => paperAgents.value.length > 0);
-const storedPaperMode = ref<PaperMode | null>(null);
 
 const paperMode = computed<PaperMode>(() => {
   if (!hasRealAgents.value && hasPaperAgents.value) return 'paper';
@@ -196,24 +195,8 @@ function winRateClass(rate?: number | null): 'positive' | 'negative' | 'neutral'
   return rate >= 50 ? 'positive' : 'negative';
 }
 
-function readStoredPaperMode(): PaperMode | null {
-  if (!import.meta.client) return null;
-  const raw = localStorage.getItem(AGENTS_PAPER_STORAGE_KEY);
-  if (raw === 'live' || raw === 'all' || raw === 'paper') return raw;
-  const legacy = localStorage.getItem('heppy:agents:showPaperAgents');
-  if (legacy === 'true') return 'all';
-  if (legacy === 'false') return 'live';
-  return null;
-}
-
-function saveStoredPaperMode(value: PaperMode) {
-  if (!import.meta.client) return;
-  localStorage.setItem(AGENTS_PAPER_STORAGE_KEY, value);
-}
-
 function setPaperMode(value: PaperMode) {
-  storedPaperMode.value = value;
-  saveStoredPaperMode(value);
+  setPaperModePreference(value);
 }
 
 async function loadAgentPerformance(agentId: string) {
@@ -229,7 +212,7 @@ async function loadAgentPerformance(agentId: string) {
     ).catch(() => null);
     const totalPnlUsd = (tradesRes?.trades ?? [])
       .filter((t) => t.status === 'closed')
-      .reduce((sum, t) => sum + (t.pnlUsd ?? 0), 0);
+      .reduce((sum, t) => sum + (t.pnlUsd != null ? Number(t.pnlUsd) : 0), 0);
     const totalPnlPct = startingBalance > 0 ? (totalPnlUsd / startingBalance) * 100 : 0;
     if (!agents.value.some((a) => a.id === agentId)) return;
     agentPnl.value = {
@@ -278,7 +261,6 @@ function handleGlobalClick(e: MouseEvent) {
 
 onMounted(() => {
   if (import.meta.client) {
-    storedPaperMode.value = readStoredPaperMode();
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
@@ -595,7 +577,7 @@ async function handleEditSubmit(payload: Parameters<typeof updateAgent>[1]) {
               <td v-if="visibleColumns.slTp" class="mono" style="font-size: 12px; white-space: nowrap;">
                 {{ agent.config.stopLossPct }}% / {{ agent.config.takeProfitPct }}%
               </td>
-              <td v-if="visibleColumns.totalPnl" class="mono" style="font-size: 12px;">
+              <td v-if="visibleColumns.totalPnl" class="mono" style="font-size: 12px; white-space: nowrap;">
                 <Transition name="pnl">
                   <span
                     v-if="agentPnl[agent.id]"

@@ -42,8 +42,10 @@ export interface ManagedAgentSummary {
   id: string;
   name: string;
   status: string;
+  profileId?: string | null;
   config?: {
     pairs?: string[];
+    profileId?: string | null;
   };
 }
 

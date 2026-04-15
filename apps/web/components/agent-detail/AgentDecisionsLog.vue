@@ -159,11 +159,9 @@ function timeAgo(iso: string) {
             <div class="dec-main-header">
               <span class="dec-action-badge" :class="`dec-action--${mapDecision(dec.decision)}`">{{ mapDecision(dec.decision).toUpperCase() }}</span>
               <span class="dec-conf-num">
-                <span
-                  class="dec-conf-label"
-                  title="Confidence is the model's self-reported conviction in this decision, from 0% to 100%."
-                >
-                  Conf.
+                <span class="dec-conf-tooltip-anchor">
+                  <span class="dec-conf-label">Conf.</span>
+                  <span class="dec-conf-tooltip">Confidence is the model's self-reported conviction in this decision, from 0% to 100%.</span>
                 </span>
                 {{ (dec.confidence * 100).toFixed(0) }}%
               </span>
@@ -306,11 +304,44 @@ function timeAgo(iso: string) {
   gap: 5px;
 }
 
+.dec-entry:has(.dec-conf-tooltip-anchor:hover) {
+  position: relative;
+  z-index: 50;
+}
+
+.dec-conf-tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
 .dec-conf-label {
   color: var(--text-muted);
-  text-decoration: underline dotted;
+  text-decoration: underline;
+  text-decoration-style: dashed;
   text-underline-offset: 2px;
-  cursor: help;
+}
+
+.dec-conf-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -2rem;
+  white-space: nowrap;
+  background: #1e1e1e;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text, #e0e0e0);
+  pointer-events: none;
+  z-index: 19999;
+}
+
+.dec-conf-tooltip-anchor:hover .dec-conf-tooltip {
+  display: block;
 }
 
 .dec-meta {
