@@ -8,6 +8,7 @@ import type { MarketDataItem, PendingLlmContext } from './types.js';
 
 type EnqueueLlmJobParams = {
   agentId: string;
+  ownerAddress: string | null;
   env: Env;
   ctx: DurableObjectState;
   log: ReturnType<typeof createLogger>;
@@ -17,7 +18,6 @@ type EnqueueLlmJobParams = {
   effectiveLlmFallback: string;
   allowFallback: boolean;
   llmProvider: 'openrouter' | 'anthropic';
-  llmApiKey: string;
   minConfidence: number;
   tradeRequest: TradeDecisionRequest;
   config: ReturnType<typeof AgentConfigSchema.parse>;
@@ -31,6 +31,7 @@ type EnqueueLlmJobParams = {
 export async function enqueueLlmJob(params: EnqueueLlmJobParams): Promise<boolean> {
   const {
     agentId,
+    ownerAddress,
     env,
     ctx,
     log,
@@ -40,7 +41,6 @@ export async function enqueueLlmJob(params: EnqueueLlmJobParams): Promise<boolea
     effectiveLlmFallback,
     allowFallback,
     llmProvider,
-    llmApiKey,
     minConfidence,
     tradeRequest,
     config,
@@ -85,7 +85,8 @@ export async function enqueueLlmJob(params: EnqueueLlmJobParams): Promise<boolea
     agentId,
     jobId,
     llmConfig: {
-      apiKey: llmApiKey,
+      // apiKey is intentionally omitted — the queue consumer re-resolves it from D1
+      ownerAddress: ownerAddress ?? '',
       model: effectiveLlmModel,
       fallbackModel: effectiveLlmFallback,
       allowFallback,

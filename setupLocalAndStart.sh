@@ -274,12 +274,16 @@ if [[ "$SKIP_CONTRACTS" == false ]]; then
   IUSD_FAUCET=$(echo "$IUSD_OUT" | grep -oE "iUSD-demo faucet deployed at: 0x[0-9a-fA-F]+" | grep -oE "0x[0-9a-fA-F]+" || true)
   [[ -z "$IUSD_TOKEN" ]]  && err "Failed to parse iUSD token address."
   [[ -z "$IUSD_FAUCET" ]] && err "Failed to parse iUSD faucet address."
+  FAUCET_MINTER=$(cast call "$IUSD_TOKEN" 'minters(address)(bool)' "$IUSD_FAUCET" --rpc-url "$EVM_RPC" 2>/dev/null || echo "unknown")
   if (( IUSD_STATUS != 0 )); then
     warn "DeployIUSDDemo reported a non-zero exit after deploying token/faucet."
+  fi
+  if [[ "$FAUCET_MINTER" != "true" ]]; then
+    warn "Faucet is not an authorized minter on the deployed token. Attempting to repair setMinter..."
+    cast send "$IUSD_TOKEN" 'setMinter(address,bool)' "$IUSD_FAUCET" true \
+      --private-key "$PRIVATE_KEY" --rpc-url "$EVM_RPC" >/dev/null || err "Failed to repair faucet minter authorization."
     FAUCET_MINTER=$(cast call "$IUSD_TOKEN" 'minters(address)(bool)' "$IUSD_FAUCET" --rpc-url "$EVM_RPC" 2>/dev/null || echo "unknown")
-    if [[ "$FAUCET_MINTER" != "true" ]]; then
-      warn "Faucet is not an authorized minter on the deployed token. The showcase faucet may not work until fixed manually."
-    fi
+    [[ "$FAUCET_MINTER" == "true" ]] || err "Faucet repair did not stick; refusing to continue with a broken faucet deployment."
   fi
   ok "  iUSD Token:  $IUSD_TOKEN"
   ok "  iUSD Faucet: $IUSD_FAUCET"
@@ -370,7 +374,7 @@ if [[ -z "$OR_KEY" ]]; then
   warn "OPENROUTER_API_KEY not set."
   echo "  Get one at: https://openrouter.ai"
   if [[ -t 0 ]]; then
-    read -rp "  Paste key visibly (or press Enter to skip — agents won't work without it): " OR_KEY || true
+    read -rp "  Paste key and press Enter" OR_KEY || true
   else
     warn "No interactive TTY available — leaving OPENROUTER_API_KEY empty"
   fi

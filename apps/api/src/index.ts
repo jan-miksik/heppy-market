@@ -18,6 +18,9 @@ import comparisonRoute from './routes/comparison.js';
 import managersRoute from './routes/managers.js';
 import profilesRoute from './routes/profiles.js';
 import { ValidationError } from './lib/validation.js';
+import { drizzle } from 'drizzle-orm/d1';
+import { agents } from './db/schema.js';
+import { eq } from 'drizzle-orm';
 
 // Export Durable Object class (required for Workers runtime to register it)
 export { TradingAgentDO } from './agents/trading-agent.js';
@@ -233,9 +236,6 @@ async function handleAgentWebSocket(request: Request, env: Env): Promise<Respons
 
   // Verify agent ownership before proxying to DO
   try {
-    const { drizzle } = await import('drizzle-orm/d1');
-    const { agents } = await import('./db/schema.js');
-    const { eq } = await import('drizzle-orm');
     const db = drizzle(env.DB);
     const [agent] = await db
       .select({ ownerAddress: agents.ownerAddress })

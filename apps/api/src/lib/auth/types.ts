@@ -40,6 +40,10 @@ export interface ParsedSiwe {
   nonce: string;
   domain: string;
   chainId: number;
+  /** ISO-8601 string from the EIP-4361 "Expiration Time:" field, if present */
+  expirationTime?: string;
+  /** ISO-8601 string from the EIP-4361 "Issued At:" field, if present */
+  issuedAt?: string;
 }
 
 export type AnyContext = {

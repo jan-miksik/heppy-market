@@ -9,9 +9,14 @@
  *
  * When LLM_QUEUE is NOT bound, agent-loop falls back to synchronous inline LLM calls.
  */
+import { drizzle } from 'drizzle-orm/d1';
+import { eq } from 'drizzle-orm';
 import { getTradeDecision } from '../services/llm-router.js';
 import type { LlmJobMessage } from '../types/queue-types.js';
+import type { LLMRouterConfig } from '../services/llm-router.js';
 import type { Env } from '../types/env.js';
+import { users } from '../db/schema.js';
+import { decryptKey } from './crypto.js';
 
 export type { LlmJobMessage } from '../types/queue-types.js';
 
@@ -28,11 +33,63 @@ export async function handleLlmQueueBatch(
   }
 }
 
+/**
+ * Re-resolve the LLM API key for a queue job.
+ * The key is intentionally not stored in the queue message; we look it up from D1
+ * using the agent owner's wallet address so secrets never travel through Queues.
+ */
+async function resolveApiKey(
+  ownerAddress: string,
+  provider: 'openrouter' | 'anthropic' | undefined,
+  env: Env
+): Promise<string> {
+  const isAnthropic = provider === 'anthropic';
+  if (isAnthropic) {
+    return env.ANTHROPIC_API_KEY ?? '';
+  }
+
+  // OpenRouter path: prefer user's own key, fall back to server key
+  if (!env.OPENROUTER_API_KEY) {
+    console.error('[llm-queue] OPENROUTER_API_KEY not set — cannot resolve API key');
+    return '';
+  }
+
+  let resolvedKey = env.OPENROUTER_API_KEY;
+  if (ownerAddress) {
+    const db = drizzle(env.DB);
+    const [owner] = await db
+      .select({ openRouterKey: users.openRouterKey })
+      .from(users)
+      .where(eq(users.walletAddress, ownerAddress.toLowerCase()));
+    if (owner?.openRouterKey) {
+      try {
+        resolvedKey = await decryptKey(owner.openRouterKey, env.KEY_ENCRYPTION_SECRET);
+      } catch {
+        console.warn('[llm-queue] Failed to decrypt user OR key, using server fallback');
+      }
+    }
+  }
+  return resolvedKey;
+}
+
 async function processLlmJob(
   message: Message<LlmJobMessage>,
   env: Env
 ): Promise<void> {
-  const { agentId, jobId, llmConfig, tradeRequest } = message.body;
+  const { agentId, jobId, llmConfig: jobConfig, tradeRequest } = message.body;
+
+  const apiKey = await resolveApiKey(jobConfig.ownerAddress, jobConfig.provider, env);
+  if (!apiKey) {
+    console.error(`[llm-queue] Could not resolve API key for agent=${agentId} job=${jobId}`);
+    message.retry();
+    return;
+  }
+
+  // Reconstruct the full LLM config with the resolved key
+  const llmConfig: LLMRouterConfig = {
+    ...jobConfig,
+    apiKey,
+  };
 
   let decision: Awaited<ReturnType<typeof getTradeDecision>>;
   try {

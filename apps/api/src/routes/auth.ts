@@ -120,6 +120,15 @@ authRoute.post('/hackathon-session', async (c) => {
     return notFoundJson(c);
   }
 
+  // Always log when this bypass endpoint is reached so it is visible in Cloudflare logs.
+  const requestHost = new URL(c.req.url).hostname;
+  const isLocalhost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(requestHost);
+  if (!isLocalhost) {
+    console.error('[auth/hackathon-session] HACKATHON_AUTH_BYPASS is active on a non-localhost host:', requestHost);
+  } else {
+    console.warn('[auth/hackathon-session] Hackathon bypass used — no SIWE verification.');
+  }
+
   const body = await validateBody(c, HackathonSessionSchema);
   const walletAddress = normalizeSupportedWalletAddress(body.walletAddress);
   if (!walletAddress) {

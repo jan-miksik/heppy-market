@@ -191,7 +191,8 @@ export class PaperEngine {
     } else {
       // Shorted (sold), now buying back
       const buyBackCost = position.tokenAmount * effectiveExitPrice;
-      proceedsUsd = position.amountUsd * 2 - buyBackCost;
+      // Clamp to 0: if price rose past 2× entry the collateral is fully lost, balance cannot go negative
+      proceedsUsd = Math.max(0, position.amountUsd * 2 - buyBackCost);
       pnlPct =
         ((position.effectiveEntryPrice - effectiveExitPrice) /
           position.effectiveEntryPrice) *

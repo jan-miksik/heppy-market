@@ -20,6 +20,8 @@ const ALLOWED_SIWE_DOMAINS = [
   'something-in-loop.pages.dev',
 ];
 
+const MAX_SIWE_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
 export function parseSiweMessage(message: string): ParsedSiwe {
   const lines = message.split('\n');
   const address = lines[1]?.trim() ?? '';
@@ -29,7 +31,9 @@ export function parseSiweMessage(message: string): ParsedSiwe {
     10
   );
   const domain = (lines[0] ?? '').split(' wants you to')[0].trim();
-  return { address, nonce, domain, chainId };
+  const expirationTime = (lines.find((l) => l.startsWith('Expiration Time:')) ?? '').replace('Expiration Time:', '').trim() || undefined;
+  const issuedAt = (lines.find((l) => l.startsWith('Issued At:')) ?? '').replace('Issued At:', '').trim() || undefined;
+  return { address, nonce, domain, chainId, expirationTime, issuedAt };
 }
 
 export function isAllowedSiweDomain(domain: string): boolean {
@@ -52,6 +56,20 @@ export async function verifySiweAndCreateSession(opts: VerifySiweOptions): Promi
 
   if (!isAllowedSiweDomain(parsed.domain)) {
     throw new Error(`SIWE domain "${parsed.domain}" is not allowed`);
+  }
+
+  const now = Date.now();
+  if (parsed.expirationTime) {
+    const expiry = new Date(parsed.expirationTime).getTime();
+    if (isNaN(expiry) || expiry < now) {
+      throw new Error('SIWE message has expired');
+    }
+  }
+  if (parsed.issuedAt) {
+    const issued = new Date(parsed.issuedAt).getTime();
+    if (isNaN(issued) || now - issued > MAX_SIWE_AGE_MS) {
+      throw new Error('SIWE message is too old');
+    }
   }
 
   const nonceValid = await consumeNonce(cache, d1, parsed.nonce);

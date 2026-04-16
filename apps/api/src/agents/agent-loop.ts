@@ -127,7 +127,11 @@ export async function runAgentLoop(
   });
   if (!canContinueAfterRisk) return;
 
-  const pairsToFetch = config.pairs.slice(0, 5).map(normalizePairForDex);
+  const MAX_PAIRS = 5;
+  if (config.pairs.length > MAX_PAIRS) {
+    log.warn('pairs_truncated', { configured: config.pairs.length, using: MAX_PAIRS });
+  }
+  const pairsToFetch = config.pairs.slice(0, MAX_PAIRS).map(normalizePairForDex);
   log.info('analysis_start', { pairs: pairsToFetch.length, model: effectiveLlmModel });
   console.log(`[agent-loop] ${agentId}: Starting analysis (${pairsToFetch.length} pairs, model=${effectiveLlmModel})`);
 
@@ -219,6 +223,7 @@ export async function runAgentLoop(
 
   const jobHandled = await enqueueLlmJob({
     agentId,
+    ownerAddress: agentRow.ownerAddress ?? null,
     env,
     ctx,
     log,
@@ -228,7 +233,6 @@ export async function runAgentLoop(
     effectiveLlmFallback,
     allowFallback,
     llmProvider,
-    llmApiKey,
     minConfidence,
     tradeRequest,
     config,

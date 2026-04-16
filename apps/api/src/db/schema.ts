@@ -74,7 +74,7 @@ export const trades = sqliteTable('trades', {
 
 export const agentDecisions = sqliteTable('agent_decisions', {
   id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   decision: text('decision').notNull(),
   confidence: real('confidence').notNull(),
   reasoning: text('reasoning').notNull(),
@@ -91,7 +91,7 @@ export const agentDecisions = sqliteTable('agent_decisions', {
 
 export const performanceSnapshots = sqliteTable('performance_snapshots', {
   id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull(),
+  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   balance: real('balance').notNull(),
   totalPnlPct: real('total_pnl_pct').notNull(),
   winRate: real('win_rate').notNull(),
@@ -134,7 +134,7 @@ export const agentManagerLogs = sqliteTable('agent_manager_logs', {
 
 export const agentSelfModifications = sqliteTable('agent_self_modifications', {
   id:             text('id').primaryKey(),
-  agentId:        text('agent_id').notNull(),
+  agentId:        text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
   decisionId:     text('decision_id').notNull(),
   reason:         text('reason').notNull(),
   changes:        text('changes').notNull(),
