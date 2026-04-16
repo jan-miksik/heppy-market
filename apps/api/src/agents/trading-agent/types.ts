@@ -14,6 +14,8 @@ export type CachedAgentRow = {
   llmModel: string | null;
   profileId: string | null;
   personaMd: string | null;
+  chain: string | null;
+  isPaper: boolean | null;
 };
 
 export type SerializedEngineState = ReturnType<PaperEngine['serialize']>;

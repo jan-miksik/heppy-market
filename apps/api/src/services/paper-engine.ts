@@ -276,13 +276,17 @@ export class PaperEngine {
     }
   }
 
-  /** Calculate daily P&L percentage */
-  getDailyPnlPct(): number {
+  /** Reset daily tracking if the calendar date has changed. Call once per tick before reading getDailyPnlPct(). */
+  resetDailyTrackingIfNeeded(): void {
     const today = nowIso().slice(0, 10);
     if (today !== this.state.lastDailyReset) {
       this.state.dailyStartBalance = this.state.balance;
       this.state.lastDailyReset = today;
     }
+  }
+
+  /** Calculate daily P&L percentage. Call resetDailyTrackingIfNeeded() once per tick before reading this. */
+  getDailyPnlPct(): number {
     return (
       ((this.state.balance - this.state.dailyStartBalance) /
         this.state.dailyStartBalance) *

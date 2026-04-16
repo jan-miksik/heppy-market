@@ -2,8 +2,8 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import type { Env } from '../../types/env.js';
 import { agentDecisions, users } from '../../db/schema.js';
+import { resolveStoredOpenRouterKey } from '../../lib/openrouter-key.js';
 import { generateId, nowIso } from '../../lib/utils.js';
-import { decryptKey } from '../../lib/crypto.js';
 import type { CachedAgentRow } from '../trading-agent.js';
 import type { MarketDataItem } from './types.js';
 
@@ -100,13 +100,21 @@ export async function resolveLlmCredentials(params: ResolveLlmCredentialsParams)
   let resolvedKey = env.OPENROUTER_API_KEY;
   const ownerAddr = agentRow.ownerAddress?.toLowerCase();
   if (ownerAddr) {
-    const [ownerUser] = await db.select({ openRouterKey: users.openRouterKey }).from(users).where(eq(users.walletAddress, ownerAddr));
+    const [ownerUser] = await db.select({ id: users.id, openRouterKey: users.openRouterKey }).from(users).where(eq(users.walletAddress, ownerAddr));
     if (ownerUser?.openRouterKey) {
-      try {
-        resolvedKey = await decryptKey(ownerUser.openRouterKey, env.KEY_ENCRYPTION_SECRET);
-      } catch {
-        console.warn(`[agent-loop] ${agentId}: failed to decrypt user OR key, using server fallback`);
-      }
+      const resolved = await resolveStoredOpenRouterKey({
+        storedKey: ownerUser.openRouterKey,
+        serverKey: env.OPENROUTER_API_KEY,
+        encryptionSecret: env.KEY_ENCRYPTION_SECRET,
+        logPrefix: `[agent-loop] ${agentId}:`,
+        persistEncrypted: async (encryptedKey) => {
+          await db
+            .update(users)
+            .set({ openRouterKey: encryptedKey, updatedAt: nowIso() })
+            .where(eq(users.id, ownerUser.id));
+        },
+      });
+      resolvedKey = resolved.apiKey;
     }
   }
 

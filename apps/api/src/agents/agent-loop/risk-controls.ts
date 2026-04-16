@@ -28,6 +28,7 @@ type RunRiskControlsParams = {
  */
 export async function runRiskControls(params: RunRiskControlsParams): Promise<boolean> {
   const { agentId, engine, env, db, ctx, config } = params;
+  engine.resetDailyTrackingIfNeeded();
   const dailyPnl = engine.getDailyPnlPct();
   if (dailyPnl <= -config.maxDailyLossPct) {
     console.log(`[agent-loop] ${agentId}: Daily loss limit reached (${dailyPnl.toFixed(2)}%), pausing`);

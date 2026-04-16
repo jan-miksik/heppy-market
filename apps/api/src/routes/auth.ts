@@ -81,7 +81,13 @@ const HackathonSessionSchema = z.object({
 });
 
 function isHackathonBypassAllowed(env: Pick<Env, 'HACKATHON_AUTH_BYPASS'>): boolean {
-  return env.HACKATHON_AUTH_BYPASS === 'true';
+  if (env.HACKATHON_AUTH_BYPASS === 'true') return true;
+  if (env.HACKATHON_AUTH_BYPASS) {
+    console.warn(
+      `[auth] HACKATHON_AUTH_BYPASS is set to "${env.HACKATHON_AUTH_BYPASS}" which is not "true" — bypass is NOT active. Use the exact string "true" to enable it.`,
+    );
+  }
+  return false;
 }
 
 /** POST /api/auth/verify — verify SIWE, create session, set cookie, return user */
@@ -259,6 +265,7 @@ authRoute.delete('/openrouter/disconnect', async (c) => {
  * This endpoint is a no-op (404) when PLAYWRIGHT_SECRET is not configured.
  */
 authRoute.post('/dev-session', async (c) => {
+  console.warn('[auth] /dev-session endpoint invoked — this endpoint is for Playwright/local dev only and must not be reachable in production.');
   const secret = c.env.PLAYWRIGHT_SECRET;
   if (!secret) return notFoundJson(c);
 

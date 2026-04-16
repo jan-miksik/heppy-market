@@ -2,6 +2,7 @@
   "name": "@something-in-loop/web",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "prebuild": "pnpm --filter @something-in-loop/shared build",
     "dev": "nuxt dev --port 3001",

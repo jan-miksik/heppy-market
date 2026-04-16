@@ -73,6 +73,8 @@ export async function runAgentLoop(
         llmModel: dbRow.llmModel ?? null,
         profileId: dbRow.profileId ?? null,
         personaMd: dbRow.personaMd ?? null,
+        chain: dbRow.chain ?? null,
+        isPaper: dbRow.isPaper ?? null,
       };
       await ctx.storage.put('cachedAgentRow', toCache);
     } catch (cacheErr) {
@@ -268,6 +270,8 @@ export async function runAgentLoop(
     dexes: config.dexes,
     strategies: config.strategies,
     slippageSimulation: config.slippageSimulation,
+    chain: agentRow.chain ?? null,
+    isPaper: agentRow.isPaper ?? null,
     env,
     db,
     ctx,

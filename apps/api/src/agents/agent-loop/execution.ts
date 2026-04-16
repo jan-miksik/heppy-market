@@ -23,12 +23,22 @@ export type ExecuteDecisionParams = {
   dexes: string[];
   strategies: string[];
   slippageSimulation: number;
+  /** Agent chain — passed from cached agent row to avoid an extra D1 query. */
+  chain?: string | null;
+  /** Whether agent is in paper mode — passed from cached agent row to avoid an extra D1 query. */
+  isPaper?: boolean | null;
   env: Env;
   db: ReturnType<typeof drizzle>;
   ctx: DurableObjectState;
   tickStart?: number;
   log: ReturnType<typeof createLogger>;
 };
+
+const SNAPSHOT_MAX_BYTES = 8192;
+function snapshotMarketData(data: unknown): string {
+  const full = JSON.stringify(data);
+  return full.length > SNAPSHOT_MAX_BYTES ? full.slice(0, SNAPSHOT_MAX_BYTES) : full;
+}
 
 function parseInitiaSyncState(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
@@ -61,6 +71,8 @@ export async function executeTradeDecision(
     dexes,
     strategies,
     slippageSimulation,
+    chain,
+    isPaper,
     env,
     db,
     ctx,
@@ -79,17 +91,18 @@ export async function executeTradeDecision(
     executionNote = `Execution: skipped (already at max open positions: ${engine.openPositions.length}/${maxOpenPositions}).`;
   }
 
-  const [agentRow] = await db
-    .select({
-      chain: agents.chain,
-      isPaper: agents.isPaper,
-      initiaSyncState: agents.initiaSyncState,
-    })
-    .from(agents)
-    .where(eq(agents.id, agentId))
-    .limit(1);
-  const initiaSyncState = parseInitiaSyncState(agentRow?.initiaSyncState ?? null);
-  const shouldAttemptOnchain = agentRow?.chain === 'initia' && !agentRow?.isPaper;
+  // Only fetch initiaSyncState from D1 when running an Initia onchain agent.
+  // chain/isPaper come from the cached agent row passed by the caller.
+  const shouldAttemptOnchain = chain === 'initia' && !isPaper;
+  let initiaSyncState: Record<string, unknown> | null = null;
+  if (shouldAttemptOnchain) {
+    const [agentRow] = await db
+      .select({ initiaSyncState: agents.initiaSyncState })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+    initiaSyncState = parseInitiaSyncState(agentRow?.initiaSyncState ?? null);
+  }
   let executedPaperTrade = false;
 
   const decisionId = generateId('dec');
@@ -104,7 +117,7 @@ export async function executeTradeDecision(
     llmTokensUsed: decision.tokensUsed,
     llmPromptTokens: decision.tokensIn ?? null,
     llmCompletionTokens: decision.tokensOut ?? null,
-    marketDataSnapshot: JSON.stringify(marketData),
+    marketDataSnapshot: snapshotMarketData(marketData),
     llmPromptText: decision.llmPromptText ?? null,
     llmRawResponse: decision.llmRawResponse ?? null,
     createdAt: nowIso(),

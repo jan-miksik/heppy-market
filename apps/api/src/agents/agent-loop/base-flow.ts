@@ -76,8 +76,8 @@ export function buildBaseTradeRequest(params: BuildTradeRequestParams): {
         agentProfileId: agentRow.profileId,
         config: config as unknown as Record<string, unknown>,
       }),
-      behaviorMd: (config as any).behaviorMd ?? null,
-      roleMd: (config as any).roleMd ?? null,
+      behaviorMd: config.behaviorMd ?? null,
+      roleMd: config.roleMd ?? null,
     },
     minConfidence,
   };

@@ -1,6 +1,7 @@
 {
   "name": "something-in-loop",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@10.24.0",
   "workspaces": [
     "apps/*",

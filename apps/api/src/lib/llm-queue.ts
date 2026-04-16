@@ -16,7 +16,8 @@ import type { LlmJobMessage } from '../types/queue-types.js';
 import type { LLMRouterConfig } from '../services/llm-router.js';
 import type { Env } from '../types/env.js';
 import { users } from '../db/schema.js';
-import { decryptKey } from './crypto.js';
+import { resolveStoredOpenRouterKey } from './openrouter-key.js';
+import { nowIso } from './utils.js';
 
 export type { LlmJobMessage } from '../types/queue-types.js';
 
@@ -58,15 +59,23 @@ async function resolveApiKey(
   if (ownerAddress) {
     const db = drizzle(env.DB);
     const [owner] = await db
-      .select({ openRouterKey: users.openRouterKey })
+      .select({ id: users.id, openRouterKey: users.openRouterKey })
       .from(users)
       .where(eq(users.walletAddress, ownerAddress.toLowerCase()));
     if (owner?.openRouterKey) {
-      try {
-        resolvedKey = await decryptKey(owner.openRouterKey, env.KEY_ENCRYPTION_SECRET);
-      } catch {
-        console.warn('[llm-queue] Failed to decrypt user OR key, using server fallback');
-      }
+      const resolved = await resolveStoredOpenRouterKey({
+        storedKey: owner.openRouterKey,
+        serverKey: env.OPENROUTER_API_KEY,
+        encryptionSecret: env.KEY_ENCRYPTION_SECRET,
+        logPrefix: '[llm-queue]',
+        persistEncrypted: async (encryptedKey) => {
+          await db
+            .update(users)
+            .set({ openRouterKey: encryptedKey, updatedAt: nowIso() })
+            .where(eq(users.id, owner.id));
+        },
+      });
+      resolvedKey = resolved.apiKey;
     }
   }
   return resolvedKey;

@@ -4,7 +4,7 @@ import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { Env } from '../../types/env.js';
 import { agentManagerLogs, agentManagers, agents, performanceSnapshots, trades, users } from '../../db/schema.js';
-import { decryptKey } from '../../lib/crypto.js';
+import { resolveStoredOpenRouterKey } from '../../lib/openrouter-key.js';
 import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
 import {
@@ -199,7 +199,7 @@ export async function runManagerLoop(managerId: string, env: Env, ctx: DurableOb
 
   const ownerAddr = managerRow.ownerAddress?.toLowerCase();
   const [ownerUser] = ownerAddr
-    ? await db.select({ openRouterKey: users.openRouterKey }).from(users).where(eq(users.walletAddress, ownerAddr))
+    ? await db.select({ id: users.id, openRouterKey: users.openRouterKey }).from(users).where(eq(users.walletAddress, ownerAddr))
     : [];
   const hasUserOpenRouterKey = !!ownerUser?.openRouterKey;
 
@@ -231,11 +231,19 @@ export async function runManagerLoop(managerId: string, env: Env, ctx: DurableOb
       let orApiKey = env.OPENROUTER_API_KEY;
       if (ownerAddr) {
         if (ownerUser?.openRouterKey) {
-          try {
-            orApiKey = await decryptKey(ownerUser.openRouterKey, env.KEY_ENCRYPTION_SECRET);
-          } catch {
-            console.warn('[manager-loop] failed to decrypt user OR key, using server fallback');
-          }
+          const resolved = await resolveStoredOpenRouterKey({
+            storedKey: ownerUser.openRouterKey,
+            serverKey: env.OPENROUTER_API_KEY,
+            encryptionSecret: env.KEY_ENCRYPTION_SECRET,
+            logPrefix: '[manager-loop]',
+            persistEncrypted: async (encryptedKey) => {
+              await db
+                .update(users)
+                .set({ openRouterKey: encryptedKey, updatedAt: nowIso() })
+                .where(eq(users.id, ownerUser.id));
+            },
+          });
+          orApiKey = resolved.apiKey;
         }
       }
       const openrouter = createOpenRouter({ apiKey: orApiKey });

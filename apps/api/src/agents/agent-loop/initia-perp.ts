@@ -13,6 +13,12 @@ import type { Env } from '../../types/env.js';
 import { normalizePairForDex } from '../../lib/pairs.js';
 import type { MarketDataItem, RecentDecision } from './types.js';
 import { persistTrade } from './execution.js';
+
+const SNAPSHOT_MAX_BYTES = 8192;
+function snapshotMarketData(data: unknown): string {
+  const full = JSON.stringify(data);
+  return full.length > SNAPSHOT_MAX_BYTES ? full.slice(0, SNAPSHOT_MAX_BYTES) : full;
+}
 import { createLogger } from '../../lib/logger.js';
 import { AgentConfigSchema } from '@something-in-loop/shared';
 import { logStructuredError } from '../../lib/agent-errors.js';
@@ -100,8 +106,8 @@ export async function runInitiaPerpPath(params: RunInitiaPerpPathParams): Promis
       agentProfileId: agentRow.profileId ?? null,
       config: config as unknown as Record<string, unknown>,
     }),
-    behaviorMd: (config as any).behaviorMd ?? null,
-    roleMd: (config as any).roleMd ?? null,
+    behaviorMd: config.behaviorMd ?? null,
+    roleMd: config.roleMd ?? null,
   };
 
   let perpDecision: Awaited<ReturnType<typeof getPerpTradeDecision>>;
@@ -128,12 +134,12 @@ export async function runInitiaPerpPath(params: RunInitiaPerpPathParams): Promis
     await db.insert(agentDecisions).values({
       id: generateId('dec'),
       agentId,
-      decision: 'HOLD',
+      decision: 'hold',
       confidence: 0,
       reasoning: `LLM error [${classified.code}]: ${classified.message}`,
       llmModel: effectiveLlmModel,
       llmLatencyMs: 0,
-      marketDataSnapshot: JSON.stringify(marketData),
+      marketDataSnapshot: snapshotMarketData(marketData),
       createdAt: nowIso(),
     });
     return;
@@ -233,7 +239,7 @@ export async function runInitiaPerpPath(params: RunInitiaPerpPathParams): Promis
   await db.insert(agentDecisions).values({
     id: generateId('dec'),
     agentId,
-    decision: perpDecision.action,
+    decision: perpDecision.action.toLowerCase(),
     confidence: perpDecision.confidence,
     reasoning: `${perpDecision.rationale}\n\n—\n${executionNote}`,
     llmModel: perpDecision.modelUsed,
@@ -250,7 +256,7 @@ export async function runInitiaPerpPath(params: RunInitiaPerpPathParams): Promis
   try {
     await ctx.storage.put(
       'recentDecisions',
-      [{ decision: perpDecision.action, confidence: perpDecision.confidence, createdAt: nowIso() }, ...recentDecisions].slice(0, 10),
+      [{ decision: perpDecision.action.toLowerCase(), confidence: perpDecision.confidence, createdAt: nowIso() }, ...recentDecisions].slice(0, 10),
     );
   } catch {
     // non-fatal
