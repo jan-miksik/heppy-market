@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@initia/interwovenkit-react@2.5.1':
+    hash: b6fc85d7af07074953342e6ba7a98c87560462a7b0a43710d25ac3071f7df436
+    path: patches/@initia__interwovenkit-react@2.5.1.patch
+
 importers:
 
   .:
@@ -81,7 +86,7 @@ importers:
     dependencies:
       '@initia/interwovenkit-react':
         specifier: ^2.4.6
-        version: 2.5.1(f62ca40e2cd8c1db013d8327ca9af228)
+        version: 2.5.1(patch_hash=b6fc85d7af07074953342e6ba7a98c87560462a7b0a43710d25ac3071f7df436)(f62ca40e2cd8c1db013d8327ca9af228)
       '@something-in-loop/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -10097,7 +10102,7 @@ snapshots:
     transitivePeerDependencies:
       - google-protobuf
 
-  '@initia/interwovenkit-react@2.5.1(f62ca40e2cd8c1db013d8327ca9af228)':
+  '@initia/interwovenkit-react@2.5.1(patch_hash=b6fc85d7af07074953342e6ba7a98c87560462a7b0a43710d25ac3071f7df436)(f62ca40e2cd8c1db013d8327ca9af228)':
     dependencies:
       '@amplitude/analytics-browser': 2.38.0
       '@base-ui/react': 1.0.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

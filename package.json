@@ -25,6 +25,11 @@
   "dependencies": {
     "esbuild": "^0.27.3"
   },
+  "pnpm": {
+    "patchedDependencies": {
+      "@initia/interwovenkit-react@2.5.1": "patches/@initia__interwovenkit-react@2.5.1.patch"
+    }
+  },
   "overrides": {
     "vue": "^3.4.0",
     "cosmjs-types": "0.10.1",

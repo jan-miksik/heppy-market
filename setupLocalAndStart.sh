@@ -148,8 +148,9 @@ if [[ "$SKIP_CHAIN" == false ]]; then
     log "Waiting for chain to be healthy..."
     ATTEMPTS=0
     until curl -sf "$TENDERMINT_RPC/status" >/dev/null 2>&1; do
-      (( ATTEMPTS++ ))
+      ATTEMPTS=$((ATTEMPTS + 1))
       if (( ATTEMPTS >= 60 )); then
+        echo ""
         err "Chain did not become healthy after 120 s. Check: weave rollup log -n 50"
       fi
       printf "  waiting %d/60...\r" "$ATTEMPTS"
@@ -367,8 +368,7 @@ fi
 if [[ -z "$OR_KEY" ]]; then
   echo ""
   warn "OPENROUTER_API_KEY not set."
-  echo "  Get one free at: https://openrouter.ai → Dashboard → API Keys"
-  echo "  (or set it in apps/api/.dev.vars before running this script)"
+  echo "  Get one at: https://openrouter.ai"
   if [[ -t 0 ]]; then
     read -rp "  Paste key visibly (or press Enter to skip — agents won't work without it): " OR_KEY || true
   else
@@ -421,7 +421,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 log "Starting API on port 8787..."
-pnpm dev:api > "$REPO_ROOT/.api.log" 2>&1 &
+pnpm dev:api > >(sed -u 's/^/[api] /') 2>&1 &
 API_PID=$!
 
 log "Waiting for API to be ready..."
@@ -434,7 +434,7 @@ for i in {1..30}; do
 done
 
 log "Starting Web on port 3001..."
-pnpm dev:web > "$REPO_ROOT/.web.log" 2>&1 &
+pnpm dev:web > >(sed -u 's/^/[web] /') 2>&1 &
 WEB_PID=$!
 
 sleep 4  # Give Nuxt time to start
@@ -447,7 +447,7 @@ echo -e "  API  → ${BLUE}http://localhost:8787${NC}"
 echo -e "  Chain EVM RPC → ${BLUE}${EVM_RPC}${NC}"
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  Logs: tail -f .api.log  /  tail -f .web.log"
+echo "  Output is streamed here with [api] / [web] prefixes."
 echo "  Press Ctrl+C to stop all services."
 echo ""
 

@@ -13,6 +13,8 @@ packages/*/node_modules/
 .DS_Store
 .playwright-cli/
 contracts/broadcast/
+.api.log
+.web.log
 
 # Playwright
 e2e/.auth/user.json
