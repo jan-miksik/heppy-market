@@ -8,6 +8,7 @@ import { resolveStoredOpenRouterKey } from '../../lib/openrouter-key.js';
 import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
 import {
+  hasIndexedSpotPriceProvider,
   resolveCoinGeckoMarketContextForPair,
   resolveCoinPaprikaMarketContextForPair,
   resolveDemoMarketContextForPair,
@@ -128,35 +129,39 @@ export async function runManagerLoop(managerId: string, env: Env, ctx: DurableOb
 
   for (const pairName of allPairs) {
     const query = pairName.replace('/', ' ');
-    try {
-      const pools = await geckoSvc.searchPools(query);
-      const pool = pools.find((p: any) => {
-        const tokens = pairName.split('/').map((t: string) => t.trim().toUpperCase());
-        return tokens.every((t: string) => p.name.toUpperCase().includes(t));
-      });
-      if (pool && pool.priceUsd > 0) {
-        marketData.push({ pair: pairName, priceUsd: pool.priceUsd, priceChange: pool.priceChange });
-        continue;
-      }
-    } catch {
-      // fallthrough
-    }
+    const skipDexDiscovery = hasIndexedSpotPriceProvider(pairName);
 
-    try {
-      const results = await dexSvc.searchPairs(query);
-      const basePair = results
-        .filter((p: any) => p.chainId === 'base')
-        .sort((a: any, b: any) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as any;
-      if (basePair) {
-        marketData.push({
-          pair: pairName,
-          priceUsd: getPriceUsd(basePair),
-          priceChange: { h1: basePair.priceChange?.h1, h24: basePair.priceChange?.h24 },
+    if (!skipDexDiscovery) {
+      try {
+        const pools = await geckoSvc.searchPools(query);
+        const pool = pools.find((p: any) => {
+          const tokens = pairName.split('/').map((t: string) => t.trim().toUpperCase());
+          return tokens.every((t: string) => p.name.toUpperCase().includes(t));
         });
-        continue;
+        if (pool && pool.priceUsd > 0) {
+          marketData.push({ pair: pairName, priceUsd: pool.priceUsd, priceChange: pool.priceChange });
+          continue;
+        }
+      } catch {
+        // fallthrough
       }
-    } catch {
-      // skip
+
+      try {
+        const results = await dexSvc.searchPairs(query);
+        const basePair = results
+          .filter((p: any) => p.chainId === 'base')
+          .sort((a: any, b: any) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] as any;
+        if (basePair) {
+          marketData.push({
+            pair: pairName,
+            priceUsd: getPriceUsd(basePair),
+            priceChange: { h1: basePair.priceChange?.h1, h24: basePair.priceChange?.h24 },
+          });
+          continue;
+        }
+      } catch {
+        // skip
+      }
     }
 
     const coinGeckoCtx = await resolveCoinGeckoMarketContextForPair(env, pairName);

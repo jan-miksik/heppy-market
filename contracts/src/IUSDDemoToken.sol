@@ -75,7 +75,9 @@ contract IUSDDemoToken {
     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
         uint256 allowed = allowance[from][msg.sender];
         if (allowed < amount) revert InsufficientAllowance(amount, allowed);
-        allowance[from][msg.sender] = allowed - amount;
+        if (allowed != type(uint256).max) {
+            allowance[from][msg.sender] = allowed - amount;
+        }
         _transfer(from, to, amount);
         return true;
     }

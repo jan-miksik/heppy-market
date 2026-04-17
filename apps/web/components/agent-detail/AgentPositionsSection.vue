@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type PropType } from 'vue';
 import type { Trade } from '~/composables/useTrades';
+import { formatCompactPrice, formatRelativeTime } from '~/utils/formatting';
 
 type AgentConfig = {
   paperBalance?: number;
@@ -54,6 +55,10 @@ const props = defineProps({
     type: Object as PropType<Record<string, number>>,
     required: true,
   },
+  now: {
+    type: Number,
+    required: true,
+  },
   pnlClass: {
     type: Function as PropType<(pct?: number) => string>,
     required: true,
@@ -91,6 +96,7 @@ function parseSnapshot(snapshot?: string): MarketDataEntry[] {
 }
 
 function getPairAddress(pairName: string): string {
+  if (pairName.toUpperCase() === 'INIT/USD') return '';
   for (const decision of props.decisions) {
     const snapshot = parseSnapshot(decision.marketDataSnapshot);
     const entry = snapshot.find((item) => item.pair === pairName);
@@ -173,7 +179,7 @@ function formatDate(iso: string) {
 }
 
 function formatPrice(price: number) {
-  return price >= 1 ? price.toLocaleString('en', { maximumFractionDigits: 4 }) : price.toPrecision(5);
+  return formatCompactPrice(price);
 }
 
 function formatUsdNoNegativeZero(value: number, digits = 0): string {
@@ -197,13 +203,7 @@ function formatAmountUsd(amountUsd: number): string {
 }
 
 function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
+  return formatRelativeTime(iso, props.now);
 }
 </script>
 

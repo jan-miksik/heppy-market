@@ -106,7 +106,7 @@ Nuxt: INITIA_BRIDGE_STATE_EVENT received
              │
              ▼
 Nuxt: watch(walletConnected) fires in connect.vue
-  └── POST /api/auth/hackathon-session { walletAddress }
+  └── SIWE flow via `useAuth().signIn()`
              │
              ▼
   └── fetchMe() → authUser ref populated

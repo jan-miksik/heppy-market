@@ -10,6 +10,7 @@ import {
   Filler,
   Tooltip,
 } from 'chart.js';
+import { formatCompactPrice } from '~/utils/formatting';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -80,10 +81,7 @@ async function fetchOHLCV() {
 watch([() => props.pairAddress, () => props.pairName, timeframe], () => fetchOHLCV(), { immediate: true });
 
 function formatPrice(price: number): string {
-  if (price >= 1000) return price.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (price >= 1) return price.toFixed(4);
-  if (price >= 0.0001) return price.toFixed(6);
-  return price.toExponential(3);
+  return formatCompactPrice(price);
 }
 
 function formatTime(ts: number): string {

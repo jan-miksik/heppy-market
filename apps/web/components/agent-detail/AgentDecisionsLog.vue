@@ -2,6 +2,7 @@
 import { computed, ref, type PropType } from 'vue';
 import { splitAgentPromptSections } from '~/lib/agent-prompt';
 import { sectionHtml } from '~/utils/markdown';
+import { formatRelativeTime } from '~/utils/formatting';
 
 type AgentDecision = {
   id: string;
@@ -29,6 +30,10 @@ const props = defineProps({
   },
   decisions: {
     type: Array as PropType<AgentDecision[]>,
+    required: true,
+  },
+  now: {
+    type: Number,
     required: true,
   },
   modDecisionIds: {
@@ -111,13 +116,7 @@ function mapDecision(decision: string) {
 }
 
 function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
+  return formatRelativeTime(iso, props.now);
 }
 </script>
 

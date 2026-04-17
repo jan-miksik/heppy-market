@@ -28,6 +28,7 @@ const {
   livePricesLoading,
   livePricesError,
   menuOpen,
+  now,
   clearingHistory,
   isModelUnavailableError,
   openTrades,
@@ -150,6 +151,7 @@ if (justCreated) {
         :agent-id="id"
         :decisions="decisions"
         :mod-decision-ids="modDecisionIds"
+        :now="now"
         :pending-modifications="pendingModifications"
         :approve-modification="approve"
         :reject-modification="reject"
@@ -163,6 +165,7 @@ if (justCreated) {
         :is-analyzing="isAnalyzing"
         :is-next-analysis-imminent="isNextAnalysisImminent"
         :live-prices="livePrices"
+        :now="now"
         :pnl-class="pnlClass"
         :seconds-until-next-action="secondsUntilNextAction"
         :trades="trades"

@@ -14,6 +14,17 @@ interface IMockPerpDEX {
     function closePosition(uint256 positionId, uint256 acceptablePrice)
         external returns (int256 pnl);
     function collateralToken() external view returns (address);
+    function getPosition(uint256 positionId)
+        external view returns (
+            address account,
+            bytes32 market,
+            bool isLong,
+            uint256 collateralAmount,
+            uint256 leverage,
+            uint256 size,
+            uint256 entryPrice,
+            bool open_
+        );
 }
 
 /// @title Agent
@@ -24,6 +35,9 @@ interface IMockPerpDEX {
 /// (it is a delegated-execution risk limit, not a price oracle). The executor is
 /// responsible for supplying values consistent with what the user authorized in
 /// setDelegatedExecutorApproval.
+///
+/// @dev ERC-20 tokens sent directly to this contract (not via depositToken) are NOT
+/// credited to any agent vault and cannot be withdrawn. Use depositToken exclusively.
 contract Agent {
     struct AgentState {
         address owner;
@@ -38,10 +52,18 @@ contract Agent {
     struct DelegatedExecutorApproval {
         bool canTick;
         bool canTrade;
-        uint128 maxTradeNotionalValueWei;    // 0 = unlimited (max collateral per trade)
-        uint128 dailyTradeNotionalLimitWei;  // 0 = unlimited (daily collateral limit)
+        uint128 maxTradeNotionalValueWei;    // 0 = unlimited; enforces collateral × leverage per trade
+        uint128 dailyTradeNotionalLimitWei;  // 0 = unlimited; enforces daily collateral × leverage total
         uint64 dayIndex;
         uint128 notionalSpentTodayWei;
+    }
+
+    /// @notice A perp position tracked by an agent, namespaced by the DEX that issued it.
+    /// @dev Position IDs are only unique within a single DEX; different DEXes can independently
+    ///      mint the same numeric ID. This struct binds them together so cross-DEX calls are safe.
+    struct TrackedPosition {
+        address perpDex;
+        uint256 positionId;
     }
 
     uint256 public nextAgentId = 1;
@@ -54,8 +76,15 @@ contract Agent {
     mapping(uint256 => mapping(address => bool)) private _allowedPerpDexes;
     /// @dev Per-agent token allowlist (collateral tokens)
     mapping(uint256 => mapping(address => bool)) private _allowedTradeTokens;
-    /// @dev Per-agent open perp position IDs (agentId => positionId[])
-    mapping(uint256 => uint256[]) private _openPositionIds;
+    /// @dev Per-agent open perp positions, namespaced by (perpDex, positionId) to avoid cross-DEX ID collisions.
+    mapping(uint256 => TrackedPosition[]) private _openPositions;
+    /// @dev Index-plus-one into _openPositions for O(1) removal. 0 means "not tracked".
+    ///      Key: keccak256(abi.encode(perpDex, positionId)).
+    mapping(uint256 => mapping(bytes32 => uint256)) private _positionIndexPlusOne;
+    /// @dev Global cache of each DEX's collateralToken(), populated on first allowlist.
+    ///      Avoids re-querying the (trusted) DEX on every trade. Never cleared — multiple
+    ///      agents may share a DEX, and the collateral token is treated as immutable.
+    mapping(address => address) private _perpDexCollateralToken;
 
     uint256 private _reentrancyState = 1;
 
@@ -102,6 +131,7 @@ contract Agent {
         int256 pnl,
         uint256 executionDeadline
     );
+    event PositionPruned(uint256 indexed agentId, address indexed perpDexAddress, uint256 perpPositionId);
 
     error AgentNotFound(uint256 agentId);
     error NotAgentOwner(uint256 agentId, address caller);
@@ -124,6 +154,7 @@ contract Agent {
     error Reentrancy();
     error ExecutionPlanExpired(uint256 executionDeadline, uint256 nowTs);
     error PerpPositionNotTracked(uint256 agentId, uint256 perpPositionId);
+    error PositionStillOpen(uint256 agentId, uint256 perpPositionId);
     error DirectNativeTransferDisabled();
 
     modifier nonReentrant() {
@@ -278,15 +309,32 @@ contract Agent {
     }
 
     /// @notice Allowlist or remove a perp DEX address for an agent.
+    /// @dev TRUST BOUNDARY: allowlisting a perp DEX authorizes it to receive any collateral token
+    ///      allowlisted by this agent via `setAllowedTradeToken`. The caller is responsible for
+    ///      vetting the DEX implementation — a malicious DEX can drain all approved collateral by
+    ///      returning arbitrary values from `collateralToken()` or mishandling transferred funds.
+    ///      On first allowlist of a given DEX (across all agents), this contract queries
+    ///      `collateralToken()` once and caches the result. The cache is never cleared, so
+    ///      agents sharing a DEX share a single query cost.
     function setAllowedPerpDex(uint256 agentId, address perpDexAddress, bool allowed) external {
         _requireOwner(agentId);
         if (perpDexAddress == address(0)) revert ZeroAddress();
         _allowedPerpDexes[agentId][perpDexAddress] = allowed;
+        if (allowed && _perpDexCollateralToken[perpDexAddress] == address(0)) {
+            address token = IMockPerpDEX(perpDexAddress).collateralToken();
+            if (token == address(0)) revert ZeroAddress();
+            _perpDexCollateralToken[perpDexAddress] = token;
+        }
         emit AllowedPerpDexSet(agentId, perpDexAddress, allowed);
     }
 
     function isPerpDexAllowed(uint256 agentId, address perpDexAddress) external view returns (bool) {
         return _allowedPerpDexes[agentId][perpDexAddress];
+    }
+
+    /// @notice Cached collateral token for an allowlisted DEX. Returns address(0) if never allowlisted.
+    function perpDexCollateralToken(address perpDexAddress) external view returns (address) {
+        return _perpDexCollateralToken[perpDexAddress];
     }
 
     /// @notice Allowlist or remove a trade token (collateral).
@@ -407,8 +455,8 @@ contract Agent {
         // 5. Amount sanity.
         if (collateralAmount == 0) revert ZeroAmount();
 
-        // 6. Resolve collateral token from the perp DEX.
-        address collateralToken = IMockPerpDEX(perpDexAddress).collateralToken();
+        // 6. Resolve collateral token from the cached mapping (populated at allowlist time).
+        address collateralToken = _perpDexCollateralToken[perpDexAddress];
         if (!_allowedTradeTokens[agentId][collateralToken]) revert TradeTokenNotAllowed(agentId, collateralToken);
 
         // 7. Sufficient vault balance.
@@ -420,7 +468,8 @@ contract Agent {
         // 8. Delegated execution checks (owner can always trade; non-owner needs delegation).
         if (msg.sender != a.owner) {
             if (!a.delegatedExecutionEnabled) revert DelegatedExecutionDisabled(agentId);
-            _consumeTradeNotionalAllowance(agentId, a, msg.sender, collateralAmount);
+            // leverage is validated 1–maxLeverage (≤10) above, so multiplication cannot overflow uint256
+            _consumeTradeNotionalAllowance(agentId, a, msg.sender, collateralAmount * leverage);
         }
 
         // 9. Debit vault, approve perp DEX, and open position.
@@ -435,8 +484,8 @@ contract Agent {
 
         _safeApprove(collateralToken, perpDexAddress, 0);
 
-        // 10. Track position.
-        _openPositionIds[agentId].push(perpPositionId);
+        // 10. Track position, namespaced by (perpDex, positionId).
+        _trackPosition(agentId, perpDexAddress, perpPositionId);
 
         emit PerpPositionOpened(
             agentId,
@@ -452,6 +501,10 @@ contract Agent {
     }
 
     /// @notice Close a perpetual position and credit returned collateral (+/- P&L) to the vault.
+    /// @dev Closes intentionally do not consume the daily notional allowance; only opens do.
+    ///      This asymmetry is by design — closes return funds and should not be throttled.
+    ///      A malicious allowlisted DEX combined with open/close cycling could extract funds
+    ///      bounded only by the per-trade open limit.
     /// @param agentId           Agent vault that owns the position.
     /// @param perpDexAddress    Address of the MockPerpDEX.
     /// @param perpPositionId    Position ID to close.
@@ -475,8 +528,8 @@ contract Agent {
         if (perpDexAddress == address(0)) revert ZeroAddress();
         if (!_allowedPerpDexes[agentId][perpDexAddress]) revert PerpDexNotAllowed(agentId, perpDexAddress);
 
-        // 4. Verify position is tracked by this agent.
-        _removeTrackedPosition(agentId, perpPositionId);
+        // 4. Verify position is tracked by this agent under the given DEX (collision-safe).
+        _removeTrackedPosition(agentId, perpDexAddress, perpPositionId);
 
         // 5. Delegated execution checks.
         if (msg.sender != a.owner) {
@@ -485,8 +538,8 @@ contract Agent {
             if (!approval.canTrade) revert NotAuthorizedTradeExecutor(agentId, msg.sender);
         }
 
-        // 6. Resolve collateral token.
-        address collateralToken = IMockPerpDEX(perpDexAddress).collateralToken();
+        // 6. Resolve collateral token from the cached mapping.
+        address collateralToken = _perpDexCollateralToken[perpDexAddress];
 
         // 7. Record balance before close to measure returned amount.
         uint256 balBefore = _erc20Balance(collateralToken, address(this));
@@ -504,9 +557,24 @@ contract Agent {
         );
     }
 
-    /// @notice Returns the list of open perp position IDs for an agent.
-    function getOpenPositionIds(uint256 agentId) external view returns (uint256[] memory) {
-        return _openPositionIds[agentId];
+    /// @notice Returns the list of open perp positions for an agent, each paired with its DEX.
+    function getOpenPositions(uint256 agentId) external view returns (TrackedPosition[] memory) {
+        return _openPositions[agentId];
+    }
+
+    /// @notice Remove a locally tracked position that was externally liquidated on the DEX.
+    /// @dev No funds are moved. Reverts if the position is still open at the DEX, or not tracked
+    ///      under the specified DEX (collision-safe: pruning with the wrong DEX address fails).
+    function pruneClosedPosition(uint256 agentId, address perpDex, uint256 positionId) external nonReentrant {
+        _requireOwner(agentId);
+        if (perpDex == address(0)) revert ZeroAddress();
+        if (!_allowedPerpDexes[agentId][perpDex]) revert PerpDexNotAllowed(agentId, perpDex);
+
+        (,,,,,,, bool open_) = IMockPerpDEX(perpDex).getPosition(positionId);
+        if (open_) revert PositionStillOpen(agentId, positionId);
+
+        _removeTrackedPosition(agentId, perpDex, positionId);
+        emit PositionPruned(agentId, perpDex, positionId);
     }
 
     // ─────────────────────────── Internal ───────────────────────────
@@ -562,17 +630,35 @@ contract Agent {
         approval.notionalSpentTodayWei = uint128(attemptedTotal);
     }
 
-    function _removeTrackedPosition(uint256 agentId, uint256 perpPositionId) private {
-        uint256[] storage ids = _openPositionIds[agentId];
-        uint256 len = ids.length;
-        for (uint256 i = 0; i < len; i++) {
-            if (ids[i] == perpPositionId) {
-                ids[i] = ids[len - 1];
-                ids.pop();
-                return;
-            }
+    function _positionKey(address perpDex, uint256 positionId) private pure returns (bytes32) {
+        return keccak256(abi.encode(perpDex, positionId));
+    }
+
+    function _trackPosition(uint256 agentId, address perpDex, uint256 perpPositionId) private {
+        bytes32 key = _positionKey(perpDex, perpPositionId);
+        // perpPositionIds come from nextPositionId on each DEX and are unique per DEX, so a
+        // (perpDex, positionId) pair cannot collide with any previously tracked entry.
+        TrackedPosition[] storage positions = _openPositions[agentId];
+        positions.push(TrackedPosition({perpDex: perpDex, positionId: perpPositionId}));
+        _positionIndexPlusOne[agentId][key] = positions.length; // index+1
+    }
+
+    function _removeTrackedPosition(uint256 agentId, address perpDex, uint256 perpPositionId) private {
+        bytes32 key = _positionKey(perpDex, perpPositionId);
+        uint256 indexPlusOne = _positionIndexPlusOne[agentId][key];
+        if (indexPlusOne == 0) revert PerpPositionNotTracked(agentId, perpPositionId);
+
+        TrackedPosition[] storage positions = _openPositions[agentId];
+        uint256 idx = indexPlusOne - 1;
+        uint256 lastIdx = positions.length - 1;
+
+        if (idx != lastIdx) {
+            TrackedPosition memory moved = positions[lastIdx];
+            positions[idx] = moved;
+            _positionIndexPlusOne[agentId][_positionKey(moved.perpDex, moved.positionId)] = idx + 1;
         }
-        revert PerpPositionNotTracked(agentId, perpPositionId);
+        positions.pop();
+        delete _positionIndexPlusOne[agentId][key];
     }
 
     function _todayIndex() private view returns (uint64) {

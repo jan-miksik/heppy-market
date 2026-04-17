@@ -2,6 +2,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getAgentProfile, DEFAULT_AGENT_PROFILE_ID } from '@something-in-loop/shared';
 import { pollUntilFutureAlarm } from '~/utils/statusPolling';
+import { remainingAnalyzeBannerDelayMs } from '~/utils/formatting';
 
 export interface AgentDecision {
   id: string;
@@ -86,6 +87,7 @@ export function useAgentDetailPage(id: string) {
   const ANALYZE_RESULT_WAIT_MS = 25_000;
   const ANALYZE_RESULT_WAIT_ON_PENDING_MS = 90_000;
   const ANALYZE_RESULT_POLL_MS = 1_500;
+  const ANALYZE_ERROR_BANNER_DELAY_MS = 3 * 60_000;
   const ANALYZE_BACKGROUND_WAIT_MS = 3 * 60_000;
   const ANALYZE_BACKGROUND_POLL_MS = 2_000;
   const WALLET_STATE_TIMEOUT_MS = 30_000;
@@ -436,6 +438,26 @@ export function useAgentDetailPage(id: string) {
       await Promise.all([refreshDoStatus(), fetchLivePrices()]);
 
       if (!hasNewDecision) {
+        const graceMs = remainingAnalyzeBannerDelayMs(
+          analyzeStartedAt,
+          Date.now(),
+          ANALYZE_ERROR_BANNER_DELAY_MS,
+        );
+
+        if (graceMs > 0) {
+          analyzePhase.value = 'polling';
+          const resolvedDuringGrace = await waitForDecisionChange(previousDecisionIds, graceMs, {
+            stage: 'background',
+            pollMs: ANALYZE_BACKGROUND_POLL_MS,
+          });
+
+          analyzePhase.value = 'refreshing';
+          await refreshAnalysisOutputs();
+          await Promise.all([refreshDoStatus(), fetchLivePrices()]);
+
+          if (resolvedDuringGrace) return;
+        }
+
         analyzeError.value = pendingRun
           ? 'Analysis is still running in the background. No new decision yet — try again shortly.'
           : 'No new decision yet — analysis may still be running. Try again shortly.';

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasIndexedSpotPriceProvider,
   resolveCoinGeckoCoinIdForPair,
   resolveCoinPaprikaCoinIdForPair,
   resolveDemoFallbackSpotUsdForPair,
@@ -12,6 +13,8 @@ describe('coingecko pair helpers', () => {
     expect(resolveCoinGeckoCoinIdForPair('INIT/USDT')).toBe('initia');
     expect(resolveCoinGeckoCoinIdForPair('INITIA/USDC')).toBe('initia');
     expect(resolveCoinPaprikaCoinIdForPair('INIT/USD')).toBe('init-initia');
+    expect(hasIndexedSpotPriceProvider('INIT/USD')).toBe(true);
+    expect(hasIndexedSpotPriceProvider('WETH/USDC')).toBe(false);
   });
 
   it('returns demo fallback spot for init stable pairs only', () => {

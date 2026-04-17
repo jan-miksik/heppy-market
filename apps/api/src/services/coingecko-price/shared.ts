@@ -75,6 +75,15 @@ export function resolveCoinPaprikaCoinIdForPair(pairName: string): string | null
   return null;
 }
 
+/**
+ * Returns true for pairs that have a direct indexed spot provider mapping
+ * and therefore should not fall back to arbitrary DEX pool discovery.
+ */
+export function hasIndexedSpotPriceProvider(pairName: string): boolean {
+  return resolveCoinGeckoCoinIdForPair(pairName) !== null
+    || resolveCoinPaprikaCoinIdForPair(pairName) !== null;
+}
+
 export function calcPctChange(current: number | undefined, previous: number | undefined): number | undefined {
   if (current === undefined || previous === undefined || previous <= 0) return undefined;
   return ((current - previous) / previous) * 100;

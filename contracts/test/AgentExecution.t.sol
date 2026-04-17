@@ -78,9 +78,10 @@ contract AgentPerpTest is Test {
         assertEq(vault.tokenBalance(agentId, address(iusd)), 9_000e18);
 
         // Position should be tracked
-        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
-        assertEq(openIds.length, 1);
-        assertEq(openIds[0], 1);
+        Agent.TrackedPosition[] memory openPositions = vault.getOpenPositions(agentId);
+        assertEq(openPositions.length, 1);
+        assertEq(openPositions[0].positionId, 1);
+        assertEq(openPositions[0].perpDex, address(perpDex));
     }
 
     function test_executePerpOpen_opensShortPosition() external {
@@ -175,8 +176,7 @@ contract AgentPerpTest is Test {
         assertTrue(balAfter > balBefore, "Balance should increase");
 
         // Position should be removed from tracking
-        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
-        assertEq(openIds.length, 0);
+        assertEq(vault.getOpenPositions(agentId).length, 0);
     }
 
     function test_executePerpClose_closesLongAtLoss() external {
@@ -232,16 +232,41 @@ contract AgentPerpTest is Test {
         vault.setDelegatedExecutionEnabled(agentId, true);
         vault.setAllowedPerpDex(agentId, address(perpDex), true);
         vault.setAllowedTradeToken(agentId, address(iusd), true);
-        // maxTradeNotional = 500e18
+        // maxTradeNotional = 500e18 notional (collateral × leverage)
         vault.setDelegatedExecutorApproval(agentId, executor, true, true, uint128(500e18), 0);
         vm.stopPrank();
 
-        // 1000e18 collateral > 500e18 limit
+        // 1000e18 collateral × 5 leverage = 5000e18 notional > 500e18 limit
         vm.expectRevert(
-            abi.encodeWithSelector(Agent.TradeNotionalLimitExceeded.selector, agentId, executor, 1_000e18, 500e18)
+            abi.encodeWithSelector(Agent.TradeNotionalLimitExceeded.selector, agentId, executor, 5_000e18, 500e18)
         );
         vm.prank(executor);
         vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+    }
+
+    function test_notionalLimit_reflectsLeveragedExposure() external {
+        // maxTradeNotional = 5000e18; collateral = 1000e18 at 5x leverage = 5000e18 notional → exact limit, should pass
+        uint256 agentId;
+        vm.startPrank(alice);
+        agentId = vault.createAgent(bytes("notional-check"));
+        iusd.approve(address(vault), 10_000e18);
+        vault.depositToken(agentId, address(iusd), 10_000e18);
+        vault.setDelegatedExecutionEnabled(agentId, true);
+        vault.setAllowedPerpDex(agentId, address(perpDex), true);
+        vault.setAllowedTradeToken(agentId, address(iusd), true);
+        vault.setDelegatedExecutorApproval(agentId, executor, true, true, uint128(5_000e18), 0);
+        vm.stopPrank();
+
+        vm.prank(executor);
+        uint256 posId = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+        assertGt(posId, 0);
+
+        // One unit above the limit (collateral=1001e18, leverage=5 → notional=5005e18 > 5000e18)
+        vm.expectRevert(
+            abi.encodeWithSelector(Agent.TradeNotionalLimitExceeded.selector, agentId, executor, 5_005e18, 5_000e18)
+        );
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_001e18, 5, BTC_PRICE + 100e18, _deadline());
     }
 
     function test_setMaxLeverage() external {
@@ -268,16 +293,16 @@ contract AgentPerpTest is Test {
         vm.prank(executor);
         uint256 pos2 = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, false, 500e18, 3, BTC_PRICE - 100e18, _deadline());
 
-        uint256[] memory openIds = vault.getOpenPositionIds(agentId);
-        assertEq(openIds.length, 2);
+        Agent.TrackedPosition[] memory openPositions = vault.getOpenPositions(agentId);
+        assertEq(openPositions.length, 2);
 
         // Close first position
         vm.prank(executor);
         vault.executePerpClose(agentId, address(perpDex), pos1, 0, _deadline());
 
-        openIds = vault.getOpenPositionIds(agentId);
-        assertEq(openIds.length, 1);
-        assertEq(openIds[0], pos2);
+        openPositions = vault.getOpenPositions(agentId);
+        assertEq(openPositions.length, 1);
+        assertEq(openPositions[0].positionId, pos2);
     }
 
     // ── Owner can trade without delegation ────────────────────────────
@@ -296,5 +321,172 @@ contract AgentPerpTest is Test {
 
         assertEq(positionId, 1);
         assertEq(vault.tokenBalance(agentId, address(iusd)), 4_000e18);
+    }
+
+    // ── Finding 3: pruneClosedPosition after external liquidation ─────
+
+    function test_prune_afterExternalLiquidation() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 posId = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+
+        assertEq(vault.getOpenPositions(agentId).length, 1);
+
+        // Crash price to make position liquidatable (90% loss threshold at 5x leverage → ~18% price drop)
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE * 10 / 100);
+        perpDex.liquidatePosition(posId);
+
+        // Position still appears stale in Agent tracking
+        assertEq(vault.getOpenPositions(agentId).length, 1);
+
+        // Owner can prune it
+        vm.prank(alice);
+        vault.pruneClosedPosition(agentId, address(perpDex), posId);
+
+        assertEq(vault.getOpenPositions(agentId).length, 0);
+    }
+
+    function test_prune_revertsWhenPositionStillOpen() external {
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(executor);
+        uint256 posId = vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline());
+
+        vm.expectRevert(abi.encodeWithSelector(Agent.PositionStillOpen.selector, agentId, posId));
+        vm.prank(alice);
+        vault.pruneClosedPosition(agentId, address(perpDex), posId);
+    }
+
+    // ── Finding 4: direct ERC-20 transfer does not affect _tokenBalances ─
+
+    function test_directErc20Transfer_remainsStranded() external {
+        uint256 agentId = _createAndFundAgent();
+
+        uint256 balanceBefore = vault.tokenBalance(agentId, address(iusd));
+
+        // Transfer tokens directly to the vault contract (not via depositToken)
+        vm.prank(alice);
+        iusd.transfer(address(vault), 500e18);
+
+        // Agent's tracked balance is unchanged
+        assertEq(vault.tokenBalance(agentId, address(iusd)), balanceBefore);
+
+        // Attempting to withdraw more than the tracked balance reverts
+        vm.expectRevert(
+            abi.encodeWithSelector(Agent.InsufficientTokenBalance.selector, agentId, address(iusd), balanceBefore + 500e18, balanceBefore)
+        );
+        vm.prank(alice);
+        vault.withdrawToken(agentId, address(iusd), balanceBefore + 500e18, alice);
+    }
+
+    // ── Finding 12: day-boundary rollover for daily notional allowance ──
+
+    function test_dailyNotional_resetsAfterDayBoundary() external {
+        uint256 agentId;
+        vm.startPrank(alice);
+        agentId = vault.createAgent(bytes("daily-limit"));
+        iusd.approve(address(vault), 10_000e18);
+        vault.depositToken(agentId, address(iusd), 10_000e18);
+        vault.setDelegatedExecutionEnabled(agentId, true);
+        vault.setAllowedPerpDex(agentId, address(perpDex), true);
+        vault.setAllowedTradeToken(agentId, address(iusd), true);
+        // daily notional limit = 2000e18 notional (collateral × leverage)
+        vault.setDelegatedExecutorApproval(agentId, executor, true, true, 0, uint128(2_000e18));
+        vm.stopPrank();
+
+        // Open a position using 400e18 collateral × 5 leverage = 2000e18 notional — exactly hits daily limit
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 400e18, 5, BTC_PRICE + 100e18, _deadline());
+
+        // Second trade on same day should revert
+        vm.expectRevert(
+            abi.encodeWithSelector(Agent.DailyTradeNotionalLimitExceeded.selector, agentId, executor, 4_000e18, 2_000e18)
+        );
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 400e18, 5, BTC_PRICE + 100e18, _deadline());
+
+        // Warp past midnight UTC (one day)
+        vm.warp(block.timestamp + 1 days);
+
+        // Trade should succeed on the new day
+        vm.prank(executor);
+        vault.executePerpOpen(agentId, address(perpDex), MARKET_BTC, true, 400e18, 5, BTC_PRICE + 100e18, _deadline());
+    }
+
+    // ── Finding 1: cross-DEX position-ID collision ────────────────────
+
+    function test_crossDex_positionId_collision_prevented() external {
+        // Second DEX, same collateral token — its nextPositionId also starts at 1.
+        MockPerpDEX perpDexB = new MockPerpDEX(address(iusd));
+        perpDexB.updatePrice(MARKET_BTC, BTC_PRICE);
+        iusd.mint(address(perpDexB), 1_000_000e18);
+
+        uint256 agentId = _createAndFundAgent();
+
+        vm.prank(alice);
+        vault.setAllowedPerpDex(agentId, address(perpDexB), true);
+
+        // Open only on DEX_A; DEX_B has no position tracked for this agent.
+        vm.prank(executor);
+        uint256 posA = vault.executePerpOpen(
+            agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 2, BTC_PRICE + 100e18, _deadline()
+        );
+        assertEq(posA, 1);
+
+        // Attempting to close via DEX_B using DEX_A's id must revert BEFORE any external call —
+        // the (DEX_B, 1) key is not tracked. Under the old id-only scheme this would have popped
+        // DEX_A's tracker entry and then failed later at the DEX, leaving the caller with an
+        // ambiguous error surface; now the bad key is rejected up front.
+        vm.expectRevert(abi.encodeWithSelector(Agent.PerpPositionNotTracked.selector, agentId, posA));
+        vm.prank(executor);
+        vault.executePerpClose(agentId, address(perpDexB), posA, 0, _deadline());
+
+        // Tracker is unchanged after the rejected call.
+        Agent.TrackedPosition[] memory openPositions = vault.getOpenPositions(agentId);
+        assertEq(openPositions.length, 1);
+        assertEq(openPositions[0].perpDex, address(perpDex));
+        assertEq(openPositions[0].positionId, posA);
+
+        // Now open a legitimate colliding id on DEX_B. Both coexist independently.
+        vm.prank(executor);
+        uint256 posB = vault.executePerpOpen(
+            agentId, address(perpDexB), MARKET_BTC, true, 1_000e18, 2, BTC_PRICE + 100e18, _deadline()
+        );
+        assertEq(posB, 1);
+        assertEq(vault.getOpenPositions(agentId).length, 2);
+
+        // Each closes independently under its correct DEX.
+        vm.prank(executor);
+        vault.executePerpClose(agentId, address(perpDex), posA, 0, _deadline());
+        vm.prank(executor);
+        vault.executePerpClose(agentId, address(perpDexB), posB, 0, _deadline());
+        assertEq(vault.getOpenPositions(agentId).length, 0);
+    }
+
+    function test_crossDex_pruneClosedPosition_wrongDex_reverts() external {
+        // Prune must also be DEX-scoped: a closed position on DEX_A cannot be pruned as if it
+        // belonged to DEX_B (where the agent has no matching tracker entry).
+        MockPerpDEX perpDexB = new MockPerpDEX(address(iusd));
+        perpDexB.updatePrice(MARKET_BTC, BTC_PRICE);
+
+        uint256 agentId = _createAndFundAgent();
+        vm.prank(alice);
+        vault.setAllowedPerpDex(agentId, address(perpDexB), true);
+
+        vm.prank(executor);
+        uint256 posA = vault.executePerpOpen(
+            agentId, address(perpDex), MARKET_BTC, true, 1_000e18, 5, BTC_PRICE + 100e18, _deadline()
+        );
+
+        // Liquidate posA directly on DEX_A.
+        perpDex.updatePrice(MARKET_BTC, BTC_PRICE * 10 / 100);
+        perpDex.liquidatePosition(posA);
+
+        // Pruning via DEX_B must revert — the position is closed at DEX_B's view (it never existed
+        // there, so getPosition returns default false), but the tracker has no (DEX_B, posA) entry.
+        vm.expectRevert(abi.encodeWithSelector(Agent.PerpPositionNotTracked.selector, agentId, posA));
+        vm.prank(alice);
+        vault.pruneClosedPosition(agentId, address(perpDexB), posA);
     }
 }

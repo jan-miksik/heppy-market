@@ -21,7 +21,6 @@ contract MockPerpDEX {
         uint256 leverage;           // 1-based (e.g., 5 = 5x)
         uint256 size;               // collateral * leverage (notional)
         uint256 entryPrice;         // 18-decimal fixed-point
-        uint256 entryFundingRate;
         bool open;
     }
 
@@ -29,7 +28,6 @@ contract MockPerpDEX {
     address public collateralToken;   // iUSD-demo
 
     uint256 public nextPositionId = 1;
-    int256 public fundingRateBps = 1; // basis points per period (can be negative)
 
     mapping(bytes32 => uint256) public markPrices;   // market hash → 18-decimal price
     mapping(uint256 => Position) public positions;
@@ -57,7 +55,6 @@ contract MockPerpDEX {
         uint256 markPrice
     );
     event PriceUpdated(bytes32 indexed market, uint256 oldPrice, uint256 newPrice);
-    event FundingRateUpdated(int256 oldRate, int256 newRate);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     error NotOwner();
@@ -103,13 +100,6 @@ contract MockPerpDEX {
         emit PriceUpdated(market, old, newPrice);
     }
 
-    /// @notice Set the mock funding rate (basis points). Can be negative.
-    function setFundingRate(int256 newRateBps) external onlyOwner {
-        int256 old = fundingRateBps;
-        fundingRateBps = newRateBps;
-        emit FundingRateUpdated(old, newRateBps);
-    }
-
     /// @notice Open a perpetual position. Collateral is transferred into this contract.
     /// @param market      Hashed market identifier (e.g., keccak256("BTC/USD"))
     /// @param isLong      True for long, false for short
@@ -150,7 +140,6 @@ contract MockPerpDEX {
             leverage: leverage,
             size: size,
             entryPrice: price,
-            entryFundingRate: uint256(fundingRateBps > 0 ? fundingRateBps : -fundingRateBps),
             open: true
         });
 
@@ -214,7 +203,6 @@ contract MockPerpDEX {
             uint256 leverage,
             uint256 size,
             uint256 entryPrice,
-            uint256 entryFundingRate,
             bool open_
         )
     {
@@ -227,7 +215,6 @@ contract MockPerpDEX {
             pos.leverage,
             pos.size,
             pos.entryPrice,
-            pos.entryFundingRate,
             pos.open
         );
     }

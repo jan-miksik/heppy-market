@@ -112,6 +112,10 @@ wrangler d1 migrations apply trading-agents --env production
 cd apps/api
 wrangler secret put OPENROUTER_API_KEY --env production
 # Paste your OpenRouter API key when prompted
+
+# Required if users connect their own OpenRouter accounts in the UI.
+# Must be a 64-char hex string (32 bytes), for example:
+openssl rand -hex 32 | wrangler secret put KEY_ENCRYPTION_SECRET --env production
 ```
 
 Optional: `ANTHROPIC_API_KEY` for paid Claude models.

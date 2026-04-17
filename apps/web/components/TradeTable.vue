@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Trade } from '~/composables/useTrades';
+import { formatCompactPrice } from '~/utils/formatting';
 
 const props = defineProps<{
   trades: Trade[];
@@ -163,7 +164,7 @@ async function onCloseClick(ev: MouseEvent, trade: Trade) {
 }
 
 function formatPrice(p: number) {
-  return p >= 1 ? p.toLocaleString('en', { maximumFractionDigits: 4 }) : p.toPrecision(5);
+  return formatCompactPrice(p);
 }
 
 function formatDate(iso: string) {

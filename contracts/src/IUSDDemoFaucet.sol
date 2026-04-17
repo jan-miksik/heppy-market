@@ -7,6 +7,10 @@ interface IIUSDDemoMintable {
 
 /// @title iUSD-demo faucet
 /// @notice Unlimited test-only faucet that mints iUSD-demo tokens on demand.
+/// @dev DEMO ONLY — DO NOT DEPLOY AGAINST A PRODUCTION TOKEN. Any caller can mint
+///      any amount to any address with no cap. Intended exclusively for testnet use
+///      with iUSD-demo. Misassigning the minter role on a production token to this
+///      contract gives any user unlimited mint authority.
 contract IUSDDemoFaucet {
     address public immutable token;
 

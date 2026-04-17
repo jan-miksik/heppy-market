@@ -3,6 +3,7 @@ import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import type { DexPair } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
 import {
+  hasIndexedSpotPriceProvider,
   resolveCoinGeckoSpotUsdForPair,
   resolveCoinGeckoMarketContextForPair,
   resolveCoinPaprikaSpotUsdForPair,
@@ -95,6 +96,7 @@ export async function fetchOnePair(params: {
 }): Promise<MarketDataItem | null> {
   const { env, pairName, agentId, geckoSvc, dexSvc, log } = params;
   const query = pairToSearchQuery(pairName);
+  const skipDexDiscovery = hasIndexedSpotPriceProvider(pairName);
   let priceUsd = 0;
   let pairAddress = '';
   let priceChange: Record<string, number | undefined> = {};
@@ -111,42 +113,44 @@ export async function fetchOnePair(params: {
     }
   }
 
-  try {
-    console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${query}"`);
-    const pools = await geckoSvc.searchPools(query);
-    const pool = pools.find((entry) => poolMatchesPair(entry.name, pairName));
-    if (pool && pool.priceUsd > 0) {
-      priceUsd = pool.priceUsd;
-      pairAddress = pool.address;
-      priceChange = pool.priceChange;
-      volume24h = pool.volume24h;
-      liquidity = pool.liquidityUsd;
-      console.log(
-        `[agent-loop] ${agentId}: GeckoTerminal found ${pool.name} @ $${priceUsd} liq=$${(liquidity ?? 0).toLocaleString()}`,
-      );
+  if (!skipDexDiscovery) {
+    try {
+      console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${query}"`);
+      const pools = await geckoSvc.searchPools(query);
+      const pool = pools.find((entry) => poolMatchesPair(entry.name, pairName));
+      if (pool && pool.priceUsd > 0) {
+        priceUsd = pool.priceUsd;
+        pairAddress = pool.address;
+        priceChange = pool.priceChange;
+        volume24h = pool.volume24h;
+        liquidity = pool.liquidityUsd;
+        console.log(
+          `[agent-loop] ${agentId}: GeckoTerminal found ${pool.name} @ $${priceUsd} liq=$${(liquidity ?? 0).toLocaleString()}`,
+        );
 
-      const [hourlyResult, dailyResult] = await Promise.allSettled([
-        geckoSvc.getPoolPriceSeries(pool.address, 48, 'hour'),
-        geckoSvc.getPoolPriceSeries(pool.address, 30, 'day'),
-      ]);
-      if (hourlyResult.status === 'fulfilled') {
-        prices = hourlyResult.value;
-        console.log(`[agent-loop] ${agentId}: Got ${prices.length} hourly candles`);
-      } else {
-        logStructuredError('agent-loop', agentId, classifyApiError(hourlyResult.reason, { pair: pairName, source: 'gecko-ohlcv-hourly' }));
+        const [hourlyResult, dailyResult] = await Promise.allSettled([
+          geckoSvc.getPoolPriceSeries(pool.address, 48, 'hour'),
+          geckoSvc.getPoolPriceSeries(pool.address, 30, 'day'),
+        ]);
+        if (hourlyResult.status === 'fulfilled') {
+          prices = hourlyResult.value;
+          console.log(`[agent-loop] ${agentId}: Got ${prices.length} hourly candles`);
+        } else {
+          logStructuredError('agent-loop', agentId, classifyApiError(hourlyResult.reason, { pair: pairName, source: 'gecko-ohlcv-hourly' }));
+        }
+        if (dailyResult.status === 'fulfilled') {
+          dailyPrices = dailyResult.value;
+          console.log(`[agent-loop] ${agentId}: Got ${dailyPrices.length} daily candles`);
+        } else {
+          logStructuredError('agent-loop', agentId, classifyApiError(dailyResult.reason, { pair: pairName, source: 'gecko-ohlcv-daily' }));
+        }
       }
-      if (dailyResult.status === 'fulfilled') {
-        dailyPrices = dailyResult.value;
-        console.log(`[agent-loop] ${agentId}: Got ${dailyPrices.length} daily candles`);
-      } else {
-        logStructuredError('agent-loop', agentId, classifyApiError(dailyResult.reason, { pair: pairName, source: 'gecko-ohlcv-daily' }));
-      }
+    } catch (geckoErr) {
+      logStructuredError('agent-loop', agentId, classifyApiError(geckoErr, { pair: pairName, source: 'gecko-terminal' }));
     }
-  } catch (geckoErr) {
-    logStructuredError('agent-loop', agentId, classifyApiError(geckoErr, { pair: pairName, source: 'gecko-terminal' }));
   }
 
-  if (priceUsd === 0) {
+  if (!skipDexDiscovery && priceUsd === 0) {
     try {
       console.log(`[agent-loop] ${agentId}: DexScreener fallback for "${query}"`);
       const results = await dexSvc.searchPairs(query);
@@ -174,7 +178,7 @@ export async function fetchOnePair(params: {
     }
   }
 
-  if (priceUsd === 0) {
+  if (!skipDexDiscovery && priceUsd === 0) {
     const [baseToken] = pairName.split('/').map((token) => token.trim().toUpperCase());
     const baseAddr = BASE_TOKEN_ADDRESSES[baseToken];
     if (baseAddr) {
