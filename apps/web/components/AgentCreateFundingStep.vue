@@ -2,6 +2,7 @@
 defineProps<{
   currentPaperBalance: number;
   walletIusdDisplay: string | null;
+  walletGasDisplay: string | null;
   fundAmount: string;
   faucetAmount: string;
   busy: boolean;
@@ -9,6 +10,7 @@ defineProps<{
   withdrawing: boolean;
   bridging: boolean;
   mintingFaucet: boolean;
+  toppingUpGas: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -18,6 +20,7 @@ const emit = defineEmits<{
   withdraw: [];
   bridge: [];
   mintFaucet: [];
+  topUpGas: [];
   clearFeedback: [];
 }>();
 </script>
@@ -37,6 +40,11 @@ const emit = defineEmits<{
       <div v-if="walletIusdDisplay" class="fund-step__wallet-row">
         <span class="fund-step__bal-key">wallet balance</span>
         <span class="fund-step__bal-val">{{ walletIusdDisplay }} iUSD-demo</span>
+      </div>
+
+      <div v-if="walletGasDisplay" class="fund-step__wallet-row">
+        <span class="fund-step__bal-key">wallet fee balance</span>
+        <span class="fund-step__bal-val">{{ walletGasDisplay }} GAS</span>
       </div>
 
       <div class="fund-step__input-row">
@@ -76,6 +84,17 @@ const emit = defineEmits<{
           We still keep bridge in this flow because it demonstrates the hackathon path: bridge assets from L1 to appchain, then deposit into the agent vault.
           This improves onboarding speed, liquidity access, and immediate utility.
         </p>
+      </div>
+
+      <div class="fund-step__faucet fund-step__faucet--gas">
+        <div class="fund-step__faucet-title">Test GAS top-up</div>
+        <p class="fund-step__hint">
+          Contract actions pay fees in native GAS. If this wallet is empty, top it up before minting or depositing.
+        </p>
+        <button class="fund-step__btn fund-step__btn--gas" :disabled="busy" @click="emit('topUpGas')">
+          <span v-if="toppingUpGas" class="spinner" style="width:12px;height:12px;" />
+          {{ toppingUpGas ? 'Funding...' : 'Get Test GAS' }}
+        </button>
       </div>
 
       <div class="fund-step__faucet">
@@ -287,6 +306,29 @@ const emit = defineEmits<{
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #4ade80;
+}
+
+.fund-step__hint {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-muted, #a7a7a7);
+}
+
+.fund-step__faucet--gas {
+  border-color: color-mix(in srgb, #38bdf8 30%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #38bdf8 9%, transparent);
+}
+
+.fund-step__btn--gas {
+  border-color: color-mix(in srgb, #38bdf8 45%, var(--border, #2a2a2a));
+  color: #38bdf8;
+  background: color-mix(in srgb, #38bdf8 10%, transparent);
+}
+
+.fund-step__btn--gas:not(:disabled):hover {
+  background: color-mix(in srgb, #38bdf8 16%, transparent);
 }
 
 .fund-step__btn--faucet {

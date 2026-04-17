@@ -167,6 +167,7 @@ app.get('/', (c) =>
       'POST /api/agents/:id/initia/link',
       'POST /api/agents/:id/initia/sync',
       'GET  /api/agents/:id/initia/status',
+      'POST /api/agents/initia/test-gas',
       'DELETE /api/agents/:id',
       'POST /api/agents/:id/start',
       'POST /api/agents/:id/stop',

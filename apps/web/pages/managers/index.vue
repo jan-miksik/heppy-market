@@ -3,7 +3,6 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Agent Managers</h1>
-        <p class="page-subtitle">{{ managers.length }} paper-only managers · {{ managers.filter(m => m.status === 'running').length }} running</p>
       </div>
       <div style="display: flex; gap: 8px; align-items: center;">
         <NuxtLink to="/managers/new" class="btn btn-primary">+ New Manager</NuxtLink>

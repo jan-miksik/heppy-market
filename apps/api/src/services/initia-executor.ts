@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, defineChain, http, type Address } from 'viem';
+import { createPublicClient, createWalletClient, defineChain, http, parseEther, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Logger } from '../lib/logger.js';
 import type { Env } from '../types/env.js';
@@ -56,6 +56,18 @@ export type PerpExecutionResult = {
   perpPositionId?: string;
   pnl?: string;
 };
+
+export type InitiaTestGasFundingResult = {
+  funded: boolean;
+  reason?: string;
+  txHash?: string;
+  amountWei?: string;
+  balanceBeforeWei?: string;
+  targetBalanceWei?: string;
+};
+
+const TEST_GAS_MIN_BALANCE_WEI = parseEther('0.02');
+const TEST_GAS_TARGET_BALANCE_WEI = parseEther('0.25');
 
 function normalizeAddress(value: unknown): Address | null {
   if (typeof value !== 'string') return null;
@@ -256,3 +268,72 @@ export async function submitPerpExecutionPlan(params: {
   }
 }
 
+/**
+ * Top up a user's native GAS balance on the Initia appchain for local/demo flows.
+ * This uses the configured backend executor key and only tops the wallet up to a
+ * small fixed target when the current balance is below the minimum threshold.
+ */
+export async function fundInitiaTestGas(params: {
+  env: Env;
+  log: Logger;
+  recipient: Address;
+}): Promise<InitiaTestGasFundingResult> {
+  const { env, log, recipient } = params;
+  const ctx = resolveChainAndClients(env, null);
+  if (!ctx) return { funded: false, reason: 'missing_chain_config' };
+
+  try {
+    const balanceBefore = await ctx.publicClient.getBalance({ address: recipient });
+    if (balanceBefore >= TEST_GAS_MIN_BALANCE_WEI) {
+      return {
+        funded: false,
+        reason: 'balance_sufficient',
+        balanceBeforeWei: balanceBefore.toString(),
+        targetBalanceWei: TEST_GAS_TARGET_BALANCE_WEI.toString(),
+      };
+    }
+
+    const transferValue = TEST_GAS_TARGET_BALANCE_WEI > balanceBefore
+      ? TEST_GAS_TARGET_BALANCE_WEI - balanceBefore
+      : 0n;
+    if (transferValue <= 0n) {
+      return {
+        funded: false,
+        reason: 'balance_sufficient',
+        balanceBeforeWei: balanceBefore.toString(),
+        targetBalanceWei: TEST_GAS_TARGET_BALANCE_WEI.toString(),
+      };
+    }
+
+    const txHash = await ctx.walletClient.sendTransaction({
+      account: ctx.account,
+      chain: ctx.walletClient.chain,
+      to: recipient,
+      value: transferValue,
+    });
+    await ctx.publicClient.waitForTransactionReceipt({ hash: txHash });
+
+    log.info('initia_test_gas_funded', {
+      recipient: recipient.toLowerCase(),
+      tx_hash: txHash,
+      amount_wei: transferValue.toString(),
+      balance_before_wei: balanceBefore.toString(),
+      target_balance_wei: TEST_GAS_TARGET_BALANCE_WEI.toString(),
+    });
+
+    return {
+      funded: true,
+      txHash,
+      amountWei: transferValue.toString(),
+      balanceBeforeWei: balanceBefore.toString(),
+      targetBalanceWei: TEST_GAS_TARGET_BALANCE_WEI.toString(),
+    };
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    log.warn('initia_test_gas_funding_failed', {
+      recipient: recipient.toLowerCase(),
+      error: message,
+    });
+    return { funded: false, reason: 'tx_failed' };
+  }
+}

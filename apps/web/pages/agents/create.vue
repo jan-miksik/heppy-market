@@ -7,6 +7,7 @@ import AgentPromptPreviewPanel from '~/components/AgentPromptPreviewPanel.vue';
 import { useAgentCreateFlow } from '~/features/agents/create/useAgentCreateFlow';
 
 const configFormRef = ref<InstanceType<typeof AgentConfigForm> | null>(null);
+
 const {
   step,
   isPaper,
@@ -19,8 +20,10 @@ const {
   withdrawing,
   bridging,
   mintingFaucet,
+  toppingUpGas,
   onchainStatus,
   walletIusdDisplay,
+  walletGasDisplay,
   fundingBusy,
   consentModalOpen,
   goToStep,
@@ -32,9 +35,33 @@ const {
   handleWithdraw,
   handleBridge,
   handleMintFaucet,
+  handleTopUpGas,
   handleCancel,
   handleOpenAgent,
 } = useAgentCreateFlow();
+
+const runtimeConfig = useRuntimeConfig();
+const isLocalhost = !runtimeConfig.public.simulateNonLocalhost
+  && typeof window !== 'undefined'
+  && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+isPaper.value = !isLocalhost;
+
+const liveBlockedModalOpen = ref(false);
+
+function handleLiveClick() {
+  if (!isLocalhost) {
+    isPaper.value = false;
+    liveBlockedModalOpen.value = true;
+    return;
+  }
+  isPaper.value = false;
+}
+
+function backToPaper() {
+  liveBlockedModalOpen.value = false;
+  isPaper.value = true;
+}
 </script>
 
 <template>
@@ -68,12 +95,13 @@ const {
       <div class="edit-bar__actions">
         <template v-if="step === 1">
           <div class="mode-toggle">
+            <div class="mode-toggle__slider" :class="{ 'mode-toggle__slider--paper': isPaper }" />
             <button
               class="mode-toggle__btn"
               :class="{ 'mode-toggle__btn--active': !isPaper }"
               type="button"
-              @click="isPaper = false"
-            >Real</button>
+              @click="handleLiveClick"
+            >Live</button>
             <button
               class="mode-toggle__btn"
               :class="{ 'mode-toggle__btn--active': isPaper, 'mode-toggle__btn--paper': isPaper }"
@@ -82,7 +110,14 @@ const {
             >Paper</button>
           </div>
           <button type="button" class="edit-bar__cancel" @click="handleCancel">Cancel</button>
-          <button type="submit" form="agent-config-form" class="edit-bar__save" :class="{ 'edit-bar__save--paper': isPaper }" :disabled="creating">
+          <button
+            type="submit"
+            form="agent-config-form"
+            class="edit-bar__save"
+            :class="{ 'edit-bar__save--paper': isPaper }"
+            :disabled="creating || (!isPaper && !isLocalhost)"
+            @click="!isPaper && !isLocalhost ? liveBlockedModalOpen = true : undefined"
+          >
             <span v-if="creating" class="spinner" style="width:13px;height:13px;border-color:#fff3;border-top-color:#fff" />
             {{ creating ? 'Creating...' : (isPaper ? 'Create Paper Agent →' : (onchainStatus || 'Create Agent →')) }}
           </button>
@@ -122,15 +157,18 @@ const {
         v-model:faucet-amount="faucetAmount"
         :current-paper-balance="currentPaperBalance"
         :wallet-iusd-display="walletIusdDisplay"
+        :wallet-gas-display="walletGasDisplay"
         :busy="fundingBusy"
         :funding="funding"
         :withdrawing="withdrawing"
         :bridging="bridging"
         :minting-faucet="mintingFaucet"
+        :topping-up-gas="toppingUpGas"
         @deposit="handleDeposit"
         @withdraw="handleWithdraw"
         @bridge="handleBridge"
         @mint-faucet="handleMintFaucet"
+        @top-up-gas="handleTopUpGas"
         @clear-feedback="clearFundingFeedback"
       />
     </div>
@@ -141,6 +179,25 @@ const {
     @proceed="handleConsentProceed"
     @cancel="handleConsentCancel"
   />
+
+  <Teleport to="body">
+    <Transition name="live-blocked">
+      <div v-if="liveBlockedModalOpen" class="live-blocked-overlay" @click.self="liveBlockedModalOpen = false">
+        <div class="live-blocked-modal" role="dialog" aria-modal="true">
+          <div class="live-blocked-modal__header">
+            <span class="live-blocked-modal__tag">ON-CHAIN AGENT</span>
+            <button class="live-blocked-modal__close" type="button" @click="liveBlockedModalOpen = false">✕</button>
+          </div>
+          <p class="live-blocked-modal__body">
+            On-chain agents are not yet implemented on this website. If you want to see how the flow looks like for an on-chain agent, please run this app on your localhost. Instructions on how to do it are on <a href="https://github.com/jan-miksik/init-root/tree/hackathon-initia?tab=readme-ov-file#how-to-run-locally" target="_blank" rel="noopener noreferrer" class="live-blocked-modal__link">GitHub</a>. Anyway, besides the on-chain actions the live agent is very similar to a paper agent.
+          </p>
+          <button class="live-blocked-modal__back" type="button" @click="backToPaper">
+            ← Go back to Paper Agent
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 
   <Teleport to="body">
     <div v-if="creating" class="create-overlay">
@@ -317,8 +374,9 @@ const {
 .edit-bar__save--paper:hover { background: #f59e0b; }
 
 .mode-toggle {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
   border: 1px solid #2a2a2a;
   border-radius: 3px;
@@ -326,7 +384,25 @@ const {
   margin-right: 6px;
 }
 
+.mode-toggle__slider {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 50%;
+  background: #2a2a2a;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.22s;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mode-toggle__slider--paper {
+  transform: translateX(100%);
+  background: color-mix(in srgb, #d97706 22%, transparent);
+}
+
 .mode-toggle__btn {
+  position: relative;
+  z-index: 1;
   padding: 5px 12px;
   background: none;
   border: none;
@@ -337,16 +413,14 @@ const {
   text-transform: uppercase;
   color: #555;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: color 0.22s;
 }
 
 .mode-toggle__btn--active {
-  background: #2a2a2a;
   color: #e0e0e0;
 }
 
 .mode-toggle__btn--paper.mode-toggle__btn--active {
-  background: color-mix(in srgb, #d97706 20%, transparent);
   color: #d97706;
 }
 
@@ -415,5 +489,112 @@ const {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted, #666);
+}
+
+/* Live blocked modal */
+.live-blocked-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.live-blocked-modal {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-top: 2px solid #e0e0e0;
+  max-width: 480px;
+  width: 100%;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.live-blocked-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.live-blocked-modal__tag {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted, #666);
+  border: 1px solid #2a2a2a;
+  padding: 3px 8px;
+}
+
+.live-blocked-modal__close {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: color 0.12s;
+  font-family: 'Space Mono', monospace;
+}
+
+.live-blocked-modal__close:hover { color: #e0e0e0; }
+
+.live-blocked-modal__body {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #aaa;
+  margin: 0;
+}
+
+.live-blocked-modal__link {
+  color: #e0e0e0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.12s;
+}
+
+.live-blocked-modal__link:hover { color: var(--accent, #7c6af7); }
+
+.live-blocked-modal__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, #d97706 15%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  color: #d97706;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.live-blocked-modal__back:hover {
+  background: color-mix(in srgb, #d97706 25%, transparent);
+  border-color: #d97706;
+  color: #f59e0b;
+}
+
+/* Transition */
+.live-blocked-enter-active,
+.live-blocked-leave-active {
+  transition: opacity 0.18s;
+}
+
+.live-blocked-enter-from,
+.live-blocked-leave-to {
+  opacity: 0;
 }
 </style>

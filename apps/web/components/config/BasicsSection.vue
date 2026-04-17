@@ -45,23 +45,23 @@ const emit = defineEmits<{
 
     <!-- LLM Model -->
     <div class="form-group">
-      <div class="acf__model-label-row">
-        <label class="form-label">LLM Model</label>
-        <label v-if="showPersistModelDefault" class="acf__sync-check">
-          <input
-            :checked="persistModelAsDefault"
-            type="checkbox"
-            @change="$emit('update:persistModelAsDefault', ($event.target as HTMLInputElement).checked)"
-          />
-          <span>set as default</span>
-        </label>
-      </div>
+      <label class="form-label" style="display: block; margin-bottom: 6px;">LLM Model</label>
       <ModelPickerField
         :model-value="form.llmModel ?? DEFAULT_FREE_AGENT_MODEL"
         :catalog="modelCatalog"
         :has-own-key="hasOwnKey"
         @update:model-value="form.llmModel = $event"
       >
+        <template v-if="showPersistModelDefault" #corner>
+          <label class="acf__sync-check">
+            <input
+              :checked="persistModelAsDefault"
+              type="checkbox"
+              @change="$emit('update:persistModelAsDefault', ($event.target as HTMLInputElement).checked)"
+            />
+            <span>set as default</span>
+          </label>
+        </template>
         <template #locked-message>
           <button
             type="button"
@@ -94,8 +94,7 @@ const emit = defineEmits<{
 .acf__name-input { flex: 1; background: var(--surface, #141414); border: 1px solid var(--border, #2a2a2a); border-radius: 8px; padding: 10px 14px; font-size: 15px; font-weight: 600; color: var(--text, #e0e0e0); outline: none; transition: border-color 0.15s; }
 .acf__name-input:focus { border-color: var(--accent, #7c6af7); }
 .acf__name-count { font-size: 11px; color: var(--text-muted, #555); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.acf__sync-check { height: 1rem; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted, #555); cursor: pointer; white-space: nowrap; }
-.acf__model-label-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 6px; }
+.acf__sync-check { height: 1rem; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted, #555); cursor: pointer; white-space: nowrap; margin-bottom: 0; }
 .acf__section { display: flex; flex-direction: column; gap: 10px; margin-top: 2rem; }
 .acf__section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted, #555); display: flex; align-items: center; gap: 8px; }
 .acf__profile-desc { font-size: 12px; color: var(--text-secondary, #888); line-height: 1.5; padding: 8px 12px; background: color-mix(in srgb, var(--accent, #7c6af7) 6%, transparent); border-left: 2px solid var(--accent, #7c6af7); border-radius: 0 6px 6px 0; }

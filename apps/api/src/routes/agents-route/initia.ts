@@ -1,12 +1,61 @@
 import { eq } from 'drizzle-orm';
 import { InitiaLinkRequestSchema, InitiaSyncRequestSchema } from '@something-in-loop/shared';
+import { z } from 'zod';
 import { agents } from '../../db/schema.js';
+import { createLogger } from '../../lib/logger.js';
 import { nowIso } from '../../lib/utils.js';
 import { validateBody } from '../../lib/validation.js';
+import { normalizeEvmWalletAddress } from '../../lib/wallet-address.js';
+import { fundInitiaTestGas } from '../../services/initia-executor.js';
 import { formatAgent, normalizeInitiaWalletAddress, parseInitiaSyncState, withOwnedAgent } from './shared.js';
 import type { AgentsRoute } from './shared.js';
 
 export function registerAgentInitiaRoutes(agentsRoute: AgentsRoute): void {
+  const InitiaTestGasRequestSchema = z.object({
+    evmAddress: z.string().min(1),
+  });
+
+  /** POST /api/agents/initia/test-gas — top up native GAS for the authenticated wallet in local/demo flows */
+  agentsRoute.post('/initia/test-gas', async (c) => {
+    const body = await validateBody(c, InitiaTestGasRequestSchema);
+    const recipient = normalizeEvmWalletAddress(body.evmAddress);
+    if (!recipient) {
+      return c.json({ error: 'Invalid EVM wallet address.' }, 400);
+    }
+
+    const authenticatedWallet = normalizeEvmWalletAddress(c.get('walletAddress'));
+    if (!authenticatedWallet) {
+      return c.json({ error: 'Authenticated wallet is not an EVM address.' }, 400);
+    }
+    if (recipient !== authenticatedWallet) {
+      return c.json({ error: 'You can only fund the connected wallet.' }, 403);
+    }
+
+    const log = createLogger('initia-test-gas');
+    const result = await fundInitiaTestGas({
+      env: c.env,
+      log,
+      recipient: recipient as `0x${string}`,
+    });
+
+    if (result.reason === 'missing_chain_config') {
+      return c.json({ error: 'Initia test GAS funding is not configured on the backend.' }, 503);
+    }
+    if (result.reason === 'tx_failed') {
+      return c.json({ error: 'Failed to submit native GAS top-up transaction.' }, 502);
+    }
+
+    return c.json({
+      ok: true,
+      funded: result.funded,
+      txHash: result.txHash ?? null,
+      amountWei: result.amountWei ?? null,
+      balanceBeforeWei: result.balanceBeforeWei ?? null,
+      targetBalanceWei: result.targetBalanceWei ?? null,
+      reason: result.reason ?? null,
+    });
+  });
+
   /** POST /api/agents/:id/initia/link — attach onchain link metadata */
   agentsRoute.post('/:id/initia/link', async (c) => {
     const body = await validateBody(c, InitiaLinkRequestSchema);

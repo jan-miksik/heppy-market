@@ -6,6 +6,7 @@ const WALLET_STATE_TIMEOUT_MS = 30_000;
 const WALLET_STATE_POLL_MS = 250;
 const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
 const BRIDGE_SRC_DENOM = 'uinit';
+const MIN_TEST_GAS_BALANCE_WEI = 20_000_000_000_000_000n;
 
 function formatWei(wei: string | null | undefined): string | null {
   if (!wei) return null;
@@ -65,7 +66,7 @@ export function useAgentCreateFlow() {
   } = useAutoSignConsent({ autoSignMgr, enableAutoSign });
 
   const step = ref<1 | 2>(1);
-  const isPaper = ref(false);
+  const isPaper = ref(true);
   const fundAmount = ref('1000');
   const faucetAmount = ref('1000');
   const createdAgentId = ref<string | null>(null);
@@ -75,11 +76,13 @@ export function useAgentCreateFlow() {
   const withdrawing = ref(false);
   const bridging = ref(false);
   const mintingFaucet = ref(false);
+  const toppingUpGas = ref(false);
   const onchainStatus = ref('');
 
   const walletIusdDisplay = computed(() => formatWei(initiaState.value.walletShowcaseTokenBalanceWei));
+  const walletGasDisplay = computed(() => formatWei(initiaState.value.walletBalanceWei));
   const fundingBusy = computed(() =>
-    funding.value || withdrawing.value || bridging.value || mintingFaucet.value,
+    funding.value || withdrawing.value || bridging.value || mintingFaucet.value || toppingUpGas.value,
   );
 
   function goToStep(nextStep: 1 | 2) {
@@ -148,6 +151,70 @@ export function useAgentCreateFlow() {
     throw new Error('Wallet connection was not detected. Finish wallet connect and try again.');
   }
 
+  async function ensureTestGas(options?: { force?: boolean; silent?: boolean }) {
+    await ensureWalletConnected();
+
+    const evmAddress = initiaState.value.evmAddress;
+    if (!evmAddress) return { funded: false, reason: 'missing_evm_address' };
+
+    const currentBalanceWei = initiaState.value.walletBalanceWei;
+    if (!options?.force && currentBalanceWei) {
+      try {
+        if (BigInt(currentBalanceWei) >= MIN_TEST_GAS_BALANCE_WEI) {
+          return { funded: false, reason: 'balance_sufficient' };
+        }
+      } catch {
+        // Fall through to the backend top-up path.
+      }
+    }
+
+    toppingUpGas.value = true;
+    try {
+      const result = await request<{
+        ok: boolean;
+        funded: boolean;
+        txHash: string | null;
+        reason: string | null;
+      }>('/api/agents/initia/test-gas', {
+        method: 'POST',
+        body: { evmAddress },
+        silent: true,
+      });
+      await refresh();
+      await syncInitiaState('wallet-test-gas-topup');
+
+      if (!options?.silent) {
+        if (result.funded) {
+          showNotification({
+            type: 'success',
+            title: 'Test GAS Added',
+            message: `Native GAS was added to your wallet.${result.txHash ? ` tx: ${result.txHash}` : ''}`,
+          });
+        } else if (options?.force) {
+          showNotification({
+            type: 'success',
+            title: 'Wallet Already Funded',
+            message: 'This wallet already has enough GAS for local test transactions.',
+          });
+        }
+      }
+
+      return result;
+    } catch (err) {
+      if (!options?.silent) {
+        showNotification({
+          type: 'error',
+          title: 'Test GAS Funding Failed',
+          message: extractApiError(err),
+          durationMs: 8_000,
+        });
+      }
+      throw err;
+    } finally {
+      toppingUpGas.value = false;
+    }
+  }
+
   async function ensureOnchainAgent(options?: { forceCreate?: boolean; autoSign?: boolean }) {
     if (!options?.forceCreate && initiaState.value.agentExists) return;
 
@@ -194,6 +261,7 @@ export function useAgentCreateFlow() {
     let createdLocalAgentId: string | null = null;
     try {
       await ensureWalletConnected();
+      await ensureTestGas({ silent: true });
 
       if (!createdAgentId.value) {
         const agent = await createAgent({
@@ -286,10 +354,11 @@ export function useAgentCreateFlow() {
 
     clearFundingFeedback();
     await runWithAutoSignCheck('depositShowcaseToken', async () => {
-      funding.value = true;
+        funding.value = true;
       try {
         const balanceBeforeDeposit = currentPaperBalance.value;
         await ensureWalletConnected();
+        await ensureTestGas({ silent: true });
         const autoSign = autoSignMgr.isEnabled('depositShowcaseToken') && autoSignMgr.chainAutoSignGrantEnabled.value;
         await ensureOnchainAgent({ autoSign });
         const result = await depositShowcaseToken(String(amount), { autoSign });
@@ -361,6 +430,7 @@ export function useAgentCreateFlow() {
     withdrawing.value = true;
     try {
       await ensureWalletConnected();
+      await ensureTestGas({ silent: true });
       await ensureOnchainAgent();
       const autoSign = autoSignMgr.isEnabled('withdrawShowcaseToken') && autoSignMgr.chainAutoSignGrantEnabled.value;
       const result = await withdrawShowcaseToken(String(amount), { autoSign });
@@ -423,6 +493,7 @@ export function useAgentCreateFlow() {
     mintingFaucet.value = true;
     try {
       await ensureWalletConnected();
+      await ensureTestGas({ silent: true });
       const autoSign = autoSignMgr.isEnabled('mintShowcaseToken') && autoSignMgr.chainAutoSignGrantEnabled.value;
       const result = await mintShowcaseToken(String(amount), { autoSign });
       await refresh();
@@ -442,6 +513,11 @@ export function useAgentCreateFlow() {
     } finally {
       mintingFaucet.value = false;
     }
+  }
+
+  async function handleTopUpGas() {
+    clearFundingFeedback();
+    await ensureTestGas({ force: true });
   }
 
   function handleCancel() {
@@ -465,8 +541,10 @@ export function useAgentCreateFlow() {
     withdrawing,
     bridging,
     mintingFaucet,
+    toppingUpGas,
     onchainStatus,
     walletIusdDisplay,
+    walletGasDisplay,
     fundingBusy,
     consentModalOpen,
     goToStep,
@@ -478,6 +556,7 @@ export function useAgentCreateFlow() {
     handleWithdraw,
     handleBridge,
     handleMintFaucet,
+    handleTopUpGas,
     handleCancel,
     handleOpenAgent,
   };

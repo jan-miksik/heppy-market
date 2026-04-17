@@ -121,6 +121,9 @@ onBeforeUnmount(() => {
           </span>
         </span>
       </span>
+      <span v-if="$slots.corner" class="model-picker__corner-slot" @click.stop>
+        <slot name="corner" />
+      </span>
       <span class="model-picker__chev" :class="{ open: modelPickerOpen }">›</span>
     </button>
 
@@ -219,6 +222,11 @@ onBeforeUnmount(() => {
 .model-picker__mono {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-variant-numeric: tabular-nums;
+}
+.model-picker__corner-slot {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
 }
 .model-picker__chev {
   font-size: 18px;

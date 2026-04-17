@@ -34,6 +34,7 @@ const {
 } = useAutoSignConsent({ autoSignMgr, enableAutoSign });
 const BRIDGE_SRC_CHAIN_ID = 'initiation-2';
 const BRIDGE_SRC_DENOM = 'uinit';
+const MIN_TEST_GAS_BALANCE_WEI = 20_000_000_000_000_000n;
 
 const isOpen = ref(false);
 const amount = ref('1000');
@@ -42,6 +43,7 @@ const funding = ref(false);
 const withdrawing = ref(false);
 const bridging = ref(false);
 const mintingFaucet = ref(false);
+const toppingUpGas = ref(false);
 const error = ref('');
 const successMsg = ref('');
 
@@ -73,6 +75,7 @@ function formatWei(wei: string | null | undefined): string {
 }
 
 const walletDisplay = computed(() => formatWei(initiaState.value.walletShowcaseTokenBalanceWei));
+const walletGasDisplay = computed(() => formatWei(initiaState.value.walletBalanceWei));
 
 function clearMessages() {
   error.value = '';
@@ -96,6 +99,56 @@ async function ensureWalletConnected() {
   throw new Error('Wallet connection was not detected. Finish wallet connect and try again.');
 }
 
+async function ensureTestGas(options?: { force?: boolean; silent?: boolean }) {
+  await ensureWalletConnected();
+
+  const evmAddress = initiaState.value.evmAddress;
+  if (!evmAddress) return { funded: false, reason: 'missing_evm_address' };
+
+  const currentBalanceWei = initiaState.value.walletBalanceWei;
+  if (!options?.force && currentBalanceWei) {
+    try {
+      if (BigInt(currentBalanceWei) >= MIN_TEST_GAS_BALANCE_WEI) {
+        return { funded: false, reason: 'balance_sufficient' };
+      }
+    } catch {
+      // Fall through to server top-up.
+    }
+  }
+
+  toppingUpGas.value = true;
+  try {
+    const result = await request<{
+      ok: boolean;
+      funded: boolean;
+      txHash: string | null;
+      reason: string | null;
+    }>('/api/agents/initia/test-gas', {
+      method: 'POST',
+      body: { evmAddress },
+      silent: true,
+    });
+    await refresh();
+
+    if (!options?.silent) {
+      if (result.funded) {
+        successMsg.value = `Added native GAS to your wallet.${result.txHash ? ` tx: ${result.txHash}` : ''}`;
+      } else if (options?.force) {
+        successMsg.value = 'This wallet already has enough GAS for local test transactions.';
+      }
+    }
+
+    return result;
+  } catch (e) {
+    if (!options?.silent) {
+      error.value = extractApiError(e);
+    }
+    throw e;
+  } finally {
+    toppingUpGas.value = false;
+  }
+}
+
 async function handleFund() {
   const amt = Number(amount.value);
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -106,6 +159,7 @@ async function handleFund() {
   funding.value = true;
   try {
     await ensureWalletConnected();
+    await ensureTestGas({ silent: true });
     const result = await depositShowcaseToken(String(amt));
 
     const newBalance = (props.currentBalance ?? 0) + amt;
@@ -152,6 +206,7 @@ async function handleWithdraw() {
   withdrawing.value = true;
   try {
     await ensureWalletConnected();
+    await ensureTestGas({ silent: true });
     const result = await withdrawShowcaseToken(String(amt));
 
     await updateAgent(props.agentId, { paperBalance: newBalance });
@@ -213,6 +268,7 @@ async function handleMintFaucet() {
     mintingFaucet.value = true;
     try {
       await ensureWalletConnected();
+      await ensureTestGas({ silent: true });
       const autoSign = autoSignMgr.isEnabled('mintShowcaseToken') && autoSignMgr.chainAutoSignGrantEnabled.value;
       const result = await mintShowcaseToken(String(amt), { autoSign });
       await refresh();
@@ -225,7 +281,12 @@ async function handleMintFaucet() {
   });
 }
 
-const busy = computed(() => funding.value || withdrawing.value || bridging.value || mintingFaucet.value);
+async function handleTopUpGas() {
+  clearMessages();
+  await ensureTestGas({ force: true });
+}
+
+const busy = computed(() => funding.value || withdrawing.value || bridging.value || mintingFaucet.value || toppingUpGas.value);
 </script>
 
 <template>
@@ -252,6 +313,11 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
             <div v-if="walletDisplay" class="fund-step__wallet-row">
               <span class="fund-step__bal-key">wallet balance</span>
               <span class="fund-step__bal-val">{{ walletDisplay }} iUSD-demo</span>
+            </div>
+
+            <div v-if="walletGasDisplay" class="fund-step__wallet-row">
+              <span class="fund-step__bal-key">wallet fee balance</span>
+              <span class="fund-step__bal-val">{{ walletGasDisplay }} GAS</span>
             </div>
 
             <div class="fund-step__input-row">
@@ -305,6 +371,21 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
                 We still keep bridge in this flow because it demonstrates the hackathon path: bridge assets from L1 to appchain, then deposit into the agent vault.
                 This improves onboarding speed, liquidity access, and immediate utility.
               </p>
+            </div>
+
+            <div class="fund-step__faucet fund-step__faucet--gas">
+              <div class="fund-step__faucet-title">Test GAS top-up</div>
+              <p class="fund-step__hint">
+                Contract actions pay fees in native GAS. If this wallet is empty, top it up before minting or depositing.
+              </p>
+              <button
+                class="fund-step__btn fund-step__btn--gas"
+                :disabled="busy"
+                @click="handleTopUpGas"
+              >
+                <span v-if="toppingUpGas" class="spinner" style="width:12px;height:12px;" />
+                {{ toppingUpGas ? 'Funding…' : 'Get Test GAS' }}
+              </button>
             </div>
 
             <div class="fund-step__faucet">
@@ -580,6 +661,29 @@ const busy = computed(() => funding.value || withdrawing.value || bridging.value
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #4ade80;
+}
+
+.fund-step__hint {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-muted, #a7a7a7);
+}
+
+.fund-step__faucet--gas {
+  border-color: color-mix(in srgb, #38bdf8 30%, var(--border, #2a2a2a));
+  background: color-mix(in srgb, #38bdf8 9%, transparent);
+}
+
+.fund-step__btn--gas {
+  border-color: color-mix(in srgb, #38bdf8 45%, var(--border, #2a2a2a));
+  color: #38bdf8;
+  background: color-mix(in srgb, #38bdf8 10%, transparent);
+}
+
+.fund-step__btn--gas:not(:disabled):hover {
+  background: color-mix(in srgb, #38bdf8 16%, transparent);
 }
 
 .fund-step__btn--faucet {
