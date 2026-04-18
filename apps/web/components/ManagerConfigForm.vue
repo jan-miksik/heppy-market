@@ -28,6 +28,7 @@ const {
   isPersonaCustomized,
   hasOwnKey,
   modelCatalog,
+  openRouterRedirecting,
   syncName,
   persistModelAsDefault,
   submitting,
@@ -39,6 +40,7 @@ const {
   onProfileSelected,
   onPersonaEdited,
   restorePersona,
+  handleConnectOpenRouter,
 } = useManagerConfigForm({ initial: props.initial, isEdit: props.isEdit });
 
 function handleSubmit() {
@@ -76,12 +78,14 @@ function handleSubmit() {
       :show-persist-model-default="!isEdit"
       :model-catalog="modelCatalog"
       :has-own-key="hasOwnKey"
+      :open-router-redirecting="openRouterRedirecting"
       :is-persona-customized="isPersonaCustomized"
       :selected-profile-id="selectedProfileId"
       :selected-profile-description="selectedProfileDescription"
       type="manager"
       entity-name="Manager"
       @profile-selected="onProfileSelected"
+      @connect-open-router="handleConnectOpenRouter"
     />
 
     <BehaviorSection

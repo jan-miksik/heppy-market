@@ -18,8 +18,11 @@ export function useManagerConfigForm(props: {
   isEdit?: boolean;
 }) {
   const { user } = useAuth();
+  const { initConnect } = useOpenRouter();
+  const route = useRoute();
   const runtimeConfig = useRuntimeConfig();
   const hasOwnKey = computed(() => !!user.value?.openRouterKeySet);
+  const openRouterRedirecting = ref(false);
   const defaultManagerMaxAgents = (() => {
     const parsed = Number.parseInt(String(runtimeConfig.public.defaultManagerMaxAgents || ''), 10);
     return Number.isFinite(parsed) && parsed >= 1 ? parsed : 2;
@@ -236,6 +239,13 @@ export function useManagerConfigForm(props: {
 
   const availableAgentModels = computed(() => getManagerAllowedAgentModelIds(hasOwnKey.value));
 
+  function handleConnectOpenRouter() {
+    openRouterRedirecting.value = true;
+    initConnect({ returnTo: route.fullPath || '/managers/new' }).catch(() => {
+      openRouterRedirecting.value = false;
+    });
+  }
+
   const liveSystemPrompt = computed(() => {
     const pairsAllowlist = SUPPORTED_BASE_PAIRS.map((p) => `- "${p}"`).join('\n');
     const modelAllowlist = availableAgentModels.value.map((m) => `- "${m}"`).join('\n');
@@ -318,6 +328,7 @@ Example:
     isPersonaCustomized,
     hasOwnKey,
     modelCatalog,
+    openRouterRedirecting,
     syncName,
     persistModelAsDefault,
     submitting,
@@ -330,5 +341,6 @@ Example:
     onPersonaEdited,
     restorePersona,
     generatePersonaMd,
+    handleConnectOpenRouter,
   };
 }
