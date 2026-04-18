@@ -41,11 +41,6 @@ const emit = defineEmits<{
         <span class="fund-step__bal-val">{{ walletIusdDisplay }} iUSD-demo</span>
       </div>
 
-      <div v-if="walletGasDisplay" class="fund-step__wallet-row">
-        <span class="fund-step__bal-key">wallet fee balance</span>
-        <span class="fund-step__bal-val">{{ walletGasDisplay }} GAS</span>
-      </div>
-
       <p v-if="toppingUpGas" class="fund-step__status">
         Adding test GAS to your wallet so this action can pay fees. The action will continue automatically.
       </p>

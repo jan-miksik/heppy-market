@@ -54,7 +54,7 @@ The API Worker is **internal-only** (no public route); the browser only talks to
   - `[[services]] binding = "API"`, `service = "something-in-loop-api"`
 - Deploy script from repository root (`package.json`):
   - `npm run deploy:web` → builds the web app and runs
-    `npx wrangler pages deploy apps/web/dist --project-name=something-in-loop`.
+    `npx wrangler pages deploy apps/web/dist --project-name=init-root --commit-dirty=true`.
 - **Pages Functions**:
   - `apps/web/server/api/[...path].ts` is a Nitro/Pages Function that:
     - Uses the **Cloudflare Service Binding** `API` when deployed on Pages (calls `cfEnv.API.fetch()`).

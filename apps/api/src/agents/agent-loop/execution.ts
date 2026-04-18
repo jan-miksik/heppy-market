@@ -7,6 +7,7 @@ import { createLogger } from '../../lib/logger.js';
 import { getTradeDecision } from '../../services/llm-router.js';
 import { tryExecuteInitiaTick } from '../../services/initia-executor.js';
 import { PaperEngine, type Position } from '../../services/paper-engine.js';
+import { resolveCurrentPriceUsd } from '../../services/price-resolver.js';
 import type { Env } from '../../types/env.js';
 import type { MarketDataItem, RecentDecision } from './types.js';
 
@@ -166,6 +167,23 @@ export async function executeTradeDecision(
       return;
     }
 
+    // The marketData snapshot may be up to 1h old (KV cache) or up to 5 min
+    // frozen inside pendingLlmContext on the queued /receive-decision path.
+    // Re-resolve at open-time so entryPrice reflects the true current price.
+    let entryPriceUsd = 0;
+    try {
+      entryPriceUsd = await resolveCurrentPriceUsd(env, targetPairName, { bypassCache: true });
+    } catch (err) {
+      console.warn(`[agent-loop] ${agentId}: Fresh price resolve threw for ${targetPairName}:`, err);
+    }
+    if (entryPriceUsd <= 0) {
+      console.warn(
+        `[agent-loop] ${agentId}: Fresh price unavailable for ${targetPairName}; skipping open to avoid stale entry.`,
+      );
+      log.info('trade_open_skipped', { pair: targetPairName, reason: 'fresh_price_unavailable' });
+      return;
+    }
+
     const positionSizePct = Math.min(decision.suggestedPositionSizePct ?? 10, maxPositionSizePct);
     const amountUsd = (engine.balance * positionSizePct) / 100;
 
@@ -175,7 +193,7 @@ export async function executeTradeDecision(
         pair: targetPairName,
         dex: dexes[0] ?? 'aerodrome',
         side: decision.action as 'buy' | 'sell',
-        price: pairData.priceUsd,
+        price: entryPriceUsd,
         amountUsd,
         maxPositionSizePct,
         balance: engine.balance,
@@ -191,7 +209,8 @@ export async function executeTradeDecision(
         pair: targetPairName,
         side: decision.action,
         amount_usd: amountUsd,
-        price_usd: pairData.priceUsd,
+        price_usd: entryPriceUsd,
+        quoted_price_usd: pairData.priceUsd,
         position_size_pct: positionSizePct,
         confidence: decision.confidence,
       });
@@ -203,11 +222,11 @@ export async function executeTradeDecision(
         pair: targetPairName,
         side: decision.action,
         amountUsd,
-        priceUsd: pairData.priceUsd,
+        priceUsd: entryPriceUsd,
         balance: engine.balance,
         openPositions: engine.openPositions.length,
       });
-      console.log(`[agent-loop] ${agentId}: Opened ${decision.action} ${targetPairName} $${amountUsd.toFixed(2)} @ $${pairData.priceUsd}`);
+      console.log(`[agent-loop] ${agentId}: Opened ${decision.action} ${targetPairName} $${amountUsd.toFixed(2)} @ $${entryPriceUsd}`);
     } catch (err) {
       console.error(`[agent-loop] ${agentId}: Failed to open position:`, err);
       log.error('trade_open_failed', { pair: targetPairName, side: decision.action, error: String(err) });

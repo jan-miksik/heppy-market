@@ -97,7 +97,6 @@ export async function fetchOnePair(params: {
   log: ReturnType<typeof createLogger>;
 }): Promise<MarketDataItem | null> {
   const { env, pairName, agentId, geckoSvc, dexSvc, log } = params;
-  const [baseSymbol] = pairName.split('/').map((t) => t.trim().toUpperCase());
   const query = pairToSearchQuery(pairName);
   const skipDexDiscovery = hasIndexedSpotPriceProvider(pairName);
   const demoSpot = resolveDemoFallbackSpotUsdForPair(pairName);
@@ -119,45 +118,41 @@ export async function fetchOnePair(params: {
     }
   }
 
-  try {
-    // For indexed pairs (e.g. INIT/USDC), search just the base token so GeckoTerminal
-    // can find it on any chain/pool — priceUsd is already in USD regardless of quote.
-    const geckoQuery = skipDexDiscovery ? baseSymbol : query;
-    const geckoMatchFn = skipDexDiscovery
-      ? (entry: { name: string }) => entry.name.toUpperCase().includes(baseSymbol)
-      : (entry: { name: string }) => poolMatchesPair(entry.name, pairName);
-    console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${geckoQuery}"`);
-    const pools = await geckoSvc.searchPools(geckoQuery);
-    const pool = pools.find(geckoMatchFn);
-    if (pool && pool.priceUsd > 0) {
-      priceUsd = pool.priceUsd;
-      pairAddress = pool.address;
-      priceChange = pool.priceChange;
-      volume24h = pool.volume24h;
-      liquidity = pool.liquidityUsd;
-      console.log(
-        `[agent-loop] ${agentId}: GeckoTerminal found ${pool.name} @ $${priceUsd} liq=$${(liquidity ?? 0).toLocaleString()}`,
-      );
+  if (!skipDexDiscovery) {
+    try {
+      console.log(`[agent-loop] ${agentId}: GeckoTerminal search "${query}"`);
+      const pools = await geckoSvc.searchPools(query);
+      const pool = pools.find((entry) => poolMatchesPair(entry.name, pairName));
+      if (pool && pool.priceUsd > 0) {
+        priceUsd = pool.priceUsd;
+        pairAddress = pool.address;
+        priceChange = pool.priceChange;
+        volume24h = pool.volume24h;
+        liquidity = pool.liquidityUsd;
+        console.log(
+          `[agent-loop] ${agentId}: GeckoTerminal found ${pool.name} @ $${priceUsd} liq=$${(liquidity ?? 0).toLocaleString()}`,
+        );
 
-      const [hourlyResult, dailyResult] = await Promise.allSettled([
-        geckoSvc.getPoolPriceSeries(pool.address, 48, 'hour'),
-        geckoSvc.getPoolPriceSeries(pool.address, 30, 'day'),
-      ]);
-      if (hourlyResult.status === 'fulfilled') {
-        prices = hourlyResult.value;
-        console.log(`[agent-loop] ${agentId}: Got ${prices.length} hourly candles`);
-      } else {
-        logStructuredError('agent-loop', agentId, classifyApiError(hourlyResult.reason, { pair: pairName, source: 'gecko-ohlcv-hourly' }));
+        const [hourlyResult, dailyResult] = await Promise.allSettled([
+          geckoSvc.getPoolPriceSeries(pool.address, 48, 'hour'),
+          geckoSvc.getPoolPriceSeries(pool.address, 30, 'day'),
+        ]);
+        if (hourlyResult.status === 'fulfilled') {
+          prices = hourlyResult.value;
+          console.log(`[agent-loop] ${agentId}: Got ${prices.length} hourly candles`);
+        } else {
+          logStructuredError('agent-loop', agentId, classifyApiError(hourlyResult.reason, { pair: pairName, source: 'gecko-ohlcv-hourly' }));
+        }
+        if (dailyResult.status === 'fulfilled') {
+          dailyPrices = dailyResult.value;
+          console.log(`[agent-loop] ${agentId}: Got ${dailyPrices.length} daily candles`);
+        } else {
+          logStructuredError('agent-loop', agentId, classifyApiError(dailyResult.reason, { pair: pairName, source: 'gecko-ohlcv-daily' }));
+        }
       }
-      if (dailyResult.status === 'fulfilled') {
-        dailyPrices = dailyResult.value;
-        console.log(`[agent-loop] ${agentId}: Got ${dailyPrices.length} daily candles`);
-      } else {
-        logStructuredError('agent-loop', agentId, classifyApiError(dailyResult.reason, { pair: pairName, source: 'gecko-ohlcv-daily' }));
-      }
+    } catch (geckoErr) {
+      logStructuredError('agent-loop', agentId, classifyApiError(geckoErr, { pair: pairName, source: 'gecko-terminal' }));
     }
-  } catch (geckoErr) {
-    logStructuredError('agent-loop', agentId, classifyApiError(geckoErr, { pair: pairName, source: 'gecko-terminal' }));
   }
 
   if (!skipDexDiscovery && priceUsd === 0) {

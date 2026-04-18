@@ -193,10 +193,10 @@ npm run build --workspace=@something-in-loop/web
 Then deploy the built output. Nuxt outputs to `apps/web/dist`. Use the [Pages direct upload](https://developers.cloudflare.com/pages/get-started/direct-upload/) flow, or:
 
 ```bash
-npx wrangler pages deploy apps/web/dist --project-name=something-in-loop
+npx wrangler pages deploy apps/web/dist --project-name=init-root --commit-dirty=true
 ```
 
-(Replace `something-in-loop` with your Pages project name if different.)
+(Replace `init-root` with your Pages project name if different.)
 
 After the first deploy, add the **Service Binding** in the dashboard (step 1.6) if you are not using the repo `wrangler.toml` as the source of truth. You do not need `API_BASE_URL` in production when using the internal API.
 

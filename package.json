@@ -15,7 +15,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "deploy:api": "npm run deploy --workspace=@something-in-loop/api -- --env production",
-    "deploy:web": "npm run build --workspace=@something-in-loop/web && npx wrangler pages deploy apps/web/dist --project-name=something-in-loop"
+    "deploy:web": "npm run build --workspace=@something-in-loop/web && npx wrangler pages deploy apps/web/dist --project-name=init-root --commit-dirty=true"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.42",

@@ -40,19 +40,28 @@ function poolMatchesPair(poolName: string, pairName: string): boolean {
 /**
  * Resolve a current USD price for a given pair label (Base chain).
  * Returns 0 when all providers fail.
+ *
+ * Pass `bypassCache: true` when the caller needs a fresh value (e.g. at the
+ * moment of opening a position) and cannot tolerate a KV-cached price that
+ * may be up to an hour old.
  */
-export async function resolveCurrentPriceUsd(env: Env, pairName: string): Promise<number> {
-  const geckoSvc = createGeckoTerminalService(env.CACHE);
-  const dexSvc = createDexDataService(env.CACHE);
+export async function resolveCurrentPriceUsd(
+  env: Env,
+  pairName: string,
+  options: { bypassCache?: boolean } = {},
+): Promise<number> {
+  const { bypassCache = false } = options;
+  const geckoSvc = createGeckoTerminalService(env.CACHE, { bypassCache });
+  const dexSvc = createDexDataService(env.CACHE, { bypassCache });
   const query = pairToSearchQuery(pairName);
   const skipDexDiscovery = hasIndexedSpotPriceProvider(pairName);
 
   if (skipDexDiscovery) {
     const demoSpot = resolveDemoFallbackSpotUsdForPair(pairName);
     const [indexedGeckoCtx, coinGeckoSpot, coinPaprikaSpot] = await Promise.all([
-      resolveIndexedGeckoTerminalMarketContextForPair(env, pairName),
-      resolveCoinGeckoSpotUsdForPair(env, pairName),
-      resolveCoinPaprikaSpotUsdForPair(env, pairName),
+      resolveIndexedGeckoTerminalMarketContextForPair(env, pairName, { bypassCache }),
+      resolveCoinGeckoSpotUsdForPair(env, pairName, { bypassCache }),
+      resolveCoinPaprikaSpotUsdForPair(env, pairName, { bypassCache }),
     ]);
 
     if (indexedGeckoCtx && indexedGeckoCtx.spotUsd > 0) {
