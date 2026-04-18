@@ -11,13 +11,18 @@ import { CACHE_PREFIXES } from '../src/routes/health.js';
 
 describe('GeckoTerminal cache key generation', () => {
   it('generates stable search keys (lowercase, spaces to dashes)', () => {
-    expect(geckoSearchKey('WETH USDC')).toBe('gecko:search:weth-usdc');
-    expect(geckoSearchKey('weth usdc')).toBe('gecko:search:weth-usdc');
+    expect(geckoSearchKey('WETH USDC')).toBe('gecko:search:base:weth-usdc');
+    expect(geckoSearchKey('weth usdc')).toBe('gecko:search:base:weth-usdc');
     expect(geckoSearchKey('WETH USDC')).toBe(geckoSearchKey('weth usdc'));
   });
 
   it('generates unique search keys for different queries', () => {
     expect(geckoSearchKey('WETH USDC')).not.toBe(geckoSearchKey('AERO USDC'));
+  });
+
+  it('separates search keys by network', () => {
+    expect(geckoSearchKey('INIT', 'initia')).toBe('gecko:search:initia:init');
+    expect(geckoSearchKey('INIT')).not.toBe(geckoSearchKey('INIT', 'initia'));
   });
 
   it('generates stable OHLCV keys with address, timeframe and limit', () => {
@@ -39,6 +44,11 @@ describe('GeckoTerminal cache key generation', () => {
 
   it('normalises address to lowercase in OHLCV key', () => {
     expect(geckoOhlcvKey('0xABCDEF', 'hour', 48)).toBe(geckoOhlcvKey('0xabcdef', 'hour', 48));
+  });
+
+  it('separates OHLCV keys by network', () => {
+    expect(geckoOhlcvKey('0xABCDEF', 'hour', 48, 'initia')).toBe('gecko:ohlcv:initia:0xabcdef:hour:48');
+    expect(geckoOhlcvKey('0xABCDEF', 'hour', 48)).not.toBe(geckoOhlcvKey('0xABCDEF', 'hour', 48, 'initia'));
   });
 });
 

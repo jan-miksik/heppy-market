@@ -1,6 +1,6 @@
 /**
- * GeckoTerminal API client (free, no API key, supports Base chain).
- * Used as primary/fallback alongside DexScreener.
+ * GeckoTerminal API client (free, no API key).
+ * Used as primary/fallback alongside DexScreener and for indexed stable pairs.
  *
  * Docs: https://api.geckoterminal.com/api/v2
  * Rate limit: ~30 req/min on free tier (KV cache handles this)
@@ -143,7 +143,10 @@ export interface OHLCVCandle {
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
-export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = false } = {}) {
+export function createGeckoTerminalService(
+  cache: KVNamespace,
+  { bypassCache = false, network = 'base' }: { bypassCache?: boolean; network?: string } = {},
+) {
   async function cachedFetch<T>(cacheKey: string, url: string, schema: z.ZodType<T>, ttl = MARKET_DATA_CACHE_TTL_SECONDS): Promise<T> {
     if (!bypassCache) {
       const hot = getHotCached<T>(cacheKey);
@@ -194,12 +197,14 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
   }
 
   /**
-   * Search Base-chain pools by token symbols.
+   * Search pools by token symbols on the configured network.
    * Returns normalised pool objects sorted by liquidity descending.
    */
   async function searchPools(query: string): Promise<GeckoPoolNorm[]> {
-    const cacheKey = geckoSearchKey(query);
-    const url = `${GECKO_BASE}/search/pools?query=${encodeURIComponent(query)}&network=base&sort=h24_volume_usd_liquidity_desc`;
+    const cacheKey = geckoSearchKey(query, network);
+    const url =
+      `${GECKO_BASE}/search/pools?query=${encodeURIComponent(query)}`
+      + `&network=${encodeURIComponent(network)}&sort=h24_volume_usd_liquidity_desc`;
     const data = await cachedFetch(cacheKey, url, GeckoSearchResponseSchema);
 
     return data.data.map((p) => {
@@ -230,8 +235,10 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
    * Returns close prices oldest→newest (ready for technicalindicators).
    */
   async function getPoolPriceSeries(address: string, limit = 48, timeframe: 'hour' | 'day' = 'hour'): Promise<number[]> {
-    const cacheKey = geckoOhlcvKey(address, timeframe, limit);
-    const url = `${GECKO_BASE}/networks/base/pools/${address}/ohlcv/${timeframe}?limit=${limit}&currency=usd`;
+    const cacheKey = geckoOhlcvKey(address, timeframe, limit, network);
+    const url =
+      `${GECKO_BASE}/networks/${encodeURIComponent(network)}/pools/${address}`
+      + `/ohlcv/${timeframe}?limit=${limit}&currency=usd`;
     const data = await cachedFetch(cacheKey, url, GeckoOHLCVSchema);
     // ohlcv_list is newest-first; reverse to oldest-first for TA libraries
     const closes = data.data.attributes.ohlcv_list.map(([, , , , close]) => close).reverse();
@@ -247,8 +254,10 @@ export function createGeckoTerminalService(cache: KVNamespace, { bypassCache = f
     limit = 48,
     timeframe: 'hour' | 'day' | 'minute' = 'hour',
   ): Promise<OHLCVCandle[]> {
-    const cacheKey = `gecko:ohlcv-full:base:${address.toLowerCase()}:${timeframe}:${limit}`;
-    const url = `${GECKO_BASE}/networks/base/pools/${address}/ohlcv/${timeframe}?limit=${limit}&currency=usd`;
+    const cacheKey = `gecko:ohlcv-full:${network}:${address.toLowerCase()}:${timeframe}:${limit}`;
+    const url =
+      `${GECKO_BASE}/networks/${encodeURIComponent(network)}/pools/${address}`
+      + `/ohlcv/${timeframe}?limit=${limit}&currency=usd`;
     const data = await cachedFetch(cacheKey, url, GeckoOHLCVSchema, CHART_DISPLAY_CACHE_TTL_SECONDS);
     return data.data.attributes.ohlcv_list
       .map(([t, o, h, l, c]) => ({ t: t * 1000, o, h, l, c }))

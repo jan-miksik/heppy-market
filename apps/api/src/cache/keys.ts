@@ -2,12 +2,17 @@ function normalizeCacheSegment(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
-export function geckoSearchKey(query: string): string {
-  return `gecko:search:${normalizeCacheSegment(query)}`;
+export function geckoSearchKey(query: string, network = 'base'): string {
+  return `gecko:search:${normalizeCacheSegment(network)}:${normalizeCacheSegment(query)}`;
 }
 
-export function geckoOhlcvKey(address: string, timeframe: 'hour' | 'day', limit: number): string {
-  return `gecko:ohlcv:base:${address.trim().toLowerCase()}:${timeframe}:${limit}`;
+export function geckoOhlcvKey(
+  address: string,
+  timeframe: 'hour' | 'day',
+  limit: number,
+  network = 'base',
+): string {
+  return `gecko:ohlcv:${normalizeCacheSegment(network)}:${address.trim().toLowerCase()}:${timeframe}:${limit}`;
 }
 
 export function dexSearchKey(query: string): string {

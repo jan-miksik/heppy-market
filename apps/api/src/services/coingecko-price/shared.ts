@@ -21,6 +21,11 @@ const SYMBOL_TO_PAPRIKA_COIN_ID: Record<string, string> = {
   INITIA: 'init-initia',
 };
 
+export type StableQuotedPair = {
+  baseSymbol: string;
+  quoteSymbol: string;
+};
+
 export type CoinGeckoMarketChartResponse = {
   prices?: Array<[number, number]>;
   total_volumes?: Array<[number, number]>;
@@ -50,19 +55,25 @@ export function getCoinPaprikaIdForSymbol(symbol: string): string | null {
   return SYMBOL_TO_PAPRIKA_COIN_ID[normalizeSymbol(symbol)] ?? null;
 }
 
+export function parseStableQuotedPair(pairName: string): StableQuotedPair | null {
+  const [leftRaw, rightRaw, ...rest] = pairName.split('/');
+  if (rest.length > 0 || !leftRaw || !rightRaw) return null;
+
+  const left = normalizeSymbol(leftRaw);
+  const right = normalizeSymbol(rightRaw);
+
+  if (isStableQuote(right)) return { baseSymbol: left, quoteSymbol: right };
+  if (isStableQuote(left)) return { baseSymbol: right, quoteSymbol: left };
+  return null;
+}
+
 /**
  * For pair-style inputs, resolve a CoinGecko coin id when one side is a stable quote.
  * Example: INIT/USD -> initia
  */
 export function resolveCoinGeckoCoinIdForPair(pairName: string): string | null {
-  const [leftRaw, rightRaw, ...rest] = pairName.split('/');
-  if (rest.length > 0 || !leftRaw || !rightRaw) return null;
-  const left = normalizeSymbol(leftRaw);
-  const right = normalizeSymbol(rightRaw);
-
-  if (isStableQuote(right)) return getCoinIdForSymbol(left);
-  if (isStableQuote(left)) return getCoinIdForSymbol(right);
-  return null;
+  const pair = parseStableQuotedPair(pairName);
+  return pair ? getCoinIdForSymbol(pair.baseSymbol) : null;
 }
 
 /**
@@ -70,14 +81,8 @@ export function resolveCoinGeckoCoinIdForPair(pairName: string): string | null {
  * Example: INIT/USD -> init-initia
  */
 export function resolveCoinPaprikaCoinIdForPair(pairName: string): string | null {
-  const [leftRaw, rightRaw, ...rest] = pairName.split('/');
-  if (rest.length > 0 || !leftRaw || !rightRaw) return null;
-  const left = normalizeSymbol(leftRaw);
-  const right = normalizeSymbol(rightRaw);
-
-  if (isStableQuote(right)) return getCoinPaprikaIdForSymbol(left);
-  if (isStableQuote(left)) return getCoinPaprikaIdForSymbol(right);
-  return null;
+  const pair = parseStableQuotedPair(pairName);
+  return pair ? getCoinPaprikaIdForSymbol(pair.baseSymbol) : null;
 }
 
 /**

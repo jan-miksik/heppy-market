@@ -3,6 +3,7 @@ import { createDexDataService, getPriceUsd } from './dex-data.js';
 import { createGeckoTerminalService } from './gecko-terminal.js';
 import {
   hasIndexedSpotPriceProvider,
+  resolveIndexedGeckoTerminalMarketContextForPair,
   resolveCoinGeckoSpotUsdForPair,
   resolveCoinPaprikaSpotUsdForPair,
   resolveDemoFallbackSpotUsdForPair,
@@ -48,10 +49,23 @@ export async function resolveCurrentPriceUsd(env: Env, pairName: string): Promis
 
   if (skipDexDiscovery) {
     const demoSpot = resolveDemoFallbackSpotUsdForPair(pairName);
-    const [coinGeckoSpot, coinPaprikaSpot] = await Promise.all([
+    const [indexedGeckoCtx, coinGeckoSpot, coinPaprikaSpot] = await Promise.all([
+      resolveIndexedGeckoTerminalMarketContextForPair(env, pairName),
       resolveCoinGeckoSpotUsdForPair(env, pairName),
       resolveCoinPaprikaSpotUsdForPair(env, pairName),
     ]);
+
+    if (indexedGeckoCtx && indexedGeckoCtx.spotUsd > 0) {
+      const indexedSpot = selectSaneSpotPriceUsd({
+        preferredSpotUsd: indexedGeckoCtx.spotUsd,
+        secondarySpotUsd: coinGeckoSpot > 0 ? coinGeckoSpot : coinPaprikaSpot,
+        hourlyPrices: indexedGeckoCtx.hourlyPrices,
+        dailyPrices: indexedGeckoCtx.dailyPrices,
+        demoSpotUsd: demoSpot,
+      });
+      if (indexedSpot > 0) return indexedSpot;
+    }
+
     const indexedSpot = selectSaneSpotPriceUsd({
       preferredSpotUsd: coinGeckoSpot,
       secondarySpotUsd: coinPaprikaSpot,

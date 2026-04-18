@@ -4,6 +4,7 @@ import type { DexPair } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
 import {
   hasIndexedSpotPriceProvider,
+  resolveIndexedGeckoTerminalMarketContextForPair,
   resolveCoinGeckoSpotUsdForPair,
   resolveCoinGeckoMarketContextForPair,
   resolveCoinPaprikaSpotUsdForPair,
@@ -217,7 +218,24 @@ export async function fetchOnePair(params: {
     }
   }
 
-  if (priceUsd === 0) {
+  if (skipDexDiscovery && (priceUsd === 0 || prices.length === 0 || dailyPrices.length === 0 || priceChange.h1 === undefined || priceChange.h24 === undefined)) {
+    try {
+      const indexedGeckoCtx = await resolveIndexedGeckoTerminalMarketContextForPair(env, pairName, { bypassCache: true });
+      if (indexedGeckoCtx) {
+        if (priceUsd === 0 && indexedGeckoCtx.spotUsd > 0) priceUsd = indexedGeckoCtx.spotUsd;
+        if (prices.length === 0 && indexedGeckoCtx.hourlyPrices.length > 0) prices = indexedGeckoCtx.hourlyPrices;
+        if (dailyPrices.length === 0 && indexedGeckoCtx.dailyPrices.length > 0) dailyPrices = indexedGeckoCtx.dailyPrices;
+        if (volume24h === undefined && indexedGeckoCtx.volume24h !== undefined) volume24h = indexedGeckoCtx.volume24h;
+        if (liquidity === undefined && indexedGeckoCtx.liquidityUsd !== undefined) liquidity = indexedGeckoCtx.liquidityUsd;
+        mergeMissingPriceChange(indexedGeckoCtx.priceChange);
+        console.log(`[agent-loop] ${agentId}: Indexed GeckoTerminal fallback found @ $${indexedGeckoCtx.spotUsd}`);
+      }
+    } catch (indexedGeckoErr) {
+      logStructuredError('agent-loop', agentId, classifyApiError(indexedGeckoErr, { pair: pairName, source: 'gecko-terminal-indexed' }));
+    }
+  }
+
+  if (skipDexDiscovery || priceUsd === 0) {
     const [coingeckoResult, coinpaprikaResult] = await Promise.allSettled([
       resolveCoinGeckoSpotUsdForPair(env, pairName, { bypassCache: true }),
       resolveCoinPaprikaSpotUsdForPair(env, pairName, { bypassCache: true }),

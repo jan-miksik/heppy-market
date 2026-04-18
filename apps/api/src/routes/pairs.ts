@@ -7,6 +7,7 @@ import {
 } from '../services/dex-data.js';
 import { createGeckoTerminalService } from '../services/gecko-terminal.js';
 import {
+  resolveIndexedGeckoTerminalMarketContextForPair,
   resolveCoinGeckoMarketContextForPair,
   resolveCoinPaprikaMarketContextForPair,
   resolveDemoMarketContextForPair,
@@ -126,7 +127,8 @@ pairs.get('/ohlcv', async (c) => {
   );
 
   const pair = normalizePairForDex(query.pair);
-  const [coingecko, coinpaprika] = await Promise.all([
+  const [indexedGecko, coingecko, coinpaprika] = await Promise.all([
+    resolveIndexedGeckoTerminalMarketContextForPair(c.env, pair),
     resolveCoinGeckoMarketContextForPair(c.env, pair),
     resolveCoinPaprikaMarketContextForPair(c.env, pair),
   ]);
@@ -134,7 +136,9 @@ pairs.get('/ohlcv', async (c) => {
 
   // Prefer real providers; use demo only when both providers miss a series.
   const hourlySource: OhlcvSource =
-    (coingecko?.hourlyPrices?.length ?? 0) > 0
+    (indexedGecko?.hourlyPrices?.length ?? 0) > 0
+      ? 'geckoterminal'
+      : (coingecko?.hourlyPrices?.length ?? 0) > 0
       ? 'coingecko'
       : (coinpaprika?.hourlyPrices?.length ?? 0) > 0
       ? 'coinpaprika'
@@ -142,7 +146,9 @@ pairs.get('/ohlcv', async (c) => {
       ? 'demo'
       : 'none';
   const dailySource: OhlcvSource =
-    (coingecko?.dailyPrices?.length ?? 0) > 0
+    (indexedGecko?.dailyPrices?.length ?? 0) > 0
+      ? 'geckoterminal'
+      : (coingecko?.dailyPrices?.length ?? 0) > 0
       ? 'coingecko'
       : (coinpaprika?.dailyPrices?.length ?? 0) > 0
       ? 'coinpaprika'
@@ -150,13 +156,17 @@ pairs.get('/ohlcv', async (c) => {
       ? 'demo'
       : 'none';
   const hourlyPrices =
-    (coingecko?.hourlyPrices?.length ?? 0) > 0
+    (indexedGecko?.hourlyPrices?.length ?? 0) > 0
+      ? indexedGecko!.hourlyPrices
+      : (coingecko?.hourlyPrices?.length ?? 0) > 0
       ? coingecko!.hourlyPrices
       : (coinpaprika?.hourlyPrices?.length ?? 0) > 0
       ? coinpaprika!.hourlyPrices
       : (demo?.hourlyPrices ?? []);
   const dailyPrices =
-    (coingecko?.dailyPrices?.length ?? 0) > 0
+    (indexedGecko?.dailyPrices?.length ?? 0) > 0
+      ? indexedGecko!.dailyPrices
+      : (coingecko?.dailyPrices?.length ?? 0) > 0
       ? coingecko!.dailyPrices
       : (coinpaprika?.dailyPrices?.length ?? 0) > 0
       ? coinpaprika!.dailyPrices

@@ -9,6 +9,7 @@ import { createDexDataService, getPriceUsd } from '../../services/dex-data.js';
 import { createGeckoTerminalService } from '../../services/gecko-terminal.js';
 import {
   hasIndexedSpotPriceProvider,
+  resolveIndexedGeckoTerminalMarketContextForPair,
   resolveCoinGeckoMarketContextForPair,
   resolveCoinPaprikaMarketContextForPair,
   resolveDemoMarketContextForPair,
@@ -165,6 +166,16 @@ export async function runManagerLoop(managerId: string, env: Env, ctx: DurableOb
       } catch {
         // skip
       }
+    }
+
+    const indexedGeckoCtx = await resolveIndexedGeckoTerminalMarketContextForPair(env, pairName, { bypassCache });
+    if (indexedGeckoCtx && indexedGeckoCtx.spotUsd > 0) {
+      marketData.push({
+        pair: pairName,
+        priceUsd: indexedGeckoCtx.spotUsd,
+        priceChange: indexedGeckoCtx.priceChange,
+      });
+      continue;
     }
 
     const coinGeckoCtx = await resolveCoinGeckoMarketContextForPair(env, pairName, { bypassCache });
