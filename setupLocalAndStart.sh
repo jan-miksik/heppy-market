@@ -678,7 +678,7 @@ if [[ -z "$OR_KEY" ]]; then
   warn "OPENROUTER_API_KEY not set."
   echo "  Get one at: https://openrouter.ai"
   if [[ -t 0 ]]; then
-    read -rp "  Paste key and press Enter" OR_KEY || true
+    read -rp "  Paste key and press Enter:" OR_KEY || true
   else
     warn "No interactive TTY available — leaving OPENROUTER_API_KEY empty"
   fi
@@ -718,7 +718,7 @@ cd "$REPO_ROOT"
 # ─── 8. Start services ────────────────────────────────────────────────────────
 API_PID=""
 WEB_PID=""
-WEB_HOST="127.0.0.1"
+WEB_HOST="localhost"
 WEB_PORT=""
 pick_web_port
 

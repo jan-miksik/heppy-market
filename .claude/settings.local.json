@@ -96,7 +96,8 @@
       "Bash(shasum -a 256)",
       "Bash(forge build:*)",
       "Bash(forge test:*)",
-      "Bash(curl -s 'https://api.geckoterminal.com/api/v2/search/pools?query=INIT&network=base&sort=h24_volume_usd_liquidity_desc')"
+      "Bash(curl -s 'https://api.geckoterminal.com/api/v2/search/pools?query=INIT&network=base&sort=h24_volume_usd_liquidity_desc')",
+      "mcp__context7__query-docs"
     ]
   },
   "sandbox": {

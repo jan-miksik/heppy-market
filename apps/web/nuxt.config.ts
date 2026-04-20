@@ -25,6 +25,19 @@ export default defineNuxtConfig({
         // including Nuxt's own runtime entry under workspace-level node_modules.
         allow: [appRoot, workspaceRoot],
       },
+      // Pre-transform entry + heavy pages on server start so Vite discovers
+      // all deps before the browser loads. Without this, optimizeDeps fires
+      // mid-paint and rewrites pre-bundle hashes, killing in-flight dynamic
+      // imports ("Failed to fetch dynamically imported module").
+      warmup: {
+        clientFiles: [
+          './app.vue',
+          './plugins/**/*.{ts,js}',
+          './middleware/**/*.{ts,js}',
+          './pages/**/*.vue',
+          './features/**/*.{ts,vue}',
+        ],
+      },
     },
     optimizeDeps: {
       // Pre-bundle these on dev server start rather than lazily during page load,
