@@ -1,7 +1,7 @@
 {
   "project_name": "initRoot",
   "repo_url": "https://github.com/jan-miksik/init-root",
-  "commit_sha": "5976a1ae6b40b6701a07d4e13511b702c9f1b6d3",
+  "commit_sha": "21c1e90a79a37c5c140087823516cc71b473b8ac",
   "rollup_chain_id": "pillow-rollup",
   "deployed_address": "0xFBF2300e65255b14d373c881dF3De3c7dd8b9b1d",
   "vm": "evm",
